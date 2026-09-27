@@ -1,9 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 
+	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/money"
 )
 
@@ -13,6 +15,14 @@ const EnvDatabaseURL = "DATABASE_URL"
 // encryption key (raw bytes; 16, 24 or 32 bytes for AES-128/192/256). The
 // configuration layer owns env parsing; crypto validates the key material.
 const EnvChannelKey = "CHANNEL_KEY_ENCRYPTION_KEY"
+
+// Session and registration security settings.
+const (
+	EnvSessionTTLSeconds   = "SESSION_TTL_SECONDS"
+	EnvSessionCookieSecure = "SESSION_COOKIE_SECURE"
+	EnvRegistrationEnabled = "REGISTRATION_ENABLED"
+	EnvBcryptCost          = "BCRYPT_COST"
+)
 
 const (
 	EnvUpstreamRequestTimeout = "UPSTREAM_REQUEST_TIMEOUT"
@@ -48,6 +58,14 @@ type Config struct {
 	QuotaReaperBatchSize       int
 	ChannelMinRouteBalance     string
 
+	// Session and account security settings. SessionTTLSeconds bounds how long
+	// a login session stays valid; SessionCookieSecure controls the cookie
+	// Secure flag (set false only for plain-HTTP local deployments).
+	SessionTTLSeconds   int
+	SessionCookieSecure bool
+	RegistrationEnabled bool
+	BcryptCost          int
+
 	ChannelBreakerFailureThreshold       int
 	ChannelBreakerCooldownSeconds        int
 	ChannelBreakerWindowSeconds          int
@@ -57,7 +75,10 @@ type Config struct {
 	ChannelBreakerBucketRetentionSeconds int
 }
 
-func Load() Config {
+// Load builds the runtime configuration. Legacy settings keep their best-effort
+// fallback behavior, but security-critical settings (session/registration) fail
+// fast: an unparsable value returns an error instead of silently defaulting.
+func Load() (Config, error) {
 	cfg := Config{
 		Addr:                    os.Getenv("ADDR"),
 		DatabaseURL:             os.Getenv(EnvDatabaseURL),
@@ -87,7 +108,67 @@ func Load() Config {
 	cfg.ChannelBreakerErrorRatePercent = parsePercent(os.Getenv(EnvChannelBreakerErrorRatePercent), 50)
 	cfg.ChannelBreakerTimeoutRatePercent = parsePercent(os.Getenv(EnvChannelBreakerTimeoutRatePercent), 50)
 	cfg.ChannelBreakerBucketRetentionSeconds = parsePositiveInt(os.Getenv(EnvChannelBreakerBucketRetentionSeconds), 600)
-	return cfg
+
+	var err error
+	cfg.SessionTTLSeconds, err = parsePositiveIntStrict(os.Getenv(EnvSessionTTLSeconds), 7*24*60*60)
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %w", EnvSessionTTLSeconds, err)
+	}
+	cfg.SessionCookieSecure, err = parseBoolStrict(os.Getenv(EnvSessionCookieSecure), true)
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %w", EnvSessionCookieSecure, err)
+	}
+	cfg.RegistrationEnabled, err = parseBoolStrict(os.Getenv(EnvRegistrationEnabled), true)
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %w", EnvRegistrationEnabled, err)
+	}
+	cfg.BcryptCost, err = parseBcryptCost(os.Getenv(EnvBcryptCost))
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %w", EnvBcryptCost, err)
+	}
+	return cfg, nil
+}
+
+// parsePositiveIntStrict parses a positive integer, returning fallback for an
+// empty value and an error for any other unparsable or non-positive input.
+func parsePositiveIntStrict(value string, fallback int) (int, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("must be a positive integer, got %q", value)
+	}
+	return parsed, nil
+}
+
+// parseBoolStrict parses a boolean, returning fallback for an empty value and
+// an error for any other value strconv.ParseBool rejects.
+func parseBoolStrict(value string, fallback bool) (bool, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("must be a boolean, got %q", value)
+	}
+	return parsed, nil
+}
+
+// parseBcryptCost parses the optional bcrypt cost, defaulting to the library
+// default and rejecting values outside the bcrypt-supported range.
+func parseBcryptCost(value string) (int, error) {
+	if value == "" {
+		return crypto.DefaultPasswordCost, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("must be an integer, got %q", value)
+	}
+	if parsed < crypto.MinPasswordCost || parsed > crypto.MaxPasswordCost {
+		return 0, fmt.Errorf("must be within [%d,%d], got %d", crypto.MinPasswordCost, crypto.MaxPasswordCost, parsed)
+	}
+	return parsed, nil
 }
 
 func parsePercent(value string, fallback int) int {

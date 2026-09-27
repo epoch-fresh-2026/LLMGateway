@@ -4,6 +4,16 @@ import (
 	"testing"
 )
 
+// loadOrFatal returns a Load result, failing the test on a parse error.
+func loadOrFatal(t *testing.T) Config {
+	t.Helper()
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	return cfg
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("ADDR", "")
 	t.Setenv(EnvDatabaseURL, "")
@@ -24,8 +34,12 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv(EnvChannelBreakerErrorRatePercent, "")
 	t.Setenv(EnvChannelBreakerTimeoutRatePercent, "")
 	t.Setenv(EnvChannelBreakerBucketRetentionSeconds, "")
+	t.Setenv(EnvSessionTTLSeconds, "")
+	t.Setenv(EnvSessionCookieSecure, "")
+	t.Setenv(EnvRegistrationEnabled, "")
+	t.Setenv(EnvBcryptCost, "")
 
-	cfg := Load()
+	cfg := loadOrFatal(t)
 	if cfg.Addr != ":8080" {
 		t.Fatalf("Addr = %q, want :8080", cfg.Addr)
 	}
@@ -43,6 +57,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.ChannelBreakerFailureThreshold != 5 || cfg.ChannelBreakerCooldownSeconds != 30 || cfg.ChannelBreakerWindowSeconds != 60 || cfg.ChannelBreakerMinimumSamples != 10 || cfg.ChannelBreakerErrorRatePercent != 50 || cfg.ChannelBreakerTimeoutRatePercent != 50 || cfg.ChannelBreakerBucketRetentionSeconds != 600 {
 		t.Fatalf("breaker defaults = %+v", cfg)
+	}
+	if cfg.SessionTTLSeconds != 7*24*60*60 || !cfg.SessionCookieSecure || !cfg.RegistrationEnabled || cfg.BcryptCost != 10 {
+		t.Fatalf("security defaults = %+v", cfg)
 	}
 }
 
@@ -66,8 +83,12 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv(EnvChannelBreakerErrorRatePercent, "80")
 	t.Setenv(EnvChannelBreakerTimeoutRatePercent, "70")
 	t.Setenv(EnvChannelBreakerBucketRetentionSeconds, "900")
+	t.Setenv(EnvSessionTTLSeconds, "3600")
+	t.Setenv(EnvSessionCookieSecure, "false")
+	t.Setenv(EnvRegistrationEnabled, "false")
+	t.Setenv(EnvBcryptCost, "12")
 
-	cfg := Load()
+	cfg := loadOrFatal(t)
 	if cfg.Addr != ":9999" {
 		t.Fatalf("Addr = %q, want :9999", cfg.Addr)
 	}
@@ -86,12 +107,45 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.ChannelBreakerFailureThreshold != 9 || cfg.ChannelBreakerCooldownSeconds != 45 || cfg.ChannelBreakerWindowSeconds != 120 || cfg.ChannelBreakerMinimumSamples != 25 || cfg.ChannelBreakerErrorRatePercent != 80 || cfg.ChannelBreakerTimeoutRatePercent != 70 || cfg.ChannelBreakerBucketRetentionSeconds != 900 {
 		t.Fatalf("breaker overrides = %+v", cfg)
 	}
+	if cfg.SessionTTLSeconds != 3600 || cfg.SessionCookieSecure || cfg.RegistrationEnabled || cfg.BcryptCost != 12 {
+		t.Fatalf("security overrides = %+v", cfg)
+	}
+}
+
+func TestLoadRejectsInvalidSecurityValues(t *testing.T) {
+	cases := map[string]string{
+		EnvSessionTTLSeconds:   "0",
+		EnvSessionCookieSecure: "maybe",
+		EnvRegistrationEnabled: "sometimes",
+		EnvBcryptCost:          "99",
+	}
+	for env, value := range cases {
+		t.Run(env+"="+value, func(t *testing.T) {
+			t.Setenv(env, value)
+			if _, err := Load(); err == nil {
+				t.Fatalf("Load should reject %s=%q", env, value)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsNonNumericSecurityValues(t *testing.T) {
+	t.Setenv(EnvSessionTTLSeconds, "soon")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load should reject non-numeric SESSION_TTL_SECONDS")
+	}
+
+	t.Setenv(EnvSessionTTLSeconds, "")
+	t.Setenv(EnvBcryptCost, "cheap")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load should reject non-numeric BCRYPT_COST")
+	}
 }
 
 func TestBreakerPercentRejectsOutOfRange(t *testing.T) {
 	t.Setenv(EnvChannelBreakerErrorRatePercent, "150")
 	t.Setenv(EnvChannelBreakerTimeoutRatePercent, "0")
-	if cfg := Load(); cfg.ChannelBreakerErrorRatePercent != 50 || cfg.ChannelBreakerTimeoutRatePercent != 50 {
+	if cfg := loadOrFatal(t); cfg.ChannelBreakerErrorRatePercent != 50 || cfg.ChannelBreakerTimeoutRatePercent != 50 {
 		t.Fatalf("percent clamps = %d/%d, want 50/50", cfg.ChannelBreakerErrorRatePercent, cfg.ChannelBreakerTimeoutRatePercent)
 	}
 }
@@ -100,7 +154,7 @@ func TestLoadMinimumRouteBalanceRejectsInvalidValues(t *testing.T) {
 	for _, value := range []string{"-1", "invalid"} {
 		t.Run(value, func(t *testing.T) {
 			t.Setenv("CHANNEL_MIN_ROUTE_BALANCE", value)
-			if got := Load().ChannelMinRouteBalance; got != "0.000000" {
+			if got := loadOrFatal(t).ChannelMinRouteBalance; got != "0.000000" {
 				t.Fatalf("ChannelMinRouteBalance = %q, want 0.000000", got)
 			}
 		})
@@ -110,7 +164,7 @@ func TestLoadMinimumRouteBalanceRejectsInvalidValues(t *testing.T) {
 func TestQuotaReservationTTLExceedsUpstreamTimeout(t *testing.T) {
 	t.Setenv("UPSTREAM_TIMEOUT_SECONDS", "90")
 	t.Setenv("QUOTA_RESERVATION_TTL_SECONDS", "60")
-	cfg := Load()
+	cfg := loadOrFatal(t)
 	if cfg.QuotaReservationTTLSeconds != 150 {
 		t.Fatalf("QuotaReservationTTLSeconds = %d, want 150", cfg.QuotaReservationTTLSeconds)
 	}

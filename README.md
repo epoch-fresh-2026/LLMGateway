@@ -2,6 +2,7 @@
 
 1. 根据 `deployments/.env.example` 创建 `deployments/.env`，并替换其中的两个占位密钥。
    `CHANNEL_KEY_ENCRYPTION_KEY` 必须恰好为 16、24 或 32 个 ASCII 字节；渠道密钥已保存后，不能再修改该值，否则网关无法解密已有渠道密钥。
+   会话与注册相关变量均可选：`SESSION_TTL_SECONDS`（默认 604800，即 7 天）、`SESSION_COOKIE_SECURE`（默认 `true`，纯 HTTP 本地部署需设为 `false`）、`REGISTRATION_ENABLED`（默认 `true`，设为 `false` 可关闭公开注册）、`BCRYPT_COST`（默认 10，取值 4–31）。这些变量值非法时进程会在启动阶段报错退出。
 2. 在仓库根目录执行：
 
    ```powershell

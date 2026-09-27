@@ -149,3 +149,84 @@ func TestEqualHashes(t *testing.T) {
 		t.Fatal("different hashes should not match")
 	}
 }
+
+func TestHashPasswordVerifyRoundTrip(t *testing.T) {
+	hash, err := HashPassword("correct horse battery staple", MinPasswordCost)
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	if strings.Contains(hash, "correct horse battery staple") {
+		t.Fatal("hash must not contain the plaintext password")
+	}
+	if !VerifyPassword(hash, "correct horse battery staple") {
+		t.Fatal("correct password should verify")
+	}
+	if VerifyPassword(hash, "wrong password") {
+		t.Fatal("wrong password must not verify")
+	}
+	if VerifyPassword("", "correct horse battery staple") {
+		t.Fatal("empty hash must not verify")
+	}
+	if VerifyPassword("not-a-bcrypt-hash", "correct horse battery staple") {
+		t.Fatal("malformed hash must not verify")
+	}
+}
+
+func TestHashPasswordIsSalted(t *testing.T) {
+	first, err := HashPassword("same-password", MinPasswordCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := HashPassword("same-password", MinPasswordCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("bcrypt must salt, producing different hashes for equal passwords")
+	}
+}
+
+func TestHashPasswordCostDefaultsAndBounds(t *testing.T) {
+	hash, err := HashPassword("password", 0)
+	if err != nil {
+		t.Fatalf("cost 0 should use default: %v", err)
+	}
+	if !VerifyPassword(hash, "password") {
+		t.Fatal("default-cost hash should verify")
+	}
+
+	if _, err := HashPassword("password", MaxPasswordCost+1); err == nil {
+		t.Fatal("cost above MaxPasswordCost should fail")
+	}
+	if _, err := HashPassword("password", MinPasswordCost-1); err == nil {
+		t.Fatal("positive cost below MinPasswordCost should fail")
+	}
+}
+
+func TestGenerateSessionTokenUniqueAndHashed(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 64; i++ {
+		token, err := GenerateSessionToken()
+		if err != nil {
+			t.Fatalf("GenerateSessionToken: %v", err)
+		}
+		if len(token) != 64 {
+			t.Fatalf("token length = %d, want 64 hex chars", len(token))
+		}
+		if seen[token] {
+			t.Fatalf("duplicate session token generated: %q", token)
+		}
+		seen[token] = true
+
+		hash := HashSessionToken(token)
+		if hash == token || strings.Contains(hash, token) {
+			t.Fatal("session token hash must not contain the plaintext token")
+		}
+		if len(hash) != 64 {
+			t.Fatalf("session token hash length = %d, want 64 hex chars", len(hash))
+		}
+		if hash != HashSessionToken(token) {
+			t.Fatal("session token hash should be stable for the same token")
+		}
+	}
+}
