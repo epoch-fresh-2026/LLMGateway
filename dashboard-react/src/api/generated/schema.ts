@@ -609,6 +609,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["registerAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["loginAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["logoutAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCurrentAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -768,6 +832,18 @@ export interface components {
             status: number;
             channels: components["schemas"]["CatalogChannel"][];
         };
+        Account: {
+            id: number;
+            username: string;
+            nickname: string;
+        };
+        AuthCredentialsInput: {
+            username: string;
+            password: string;
+        };
+        AdminResponseAccount: {
+            data?: components["schemas"]["Account"];
+        } & components["schemas"]["AdminResponse"];
         User: {
             id: number;
             nickname: string;
@@ -1156,6 +1232,15 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["AdminError"];
+            };
+        };
+        /** @description Account */
+        Account: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["AdminResponseAccount"];
             };
         };
         /** @description Stats */
@@ -2322,6 +2407,76 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["QuotaUsageList"];
+        };
+    };
+    registerAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthCredentialsInput"];
+            };
+        };
+        responses: {
+            200: components["responses"]["Account"];
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    loginAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthCredentialsInput"];
+            };
+        };
+        responses: {
+            200: components["responses"]["Account"];
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+        };
+    };
+    logoutAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Logged out */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+        };
+    };
+    getCurrentAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["Account"];
+            401: components["responses"]["Error"];
         };
     };
     health: {

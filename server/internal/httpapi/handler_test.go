@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/httpcommon"
 	"LLMGateway/server/internal/testutil/storefake"
 )
@@ -82,30 +84,19 @@ func TestDashboardStartupEndpoints(t *testing.T) {
 	}
 }
 
-func TestAdminCORS(t *testing.T) {
+func TestAdminSameOriginNoCORSReflection(t *testing.T) {
 	server := newTestServer()
 
+	// Same-origin deployment must not reflect arbitrary Origins.
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/admin/stats/overview", nil)
 	req.Header.Set("Origin", "http://example.test")
 	server.Admin(res, req)
 	if res.Code != http.StatusOK {
-		t.Fatalf("GET status = %d, want %d", res.Code, http.StatusOK)
+		t.Fatalf("GET status = %d, want %d; body=%s", res.Code, http.StatusOK, res.Body.String())
 	}
-	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "http://example.test" {
-		t.Fatalf("GET Access-Control-Allow-Origin = %q", got)
-	}
-
-	res = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodOptions, "/admin/stats/overview", nil)
-	req.Header.Set("Origin", "http://example.test")
-	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
-	server.Admin(res, req)
-	if res.Code != http.StatusNoContent {
-		t.Fatalf("OPTIONS status = %d, want %d", res.Code, http.StatusNoContent)
-	}
-	if got := res.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, http.MethodGet) || !strings.Contains(got, http.MethodOptions) {
-		t.Fatalf("OPTIONS Access-Control-Allow-Methods = %q", got)
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want empty for same-origin deployment", got)
 	}
 }
 
@@ -121,8 +112,20 @@ func TestPaginationParsing(t *testing.T) {
 	}
 }
 
+// newTestServer builds a server for business-behaviour tests; session
+// enforcement is disabled so tests can focus on their target behaviour.
 func newTestServer() *Server {
-	return NewServer(storefake.New(), WithCipher(testCipher()))
+	server := newEnforcedTestServer()
+	server.enforceSession = false
+	return server
+}
+
+// newEnforcedTestServer builds a server with session enforcement enabled and
+// cheap bcrypt, for auth/enforcement tests.
+func newEnforcedTestServer() *Server {
+	return NewServer(storefake.New(),
+		WithCipher(testCipher()),
+		WithSessionConfig(time.Hour, false, true, crypto.MinPasswordCost))
 }
 
 func assertListResponse(t *testing.T, data map[string]any) {

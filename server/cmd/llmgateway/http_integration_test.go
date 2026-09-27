@@ -6,12 +6,17 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/httpapi"
 	"LLMGateway/server/internal/testutil/storefake"
 )
+
+// cmdSessionCookies caches one registered session cookie per test server so the
+// request helpers can authenticate against the session-protected /admin API.
+var cmdSessionCookies sync.Map
 
 type httpAdminEnvelope struct {
 	Code    int             `json:"code"`
@@ -155,7 +160,12 @@ func TestHTTPIntegrationMutationAndDeleteBody(t *testing.T) {
 
 func getHTTP(t *testing.T, server *httptest.Server, path string) *http.Response {
 	t.Helper()
-	res, err := server.Client().Get(server.URL + path)
+	req, err := http.NewRequest(http.MethodGet, server.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(sessionCookie(t, server))
+	res, err := server.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,11 +183,43 @@ func sendHTTPJSON(t *testing.T, server *httptest.Server, method, path string, bo
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(sessionCookie(t, server))
 	res, err := server.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return res
+}
+
+// sessionCookie registers a user on the integration server and returns the
+// resulting session cookie, caching it for the server's lifetime.
+func sessionCookie(t *testing.T, server *httptest.Server) *http.Cookie {
+	t.Helper()
+	if cached, ok := cmdSessionCookies.Load(server); ok {
+		return cached.(*http.Cookie)
+	}
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/admin/auth/register", bytes.NewReader([]byte(`{"username":"cmduser","password":"password123"}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(res.Body)
+		t.Fatalf("register integration session: status %d body=%s", res.StatusCode, body)
+	}
+	for _, cookie := range res.Cookies() {
+		if cookie.Name == "llmgateway_session" && cookie.Value != "" {
+			cmdSessionCookies.Store(server, cookie)
+			return cookie
+		}
+	}
+	t.Fatal("register integration session: no session cookie")
+	return nil
 }
 
 func assertHTTPStatus(t *testing.T, res *http.Response, want int) {

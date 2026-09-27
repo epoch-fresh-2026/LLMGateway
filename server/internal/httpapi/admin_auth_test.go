@@ -67,6 +67,26 @@ func TestAdminAuthFlow(t *testing.T) {
 	}
 }
 
+func TestAdminRoutesRequireSession(t *testing.T) {
+	server := newEnforcedTestServer()
+
+	anonymous := authRequest(t, server, http.MethodGet, "/admin/channels", nil, nil)
+	if anonymous.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous admin status = %d, want 401; body=%s", anonymous.Code, anonymous.Body.String())
+	}
+
+	registered := authRequest(t, server, http.MethodPost, "/admin/auth/register", map[string]any{"username": "enforced", "password": "password123"}, nil)
+	if registered.Code != http.StatusOK {
+		t.Fatalf("register status = %d, want 200; body=%s", registered.Code, registered.Body.String())
+	}
+	cookie := sessionCookieFrom(t, registered)
+
+	authed := authRequest(t, server, http.MethodGet, "/admin/channels", nil, cookie)
+	if authed.Code != http.StatusOK {
+		t.Fatalf("authenticated admin status = %d, want 200; body=%s", authed.Code, authed.Body.String())
+	}
+}
+
 func TestAdminAuthRegistrationDisabled(t *testing.T) {
 	server := NewServer(storefake.New(),
 		WithCipher(testCipher()),
