@@ -219,7 +219,3 @@ func matchesTarget(rule ratelimit.RateLimitRuleDTO, auth *accounts.AuthContext, 
 		return false
 	}
 }
-
-func rpmOverride(raw json.RawMessage) int64 {
-	return parseRateLimitOverrides(raw).RPM
-}
