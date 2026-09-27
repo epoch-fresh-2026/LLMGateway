@@ -5,6 +5,10 @@ info:
   description: Machine-readable contract for the Dashboard management API.
 servers:
   - url: /
+# All management endpoints use the server-side session cookie. The auth
+# endpoints opt out with `security: []` so clients can log in.
+security:
+  - cookieAuth: []
 paths:
   /admin/stats/overview:
     get:
@@ -250,11 +254,35 @@ paths:
       operationId: listQuotaUsage
       parameters: [$ref: '#/components/parameters/Page', $ref: '#/components/parameters/PageSize']
       responses: { '200': { $ref: '#/components/responses/QuotaUsageList' } }
+  /admin/auth/register:
+    post:
+      operationId: registerAccount
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AuthCredentialsInput' } } } }
+      responses: { '200': { $ref: '#/components/responses/Account' }, '400': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' } }
+  /admin/auth/login:
+    post:
+      operationId: loginAccount
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AuthCredentialsInput' } } } }
+      responses: { '200': { $ref: '#/components/responses/Account' }, '400': { $ref: '#/components/responses/Error' }, '401': { $ref: '#/components/responses/Error' } }
+  /admin/auth/logout:
+    post:
+      operationId: logoutAccount
+      security: []
+      responses: { '200': { description: Logged out, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponse' } } } }, '401': { $ref: '#/components/responses/Error' } }
+  /admin/auth/me:
+    get:
+      operationId: getCurrentAccount
+      security: []
+      responses: { '200': { $ref: '#/components/responses/Account' }, '401': { $ref: '#/components/responses/Error' } }
   /healthz:
     get:
       operationId: health
       responses: { '200': { description: Healthy, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, const: ok } } } } } } }
 components:
+  securitySchemes:
+    cookieAuth: { type: apiKey, in: cookie, name: llmgateway_session }
   parameters:
     Id: { in: path, name: id, required: true, schema: { type: integer } }
     ModelId: { in: path, name: modelId, required: true, schema: { type: integer } }
@@ -268,6 +296,7 @@ components:
     GroupBy: { in: query, name: group_by, required: true, schema: { type: string, enum: [user, api_key, model, channel] } }
   responses:
     Error: { description: Error, content: { application/json: { schema: { $ref: '#/components/schemas/AdminError' } } } }
+    Account: { description: Account, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseAccount' } } } }
     Stats: { description: Stats, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseStats' } } } }
     Balance: { description: Balance, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseBalance' } } } }
     BalanceAfter: { description: Balance after, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseBalanceAfter' } } } }
@@ -322,6 +351,9 @@ components:
     DeletePricingInput: { type: object, required: [channel_id, model_name], properties: { channel_id: { type: integer }, model_name: { type: string } } }
     CatalogChannel: { type: object, required: [channel_id, channel_name, upstream_model, enabled], properties: { channel_id: { type: integer }, channel_name: { type: string }, upstream_model: { type: string }, enabled: { type: boolean } } }
     CatalogModel: { type: object, required: [model_name, status, channels], properties: { model_name: { type: string }, status: { type: integer }, channels: { type: array, items: { $ref: '#/components/schemas/CatalogChannel' } } } }
+    Account: { type: object, required: [id, username, nickname], properties: { id: { type: integer }, username: { type: string }, nickname: { type: string } } }
+    AuthCredentialsInput: { type: object, required: [username, password], properties: { username: { type: string, minLength: 3, maxLength: 64 }, password: { type: string, minLength: 8, maxLength: 72, writeOnly: true } } }
+    AdminResponseAccount: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Account' } } }
     User: { type: object, required: [id, nickname, user_group, status, balance], properties: { id: { type: integer }, nickname: { type: string }, user_group: { type: string }, status: { type: string, enum: [active, suspended] }, balance: { $ref: '#/components/schemas/Balance' } } }
     UserCreateInput: { type: object, required: [nickname], properties: { nickname: { type: string }, user_group: { type: string }, status: { type: string, enum: [active, suspended] }, password: { type: string, writeOnly: true } } }
     UserUpdateInput: { type: object, properties: { nickname: { type: string }, user_group: { type: string }, password: { type: string, writeOnly: true } } }

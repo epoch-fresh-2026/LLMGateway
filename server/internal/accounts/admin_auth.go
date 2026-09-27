@@ -107,6 +107,13 @@ func (a *Server) clearSessionCookie() *http.Cookie {
 	}
 }
 
+// AuthenticateRequest resolves the session cookie on r to its account. It keeps
+// the cookie name private to this package so the HTTP layer stays free of
+// session transport details.
+func (a *Server) AuthenticateRequest(r *http.Request) (Account, error) {
+	return a.AuthenticateSession(r.Context(), sessionTokenFromRequest(r))
+}
+
 func sessionTokenFromRequest(r *http.Request) string {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {

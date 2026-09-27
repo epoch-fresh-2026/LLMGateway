@@ -3,6 +3,9 @@ import type { components } from '../api/generated/schema'
 export type AdminResponse<T> = { code: number; message: string; data: T }
 export type ListResponse<T> = { list: T[]; total: number }
 
+export type Account = components['schemas']['Account']
+export type AuthCredentialsInput = components['schemas']['AuthCredentialsInput']
+
 export type Balance = components['schemas']['Balance']
 export type User = components['schemas']['User']
 export type UserCreateInput = components['schemas']['UserCreateInput']

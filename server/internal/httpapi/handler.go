@@ -33,6 +33,9 @@ type Server struct {
 	ratelimit *ratelimit.Server
 	quota     *quota.Server
 	adminMux  *http.ServeMux
+	// enforceSession guards /admin with the session middleware. Tests that
+	// target business behaviour rather than auth clear it directly.
+	enforceSession bool
 }
 
 // Port is the process assembly contract. Each business server receives its
@@ -196,15 +199,16 @@ func NewServer(st Port, opts ...Option) *Server {
 	usageServer := usage.New(st)
 	usageServer.RegisterAdminRoutes(adminMux)
 	return &Server{
-		store:     st,
-		client:    client,
-		proxy:     proxyService,
-		catalog:   catalogServer,
-		accounts:  accountsServer,
-		usage:     usageServer,
-		ratelimit: ratelimitServer,
-		quota:     quotaServer,
-		adminMux:  adminMux,
+		store:          st,
+		client:         client,
+		proxy:          proxyService,
+		catalog:        catalogServer,
+		accounts:       accountsServer,
+		usage:          usageServer,
+		ratelimit:      ratelimitServer,
+		quota:          quotaServer,
+		adminMux:       adminMux,
+		enforceSession: true,
 	}
 }
 
@@ -229,30 +233,19 @@ func (a *Server) ReapExpiredSessions(ctx context.Context, limit int) (int, error
 	return a.accounts.ReapExpiredSessions(ctx, limit)
 }
 
-// Admin handles the /admin management API.
+// Admin handles the /admin management API. All routes require a valid session
+// except /admin/auth/*; the deployment is same-origin, so no CORS headers are
+// emitted.
 func (a *Server) Admin(w http.ResponseWriter, r *http.Request) {
-	writeCORSHeaders(w, r)
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
+	if !a.enforceSession {
+		a.adminMux.ServeHTTP(w, r)
 		return
 	}
-
-	a.adminMux.ServeHTTP(w, r)
+	a.requireSession(a.adminMux).ServeHTTP(w, r)
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter) {
 	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-}
-
-func writeCORSHeaders(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return
-	}
-	w.Header().Set("Access-Control-Allow-Origin", origin)
-	w.Header().Set("Vary", "Origin")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

@@ -88,6 +88,8 @@ GET /admin/models
 
 浏览器登录使用服务端 Session + HttpOnly Cookie：`llmgateway_session`。请求不需要额外认证头，浏览器会自动携带 Cookie。
 
+除 `/admin/auth/*` 外，所有 `/admin` 接口都要求有效会话；未登录、会话过期或已登出统一返回 401。部署为同源，网关不返回 CORS 头，也不反射任意 Origin。
+
 Cookie 属性为 `HttpOnly; SameSite=Lax; Path=/`；`Secure` 由 `SESSION_COOKIE_SECURE` 控制；有效期由 `SESSION_TTL_SECONDS` 控制。
 
 ### POST /admin/auth/register

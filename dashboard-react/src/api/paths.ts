@@ -40,4 +40,8 @@ export const apiPaths = {
   quotaPolicies: () => admin('/admin/quota-policies'),
   quotaPolicy: (id: number) => admin(`/admin/quota-policies/${id}` as `/admin/quota-policies/${number}`),
   quotaUsage: () => admin('/admin/quota-usage'),
+  authRegister: () => admin('/admin/auth/register'),
+  authLogin: () => admin('/admin/auth/login'),
+  authLogout: () => admin('/admin/auth/logout'),
+  authMe: () => admin('/admin/auth/me'),
 } as const
