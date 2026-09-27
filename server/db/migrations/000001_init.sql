@@ -7,6 +7,36 @@
 -- must be recreated, e.g. `docker compose -f deployments/docker-compose.yml
 -- down -v`.
 
+CREATE TABLE users (
+    id BIGSERIAL PRIMARY KEY,
+    -- username/password_hash back self-service login. They stay nullable until
+    -- the admin-only user CRUD path is removed; only rows created through the
+    -- auth flow carry credentials. The partial unique index enforces uniqueness
+    -- for credential rows without blocking legacy rows.
+    username TEXT,
+    nickname TEXT NOT NULL DEFAULT '',
+    user_group TEXT NOT NULL DEFAULT 'default',
+    status TEXT NOT NULL DEFAULT 'active',
+    password_hash TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (status IN ('active', 'suspended'))
+);
+
+CREATE UNIQUE INDEX users_username_unique ON users (username) WHERE username IS NOT NULL;
+
+-- Server-side browser sessions. Only the SHA-256 hash of the session token is
+-- stored, never the plaintext delivered as an HttpOnly cookie.
+CREATE TABLE sessions (
+    id BIGSERIAL PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
+
 CREATE TABLE channels (
     id BIGSERIAL PRIMARY KEY,
     -- Every channel is private to exactly one user; /v1 only routes to the
@@ -49,36 +79,6 @@ CREATE TABLE model_pricing (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (channel_id, model_name)
 );
-
-CREATE TABLE users (
-    id BIGSERIAL PRIMARY KEY,
-    -- username/password_hash back self-service login. They stay nullable until
-    -- the admin-only user CRUD path is removed; only rows created through the
-    -- auth flow carry credentials. The partial unique index enforces uniqueness
-    -- for credential rows without blocking legacy rows.
-    username TEXT,
-    nickname TEXT NOT NULL DEFAULT '',
-    user_group TEXT NOT NULL DEFAULT 'default',
-    status TEXT NOT NULL DEFAULT 'active',
-    password_hash TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (status IN ('active', 'suspended'))
-);
-
-CREATE UNIQUE INDEX users_username_unique ON users (username) WHERE username IS NOT NULL;
-
--- Server-side browser sessions. Only the SHA-256 hash of the session token is
--- stored, never the plaintext delivered as an HttpOnly cookie.
-CREATE TABLE sessions (
-    id BIGSERIAL PRIMARY KEY,
-    token_hash TEXT NOT NULL UNIQUE,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
 
 CREATE TABLE user_balances (
     user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
