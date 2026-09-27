@@ -9,12 +9,8 @@ import (
 // orchestration. Multistep and rule-bearing operations live on Server and use
 // a TxManager.
 type Port interface {
-	ListUsers(ctx context.Context, page, pageSize int) (ListResponse[UserDTO], error)
-	GetUserBalance(ctx context.Context, id int) (BalanceDTO, error)
-	ListBalanceTransactions(ctx context.Context, userID, page, pageSize int) (ListResponse[BalanceTransactionDTO], error)
-
-	ListUserKeys(ctx context.Context, userID, page, pageSize int) (ListResponse[ClientKeyDTO], error)
-	ListKeys(ctx context.Context, page, pageSize int) (ListResponse[ClientKeyDTO], error)
+	// ListKeys lists the gateway keys owned by userID.
+	ListKeys(ctx context.Context, userID, page, pageSize int) (ListResponse[ClientKeyDTO], error)
 
 	// AuthenticateKey looks up a gateway key by its hash and returns the raw
 	// key + user authentication state. Missing keys return ErrNotFound.
@@ -25,6 +21,9 @@ type Port interface {
 	// GetUserCredentialsByUsername reads the login identity for a username.
 	// Missing usernames return ErrNotFound.
 	GetUserCredentialsByUsername(ctx context.Context, username string) (Credentials, error)
+	// GetUserCredentialsByID reads the login identity for a user id, used by
+	// profile password changes. Missing users return ErrNotFound.
+	GetUserCredentialsByID(ctx context.Context, id int) (Credentials, error)
 	// GetAccountByID reads the self-view of a user. Missing users return ErrNotFound.
 	GetAccountByID(ctx context.Context, id int) (Account, error)
 	// GetSessionByTokenHash returns the live session for a token hash. Expired
@@ -42,19 +41,8 @@ type Port interface {
 // rules or multi-step flows, which belong to Server.
 type Tx interface {
 	GetUser(id int) (User, error)
-	InsertUser(nickname, group, status string) (User, error)
-	InsertUserBalance(userID int) error
-	UpdateUser(id int, nickname, group string) (User, bool, error)
-	UpdateUserStatus(id int, status string) (User, bool, error)
-	DeleteUser(id int) (bool, error)
-
-	LockUserBalance(userID int) error
-	GetUserBalanceText(userID int) (string, error)
-	UpdateUserBalance(userID int, available string) (bool, error)
-	InsertBalanceTransaction(in BalanceTransactionInput) error
-	// GetBalanceTransactionByOrder returns the stored balance_after for an
-	// idempotency key, or found=false when no transaction matches.
-	GetBalanceTransactionByOrder(userID int, orderID string) (balanceAfter string, found bool, err error)
+	UpdateNickname(id int, nickname string) (bool, error)
+	UpdatePassword(id int, passwordHash string) (bool, error)
 
 	InsertUserWithCredentials(in CredentialsInput) (Account, error)
 	InsertSession(in SessionInput) (int, error)
@@ -76,16 +64,6 @@ type Tx interface {
 // TxManager runs fn inside a single database transaction.
 type TxManager interface {
 	InTx(ctx context.Context, fn func(Tx) error) error
-}
-
-// BalanceTransactionInput describes a balance ledger entry to persist.
-type BalanceTransactionInput struct {
-	UserID         int
-	TxType         string
-	Amount         string
-	BalanceAfter   string
-	RelatedOrderID string
-	Description    string
 }
 
 // KeyInsert describes a gateway key row to persist. KeyHash must already be a

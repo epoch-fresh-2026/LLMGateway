@@ -13,7 +13,7 @@ import (
 
 func TestPGRegisterLoginSession(t *testing.T) {
 	st := testStore(t)
-	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	now := time.Now()
 	acc := accounts.New(st, st.AccountsTx(),
 		accounts.WithClock(func() time.Time { return now }),
 		accounts.WithAuthConfig(accounts.AuthConfig{
@@ -61,7 +61,7 @@ func TestPGRegisterLoginSession(t *testing.T) {
 
 func TestPGSessionExpiryAndReap(t *testing.T) {
 	st := testStore(t)
-	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	now := time.Now()
 	acc := accounts.New(st, st.AccountsTx(),
 		accounts.WithClock(func() time.Time { return now }),
 		accounts.WithAuthConfig(accounts.AuthConfig{

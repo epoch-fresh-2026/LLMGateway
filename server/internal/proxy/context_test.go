@@ -48,14 +48,8 @@ func TestDetachedCtxHonorsTimeout(t *testing.T) {
 func TestSettleCompletesDespiteCanceledParent(t *testing.T) {
 	st := storefake.New()
 	cat := newTestCatalog(st)
-	acc := accounts.New(st, st.AccountsTx())
-	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
-		t.Fatal(err)
-	}
-	channel, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	balance := "10.000000"
+	channel, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Balance: &balance})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,11 +58,11 @@ func TestSettleCompletesDespiteCanceledParent(t *testing.T) {
 	cancel()
 
 	usageID, err := newSettlementService(st).Settle(ctx, settlement.Input{
-		UserID:      1,
-		ChannelID:   &channel.ID,
-		Cost:        "1.250000",
-		Description: "chat completion req-canceled",
-		UsageLog:    successUsageInput("req-canceled", 1, channel.ID),
+		UserID:       1,
+		ChannelID:    &channel.ID,
+		Cost:         "1.250000",
+		DebitChannel: true,
+		UsageLog:     successUsageInput("req-canceled", 1, channel.ID),
 	})
 	if err != nil {
 		t.Fatalf("Settle with canceled parent: %v", err)
@@ -76,9 +70,12 @@ func TestSettleCompletesDespiteCanceledParent(t *testing.T) {
 	if usageID == 0 {
 		t.Fatal("usage id not returned")
 	}
-	balance, _ := st.GetUserBalance(context.Background(), 1)
-	if balance.AvailableBalance != "8.750000" {
-		t.Fatalf("user balance = %s, want 8.750000 after canceled-parent settlement", balance.AvailableBalance)
+	secret, err := cat.GetChannelSecret(context.Background(), 1, channel.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Balance == nil || *secret.Balance != "8.750000" {
+		t.Fatalf("channel balance = %v, want 8.750000 after canceled-parent settlement", secret.Balance)
 	}
 	logs, _ := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if logs.Total != 1 || logs.List[0].RequestID != "req-canceled" {

@@ -74,7 +74,8 @@ func TestDashboardStartupEndpoints(t *testing.T) {
 		{"/admin/channels?page=1&page_size=100", nil, true},
 		{"/admin/stats/channels?start_time=2026-09-16T10:00:00Z&end_time=2026-09-16T11:00:00Z", []string{"list"}, false},
 		{"/admin/usage-logs?page=1&page_size=20", nil, true},
-		{"/admin/users?page=1&page_size=100", nil, true},
+		{"/admin/profile", []string{"id", "username", "nickname"}, false},
+		{"/admin/keys?page=1&page_size=100", nil, true},
 		{"/admin/rate-limits?page=1&page_size=100&enabled=true", nil, true},
 		{"/admin/models?status=1", nil, true},
 		{"/admin/quota-policies?page=1&page_size=100", nil, true},
@@ -154,7 +155,9 @@ func newTestServer() *Server {
 // newEnforcedTestServer builds a server with session enforcement enabled and
 // cheap bcrypt, for auth/enforcement tests.
 func newEnforcedTestServer() *Server {
-	return NewServer(storefake.New(),
+	st := storefake.New()
+	st.SeedUser("testuser", "hash")
+	return NewServer(st,
 		WithCipher(testCipher()),
 		WithSessionConfig(time.Hour, false, true, crypto.MinPasswordCost))
 }

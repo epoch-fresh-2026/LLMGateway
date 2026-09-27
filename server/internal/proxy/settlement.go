@@ -4,18 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"LLMGateway/server/internal/accounts"
 	apperrors "LLMGateway/server/internal/errors"
 	"LLMGateway/server/internal/money"
 	settlement "LLMGateway/server/internal/proxy/settlement"
 )
 
 // Settle atomically settles a successful chat completion: quota reservation,
-// user debit, optional channel debit and the success usage log. It returns the
-// created usage log id.
+// optional approximate channel debit and the success usage log. It returns the
+// created usage log id. Users are not billed.
 //
 // The transaction runs detached from the request context so a canceled
-// downstream request cannot abort a charge for work the upstream already
+// downstream request cannot abort bookkeeping for work the upstream already
 // performed. It is bounded by settleTimeout so it cannot hang on locks.
 func (a *Service) Settle(ctx context.Context, in settlement.Input) (int, error) {
 	cost, err := money.Parse6(in.Cost)
@@ -30,41 +29,6 @@ func (a *Service) Settle(ctx context.Context, in settlement.Input) (int, error) 
 	err = a.settleTx.InTx(settleCtx, func(tx settlement.Tx) error {
 		if err := tx.SettleQuotaReservation(in.ReservationID, in.UsageLog.RequestID, in.UserID, in.APIKeyID, int64(in.UsageLog.TotalTokens), money.Format6(cost)); err != nil {
 			return err
-		}
-
-		if err := tx.LockUserBalance(in.UserID); err != nil {
-			return err
-		}
-		currentText, err := tx.GetUserBalanceText(in.UserID)
-		if err != nil {
-			return err
-		}
-		current, err := money.Parse6(currentText)
-		if err != nil {
-			return fmt.Errorf("%w: invalid balance", apperrors.ErrInvalid)
-		}
-		if cost.Cmp(0) > 0 && current.Cmp(cost) < 0 {
-			return fmt.Errorf("%w: insufficient balance", apperrors.ErrInvalid)
-		}
-
-		if cost.Cmp(0) > 0 {
-			next := money.Format6(current.Sub(cost))
-			ok, err := tx.UpdateUserBalance(in.UserID, next)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				return apperrors.ErrNotFound
-			}
-			if err := tx.InsertBalanceTransaction(accounts.BalanceTransactionInput{
-				UserID:       in.UserID,
-				TxType:       "consume",
-				Amount:       money.Format6(cost),
-				BalanceAfter: next,
-				Description:  in.Description,
-			}); err != nil {
-				return err
-			}
 		}
 
 		if in.DebitChannel && cost.Cmp(0) > 0 {

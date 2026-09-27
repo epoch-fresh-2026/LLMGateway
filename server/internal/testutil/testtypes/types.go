@@ -50,13 +50,7 @@ const (
 )
 
 type User = accounts.User
-type UserDTO = accounts.UserDTO
-type BalanceDTO = accounts.BalanceDTO
-type BalanceUpdateDTO = accounts.BalanceUpdateDTO
-type UserInput = accounts.UserInput
-type UserStatusInput = accounts.UserStatusInput
-type RechargeInput = accounts.RechargeInput
-type BalanceTransactionDTO = accounts.BalanceTransactionDTO
+type ProfileUpdateInput = accounts.ProfileUpdateInput
 type ClientKey = accounts.ClientKey
 type ClientKeyDTO = accounts.ClientKeyDTO
 type KeySecretDTO = accounts.KeySecretDTO

@@ -22,7 +22,7 @@ func TestAdminSuccessEnvelopeContract(t *testing.T) {
 		{name: "channel stats", path: "/admin/stats/channels?start_time=2026-09-16T10:00:00Z&end_time=2026-09-16T11:00:00Z", list: true},
 		{name: "usage aggregates", path: "/admin/stats/usage?group_by=model&page=1&page_size=100", list: true},
 		{name: "usage logs", path: "/admin/usage-logs?page=1&page_size=20", list: true},
-		{name: "users", path: "/admin/users?page=1&page_size=100", list: true},
+		{name: "profile", path: "/admin/profile"},
 		{name: "keys", path: "/admin/keys?page=1&page_size=100", list: true},
 		{name: "rate limits", path: "/admin/rate-limits?page=1&page_size=100", list: true},
 		{name: "models", path: "/admin/models?status=1&page=1&page_size=100", list: true},
@@ -63,16 +63,7 @@ func TestAdminMutationResponseContract(t *testing.T) {
 	assertFields(t, pricing, "id", "channel_id", "channel_name", "model_name", "upstream_model", "input_price_per_1m", "output_price_per_1m", "cached_input_price_per_1m", "currency")
 	assertStringFields(t, pricing, "input_price_per_1m", "output_price_per_1m", "cached_input_price_per_1m")
 
-	user := assertAdminSuccess(t, adminRaw(t, server, http.MethodPost, "/admin/users", map[string]any{"nickname": "Contract User"}))
-	assertFields(t, user, "id", "nickname", "user_group", "status", "balance")
-	balance, ok := user["balance"].(map[string]any)
-	if !ok {
-		t.Fatalf("balance type = %T, want object", user["balance"])
-	}
-	assertFields(t, balance, "available_balance", "frozen_balance")
-	assertStringFields(t, balance, "available_balance", "frozen_balance")
-
-	key := assertAdminSuccess(t, adminRaw(t, server, http.MethodPost, "/admin/users/1/keys", map[string]any{"key_name": "contract", "prefix": "sk-"}))
+	key := assertAdminSuccess(t, adminRaw(t, server, http.MethodPost, "/admin/keys", map[string]any{"key_name": "contract", "prefix": "sk-"}))
 	assertFields(t, key, "id", "full_key")
 	fullKey, ok := key["full_key"].(string)
 	if !ok || fullKey == "" {
@@ -105,9 +96,9 @@ func TestAdminErrorEnvelopeContract(t *testing.T) {
 		status int
 	}{
 		{name: "unknown route", method: http.MethodGet, path: "/admin/does-not-exist", status: http.StatusNotFound},
-		{name: "method not allowed", method: http.MethodPatch, path: "/admin/users", status: http.StatusMethodNotAllowed},
-		{name: "invalid json", method: http.MethodPost, path: "/admin/users", body: []byte("{"), status: http.StatusBadRequest},
-		{name: "invalid amount", method: http.MethodPost, path: "/admin/users/1/recharge", body: jsonBody(map[string]any{"amount": "not-money"}), status: http.StatusBadRequest},
+		{name: "method not allowed", method: http.MethodPatch, path: "/admin/rate-limits", status: http.StatusMethodNotAllowed},
+		{name: "invalid json", method: http.MethodPut, path: "/admin/profile", body: []byte("{"), status: http.StatusBadRequest},
+		{name: "invalid amount", method: http.MethodPost, path: "/admin/channels", body: jsonBody(map[string]any{"name": "x", "base_url": "https://x.test", "api_key": "sk", "status": 1, "balance": "not-money"}), status: http.StatusBadRequest},
 	}
 
 	for _, tt := range tests {

@@ -187,7 +187,7 @@ func TestAdminEntrypointsStayInBusinessModules(t *testing.T) {
 		assertFileExists(t, filepath.Join(root, "internal", "catalog", name))
 		assertFileMissing(t, filepath.Join(root, "internal", "httpapi", name))
 	}
-	for _, name := range []string{"admin_user.go", "admin_key.go"} {
+	for _, name := range []string{"admin_key.go", "admin_auth.go"} {
 		assertFileExists(t, filepath.Join(root, "internal", "accounts", name))
 		assertFileMissing(t, filepath.Join(root, "internal", "httpapi", name))
 	}

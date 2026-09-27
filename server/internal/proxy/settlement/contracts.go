@@ -6,11 +6,12 @@ package settlement
 import (
 	"context"
 
-	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/usage"
 )
 
-// Input describes a successful chat completion to settle.
+// Input describes a successful chat completion to settle. Users are no longer
+// billed; settlement only applies the approximate channel cost, the quota
+// reservation and the usage log.
 type Input struct {
 	ReservationID int64
 	UserID        int
@@ -18,19 +19,13 @@ type Input struct {
 	ChannelID     *int
 	Cost          string
 	DebitChannel  bool
-	Description   string
 	UsageLog      usage.UsageLogInput
 }
 
 // Tx is the transaction-scoped persistence surface for settlement. It exposes
-// only CRUD/locking primitives; the atomic order and the insufficient-balance
-// decision belong to the proxy orchestration.
+// only CRUD/locking primitives; the atomic order belongs to the proxy
+// orchestration.
 type Tx interface {
-	LockUserBalance(userID int) error
-	GetUserBalanceText(userID int) (string, error)
-	UpdateUserBalance(userID int, available string) (bool, error)
-	InsertBalanceTransaction(in accounts.BalanceTransactionInput) error
-
 	LockChannel(userID, channelID int) error
 	GetChannelBalanceText(userID, channelID int) (string, error)
 	UpdateChannelBalance(userID, channelID int, balance string) (bool, error)

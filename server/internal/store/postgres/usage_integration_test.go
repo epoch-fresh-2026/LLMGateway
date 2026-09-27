@@ -16,12 +16,8 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	acc := accounts.New(st, st.AccountsTx())
 	ctx := context.Background()
 
-	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "A"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "B"}); err != nil {
-		t.Fatal(err)
-	}
+	testOwner(t, st)
+	testOwner(t, st)
 	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -138,13 +134,8 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 func TestPGCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {
 	st := testStore(t)
 	cat := testCatalog(t, st)
-	acc := accounts.New(st, st.AccountsTx())
-	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "A"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "B"}); err != nil {
-		t.Fatal(err)
-	}
+	testOwner(t, st)
+	testOwner(t, st)
 	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "A", BaseURL: "https://a.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -176,9 +167,7 @@ func TestPGCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {
 func TestPGAggregateUsageFiltersByAPIKey(t *testing.T) {
 	st := testStore(t)
 	acc := accounts.New(st, st.AccountsTx())
-	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "A"}); err != nil {
-		t.Fatal(err)
-	}
+	testOwner(t, st)
 	keyA, err := acc.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "A"})
 	if err != nil {
 		t.Fatal(err)
@@ -219,14 +208,9 @@ func TestPGAggregateUsageFiltersByAPIKey(t *testing.T) {
 
 func TestPGUsageOwnerIsolation(t *testing.T) {
 	st := testStore(t)
-	acc := accounts.New(st, st.AccountsTx())
 	ctx := context.Background()
-	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "one"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "two"}); err != nil {
-		t.Fatal(err)
-	}
+	testOwner(t, st)
+	testOwner(t, st)
 	if _, err := st.InsertUsageLog(ctx, domain.UsageLogInput{RequestID: "one", UserID: intp(1), Model: "gpt", Status: "success", TotalTokens: 10}); err != nil {
 		t.Fatal(err)
 	}

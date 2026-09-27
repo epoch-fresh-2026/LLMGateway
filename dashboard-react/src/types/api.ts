@@ -5,14 +5,7 @@ export type ListResponse<T> = { list: T[]; total: number }
 
 export type Account = components['schemas']['Account']
 export type AuthCredentialsInput = components['schemas']['AuthCredentialsInput']
-
-export type Balance = components['schemas']['Balance']
-export type User = components['schemas']['User']
-export type UserCreateInput = components['schemas']['UserCreateInput']
-export type UserUpdateInput = components['schemas']['UserUpdateInput']
-export type UserStatusInput = { status: User['status'] }
-export type BalanceTransaction = components['schemas']['BalanceTransaction']
-export type RechargeInput = components['schemas']['RechargeInput']
+export type ProfileUpdateInput = components['schemas']['ProfileUpdateInput']
 
 export type ClientKey = components['schemas']['Key']
 export type KeyCreateInput = components['schemas']['KeyCreateInput']

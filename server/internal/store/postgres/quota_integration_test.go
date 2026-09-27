@@ -81,7 +81,7 @@ func TestPGQuotaReleaseAndSettlementMoveReservedToUsed(t *testing.T) {
 	usage.TotalTokens = 25
 	usage.TotalCost = "1.250000"
 	service := proxy.NewService(st, testCatalog(t, st), q, testRateLimit(t, st), nil, func(int) int { return 0 }, time.Now)
-	if _, err := service.Settle(context.Background(), settlement.Input{ReservationID: settled.ID, UserID: 1, APIKeyID: keyID, Cost: "1.250000", Description: "chat", UsageLog: usage}); err != nil {
+	if _, err := service.Settle(context.Background(), settlement.Input{ReservationID: settled.ID, UserID: 1, APIKeyID: keyID, Cost: "1.250000", UsageLog: usage}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -210,14 +210,9 @@ func TestPGQuotaPolicyOwnerIsolation(t *testing.T) {
 
 func createQuotaTestIdentity(t *testing.T, st *Store) (string, int) {
 	t.Helper()
+	owner := testOwner(t, st)
 	acc := accounts.New(st, st.AccountsTx())
-	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "quota-user"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "20.000000"}); err != nil {
-		t.Fatal(err)
-	}
-	key, err := acc.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "quota-key"})
+	key, err := acc.CreateKey(context.Background(), owner, domain.KeyInput{KeyName: "quota-key"})
 	if err != nil {
 		t.Fatal(err)
 	}

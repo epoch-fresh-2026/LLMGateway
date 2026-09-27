@@ -22,12 +22,8 @@ func TestRateLimitRejectsForeignTarget(t *testing.T) {
 	cat := newCatalog(st)
 	ctx := context.Background()
 
-	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "one"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "two"}); err != nil {
-		t.Fatal(err)
-	}
+	st.SeedUser("one", "hash")
+	st.SeedUser("two", "hash")
 	key1, err := acc.CreateKey(ctx, 1, domain.KeyInput{KeyName: "k1"})
 	if err != nil {
 		t.Fatal(err)

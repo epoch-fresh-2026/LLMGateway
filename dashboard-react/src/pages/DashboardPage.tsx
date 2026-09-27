@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listChannels, listChannelHealth, listModels, resetChannelHealth } from '../api/catalog'
 import { daily, logs, overview, usageStats } from '../api/usage'
 import { listRateLimits } from '../api/ratelimit'
-import { listUsers } from '../api/accounts'
 import { AsyncState } from '../components/feedback/AsyncState'
 import type { Channel, DailyStats, Health, Stats, UsageLog } from '../types/api'
 
@@ -41,7 +40,6 @@ export function DashboardPage() {
   const logsQuery = useQuery({ queryKey: ['logs'], queryFn: () => logs(), staleTime: 10_000 })
   const models = useQuery({ queryKey: ['models'], queryFn: () => listModels({ status: 1 }) })
   const limits = useQuery({ queryKey: ['rate-limits'], queryFn: () => listRateLimits() })
-  const users = useQuery({ queryKey: ['users'], queryFn: () => listUsers() })
   const modelUsage = useQuery({ queryKey: ['model-usage'], queryFn: () => usageStats({ group_by: 'model', page: 1, page_size: 100 }) })
   const stats = overviewQuery.data
   const dailyRows = dailyQuery.data?.list || []
@@ -69,7 +67,6 @@ export function DashboardPage() {
       <Panel title="实时请求日志" desc="usage_logs · 预冻结 → 按实际 usage 结算" className="span-8"><AsyncState loading={logsQuery.isLoading} error={logsQuery.error} hasData={Boolean(logsQuery.data)} onRetry={() => void logsQuery.refetch()} />{logsQuery.data && <LogTable logs={logRows} />}</Panel>
       <Panel title="错误画像" desc="近 7 天非成功请求聚合" className="span-4"><div className="error-list">{[...errorMap.entries()].map(([name, count]) => <div key={name}><span>{name}</span><b>{count}</b></div>)}{!errorMap.size && <div className="empty">暂无错误</div>}</div></Panel>
       <Panel title="限流配额水位" desc="rate_limit_rules · 当前消耗占比" className="span-4"><div className="progress-list">{(limits.data?.list || []).slice(0, 5).map(row => <Progress key={String(row.id)} label={row.rule_name} value={0} right={`0 / ${row.limit_value}`} />)}{!limits.data?.list?.length && <div className="empty">暂无启用规则</div>}</div></Panel>
-      <Panel title="用户余额 Top" desc="user_balances · 可用 / 冻结（美元）" className="span-4"><div className="user-list">{(users.data?.list || []).slice(0, 5).map(user => <div key={user.id}><span>{user.nickname || `User #${user.id}`}</span><b>${money(user.balance.available_balance)}</b></div>)}{!users.data?.list?.length && <div className="empty">暂无用户</div>}</div></Panel>
       <Panel title="系统事件" desc="熔断 · 结算 · 路由变更" className="span-4"><ul className="event-list"><li>渠道健康状态持续监控中</li><li>账单按实际 usage 结算</li><li>模型路由按优先级与权重执行</li></ul></Panel>
     </div>
   </>

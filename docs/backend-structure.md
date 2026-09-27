@@ -7,7 +7,7 @@ server/                             Go 模块根（go.mod / go.sum / sqlc.yaml�
 server/cmd/llmgateway/              进程入口与 HTTP 路由表（router.go）：config -> store -> httpapi -> http.Server
 server/internal/config/             环境变量配置读取，集中管理默认值
 server/internal/catalog/            目录、渠道、模型映射、定价、渠道连通性测试及其管理能力
-server/internal/accounts/           用户、余额、网关 Key、认证上下文及权限能力
+server/internal/accounts/           自助账户、资料、网关 Key、认证上下文及权限能力
 server/internal/usage/              用量日志、审计查询和统计能力
 server/internal/ratelimit/          限流规则管理和运行时限流能力
 server/internal/quota/              UTC 日/月 token/费用业务配额策略与管理能力
@@ -52,10 +52,10 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - PostgreSQL 是唯一运行时存储；`DATABASE_URL` 与 `CHANNEL_KEY_ENCRYPTION_KEY` 均为必填配置，缺失或非法时进程启动失败。
 - sqlc 查询写在 `server/db/queries/*.sql`，schema 写在 `server/db/migrations/*.sql`，生成代码输出到 `server/internal/db/sqlc`。
 - 不要手改 `server/internal/db/sqlc` 生成文件；修改 SQL 后运行 `sqlc generate`。
-- 初始 schema 覆盖渠道、模型映射、定价、用户、余额、Key、限流和用量日志，后续 issue 应优先扩展现有表而不是新建重复概念。
+- 初始 schema 覆盖渠道、模型映射、定价、用户（凭据）、Key、限流和用量日志；不含平台计费、余额、用户状态或分组，后续 issue 应优先扩展现有表而不是新建重复概念。
 - 统计接口（overview/daily/channels）在 `usage_logs` 上实时聚合，按 UTC 自然日分组；不存在 `daily_usage_stats` 表，因其未被使用且复合主键无法表达全局日汇总。
 - 进程启动时建立 pgxpool 连接、执行迁移并装配 PostgreSQL store，不提供无数据库运行模式。
-- PostgreSQL store 只实现持久化原语（CRUD/lock/query）与事务边界；渠道/健康、用户/Key/余额、配额、限流等规则与编排位于各自业务模块的 `Server`，跨聚合结算编排位于 `proxy`。
+- PostgreSQL store 只实现持久化原语（CRUD/lock/query）与事务边界；渠道/健康、凭据/Key、配额、限流等规则与编排位于各自业务模块的 `Server`，跨聚合结算编排位于 `proxy`。
 - 业务模块通过自身 `Port` 读取，通过模块自有的 `Tx`/`TxManager`（`InTx(ctx, func(Tx) error)`）在事务内编排写入；Store 不实现多步流程或业务判定。事务管理器以每模块一个适配器类型实现，经 `httpapi.Port` 的 `AccountsTx()`、`CatalogTx()`、`QuotaTx()`、`SettlementTx()` 注入。
 - `server/cmd/llmgateway` 使用 `http.Server` 并在收到 `SIGINT`/`SIGTERM` 后优雅关闭。
 - 金额能力集中在 `server/internal/money`，密钥能力集中在 `server/internal/crypto`；由业务模块（catalog/quota/accounts/proxy）使用，禁止重复实现金额解析或加密。`store/postgres` 不得 import `money`/`crypto`，只存取字符串与密文（由架构测试强制）。
@@ -82,7 +82,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 
 - 每个包内按领域命名文件，禁止把多个领域堆进同一个文件：
   - `server/internal/catalog/`：渠道、模型、定价、健康、失败原因、路由 DTO 和 catalog/health ports
-  - `server/internal/accounts/`：用户、余额、Key、认证 DTO 和 accounts port
+  - `server/internal/accounts/`：凭据、资料、Key、会话、认证 DTO 和 accounts port
   - `server/internal/usage/`：usage DTO、时间校验、结算输入和 usage port
   - `server/internal/ratelimit/`：限流规则、reservation、规范化规则和 ratelimit port
   - `server/internal/quota/`：配额策略、reservation、周期规则和 quota port
@@ -92,7 +92,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
   - `server/internal/testutil/storefake/`：测试专用 Store fake，仅供测试夹具使用
   - `server/cmd/llmgateway/`：`main.go`（装配与优雅关闭）、`router.go`（唯一 HTTP 路由表）
   - `server/internal/catalog/`：渠道、模型映射、定价和渠道连通性测试业务模块（HTTP 入口由顶层装配）
-  - `server/internal/accounts/`：用户、余额、网关 Key 和身份业务模块（HTTP 入口由顶层装配）
+  - `server/internal/accounts/`：自助账户、资料、网关 Key 和身份业务模块（HTTP 入口由顶层装配）
   - `server/internal/usage/`：用量日志、审计和统计业务模块（HTTP 入口由顶层装配）
   - `server/internal/ratelimit/`：限流规则和运行时限流业务模块（HTTP 入口由顶层装配）
   - `server/internal/httpapi/`：`handler.go`（顶层入口/分派/响应）、`openai.go`（/v1 分派与错误映射）
@@ -126,7 +126,7 @@ var _ catalog.Port = (*postgres.Store)(nil)
 - 认证使用 `Authorization: Bearer <gateway-key>`；密钥经 `server/internal/crypto.HashKey` 后查询，明文不落日志/响应。
 - 路由候选按 `priority` 越大越优先；同一 API Key 使用同一 public model 时，在最高优先级候选组内按 `APIKeyID + model` 稳定哈希结合 `weight` 选择粘性首选渠道。熔断渠道和余额低于全局 `CHANNEL_MIN_ROUTE_BALANCE` 的计费渠道被排除，未设置余额的渠道不受该阈值影响。首选渠道失败时仍按本次请求的候选顺序故障切换；未设置或设置为 `0` 时仍排除非正余额渠道。
 - 计费：缓存 token 已包含在 `prompt_tokens` 中，仅按 `(prompt_tokens - cached_tokens)` 计输入价，缓存部分计缓存价，避免重复计费。
-- 成功结算：非流式 chat completion 成功后通过 store 级 `SettleChatCompletion` 端口统一处理用户扣费、可扣费渠道余额扣减与 success usage log。PostgreSQL 实现在单一事务中提交；`last_used_at` 仍为成功响应后的 best-effort 更新。
+- 成功结算：非流式 chat completion 成功后通过 store 级结算端口统一处理可扣费渠道余额扣减（近似记账）、配额结算与 success usage log；不再对用户计费。PostgreSQL 实现在单一事务中提交；`last_used_at` 仍为成功响应后的 best-effort 更新。
 - 流式结算：`stream=true` 时网关强制向上游请求 `stream_options.include_usage=true`，逐事件重写 public model 并 flush；首个合法 JSON data 帧记录 TTFT。收到 usage 与 `[DONE]` 时按上游实际 usage 一次原子结算。中途断流、客户端取消或流协议错误时，仅对已成功写入下游的文本 delta 使用本地 tokenizer 估算 completion token，并与请求 prompt 估算一起结算；日志以 `partial_estimated_*` 错误码标识该估算口径。没有已转发文本、缺 usage 或本地估算失败时不扣费；客户端取消会传播到上游且不计渠道失败。
 - 上游故障切换：一次请求只查询一次健康路由候选，proxy 在内存中按最高优先级组的权重选择首选，并以 `channel_id` 去重保留后备。仅传输错误、429、401/402/403 和 5xx 可切换；流式 2xx 后不再切换。`UPSTREAM_REQUEST_TIMEOUT` 控制请求总 deadline，`UPSTREAM_MAX_ATTEMPTS` 控制最大候选尝试数。
 - 运行时限流：请求预检按 global -> user -> api_key -> model 顺序检查 RPM/TPM/RPD/concurrency，路由后检查 channel；日 token 预算不再由限流承担（`tpd` 指标已废弃，改由配额模块支持）；Token 预留使用输入 Token 加 `max_tokens` 的保守估算，完成后按实际 usage 结算。限流 reservation 与计数器独立持久化，过期记录由 reaper 清理。

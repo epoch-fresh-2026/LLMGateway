@@ -79,7 +79,8 @@ GET /admin/stats/daily
 GET /admin/channels
 GET /admin/stats/channels
 GET /admin/usage-logs
-GET /admin/users
+GET /admin/profile
+GET /admin/keys
 GET /admin/rate-limits
 GET /admin/models
 ```
@@ -517,250 +518,48 @@ status=1
 }
 ```
 
-## 用户管理
+## 我的资料与 Key
 
-### GET /admin/users
+用户通过会话只访问自身资料与网关 Key；跨用户访问返回 404。
 
-查询参数：
+### GET /admin/profile
 
-```text
-page=1
-page_size=20
-```
-
-返回字段：
+返回当前账户：
 
 ```json
-{
-  "list": [
-    {
-      "id": 1,
-      "nickname": "Alice",
-      "user_group": "default",
-      "status": "active",
-      "balance": {
-        "available_balance": "100.000000",
-        "frozen_balance": "0.000000"
-      }
-    }
-  ],
-  "total": 1
-}
+{ "code": 0, "message": "ok", "data": { "id": 1, "username": "alice", "nickname": "Alice" } }
 ```
 
-字段说明：
-
-- `status`: 前端支持 `active` 和 `suspended`。
-- `user_group`: 前端默认选项为 `default`、`vip`、`enterprise`。
-
-### POST /admin/users
+### PUT /admin/profile
 
 请求体：
 
 ```json
-{
-  "nickname": "Alice",
-  "user_group": "default",
-  "status": "active",
-  "password": "optional"
-}
+{ "nickname": "Alice", "current_password": "old-password", "new_password": "new-password" }
 ```
 
-返回字段可选：
-
-```json
-{
-  "id": 1,
-  "password_plaintext": "generated-password"
-}
-```
-
-如果后端自动生成密码，前端会展示 `password_plaintext`。
-
-### PUT /admin/users/:id
-
-请求体：
-
-```json
-{
-  "nickname": "Alice",
-  "user_group": "vip",
-  "password": "optional"
-}
-```
-
-### DELETE /admin/users/:id
-
-永久删除用户。
-
-前端提示语要求：删除用户会同时删除其 Key、余额、资金流水、用量日志与日汇总。
-
-### PUT /admin/users/:id/status
-
-请求体：
-
-```json
-{
-  "status": "suspended"
-}
-```
-
-### POST /admin/users/:id/recharge
-
-请求体：
-
-```json
-{
-  "amount": "50.000000",
-  "related_order_id": "order-optional",
-  "description": "manual recharge"
-}
-```
-
-返回字段：
-
-```json
-{
-  "balance_after": "150.000000"
-}
-```
-
-### GET /admin/users/:id/balance
-
-返回字段：
-
-```json
-{
-  "available_balance": "100.000000",
-  "frozen_balance": "0.000000"
-}
-```
-
-### GET /admin/users/:id/balance-transactions
-
-查询参数：
-
-```text
-page=1
-page_size=20
-```
-
-返回字段：
-
-```json
-{
-  "list": [
-    {
-      "id": 1,
-      "tx_type": "recharge",
-      "amount": "50.000000",
-      "balance_after": "150.000000",
-      "created_at": "2026-09-16T10:00:00Z"
-    }
-  ],
-  "total": 1
-}
-```
-
-## 网关 Key 管理
-
-### GET /admin/users/:id/keys
-
-查询参数：
-
-```text
-page=1
-page_size=50
-```
-
-返回字段：
-
-```json
-{
-  "list": [
-    {
-      "id": 1,
-      "user_id": 1,
-      "key_name": "default",
-      "prefix": "sk-",
-      "is_active": true,
-      "last_used_at": null
-    }
-  ],
-  "total": 1
-}
-```
+- `nickname`、`new_password` 均可选；只传需要的字段。
+- 设置 `new_password` 时必须提供匹配的 `current_password`，否则返回 401；新密码需 8–72 字节。
 
 ### GET /admin/keys
 
-查询参数：
+只返回当前用户的 Key，响应为 `{list,total}`；每项包含 `id`、`key_name`、`prefix`、`is_active`、`last_used_at`、`expires_at`。
 
-```text
-page=1
-page_size=50
-```
+### POST /admin/keys
 
-返回同 Key 列表，用于全局 Key 管理表。
+创建自身网关 Key，明文只在响应 `full_key` 返回一次。请求体为 `KeyCreateInput`（`key_name`、`prefix`、可选 `permissions`、`rate_limit_overrides`、`expires_at`、`is_active`）。
 
-### POST /admin/users/:id/keys
+### PUT /admin/keys/:id
 
-请求体：
+切换自身 Key 的 `is_active`。
 
-```json
-{
-  "key_name": "default",
-  "prefix": "sk-",
-  "permissions": {
-    "models": ["*"]
-  },
-  "rate_limit_overrides": {
-    "rpm": 600,
-    "tpm": 120000
-  },
-  "expires_at": "2027-01-01T00:00:00Z",
-  "is_active": true
-}
-```
+### DELETE /admin/keys/:id
 
-返回字段：
+删除自身 Key；不存在或不属于本人返回 404。
 
-```json
-{
-  "id": 1,
-  "full_key": "sk-plaintext-visible-once"
-}
-```
+### POST /admin/keys/:id/reset
 
-要求：
-
-- `full_key` 只在创建时返回一次。
-- 后端应只存储 Key 哈希，不应存储可直接使用的明文。
-
-### PUT /admin/users/:id/keys/:key_id
-
-请求体：
-
-```json
-{
-  "is_active": false
-}
-```
-
-### DELETE /admin/users/:id/keys/:key_id
-
-删除 Key。
-
-### POST /admin/users/:id/keys/:key_id/reset
-
-重置 Key。
-
-返回字段：
-
-```json
-{
-  "full_key": "sk-new-plaintext-visible-once"
-}
-```
+重置自身 Key 的密钥，明文只在响应 `full_key` 返回一次。
 
 ## 限流规则
 

@@ -7,7 +7,7 @@
 - `server/` 是 Go 模块根。所有 Go 命令在该目录执行，或在仓库根使用 `go -C server ...`。
 - `server/cmd/llmgateway/` 只放进程装配、启动、优雅关闭和顶层 HTTP 路由表。路径到入口的映射统一放在 `router.go`。
 - `server/internal/catalog/` 放渠道、模型映射、定价、渠道连通性测试及对应管理端入口。
-- `server/internal/accounts/` 放用户、余额、网关 Key、认证上下文和权限能力。
+- `server/internal/accounts/` 放自助账户（注册/登录/会话/资料）、网关 Key、认证上下文和权限能力；不含平台计费、用户状态或分组。
 - `server/internal/usage/` 放用量日志、审计查询和统计能力。
 - `server/internal/ratelimit/` 放限流规则管理；与代理请求执行强相关的限流编排放在 `server/internal/proxy/`。
 - `server/internal/quota/` 放 UTC 日/月业务配额策略和管理端入口；`rate_limit_rules` 只做速率控制，配额策略不得复用其持久化模型。
@@ -45,7 +45,7 @@
 - 渠道 API Key 必须加密存储；网关 Key 只存哈希，明文只在创建或重置时返回一次。响应、日志和错误信息不得泄露密钥、Token、数据库密码或其他敏感配置。
 - 修改 SQL 查询或 schema 后运行 `sqlc generate`；迁移只能新增，不修改已发布迁移的既有语义。
 - Dashboard 由独立 nginx 托管，默认通过同源相对路径 `/admin` 访问管理端；nginx 将 `/admin`、`/v1` 和 `/healthz` 反向代理到 Go 网关。如增加管理端认证、修改响应结构或接口路径，必须同步修改前端数据层和 nginx 配置。
-- Dashboard 启动会并发请求多个管理端接口，任一失败都会进入错误页。修改启动接口时必须同时验证 `/admin/stats/overview`、`/admin/stats/daily`、`/admin/channels`、`/admin/stats/channels`、`/admin/usage-logs`、`/admin/users`、`/admin/rate-limits`、`/admin/models`、`/admin/quota-policies` 和 `/admin/quota-usage`。
+- Dashboard 启动会并发请求多个管理端接口，任一失败都会进入错误页。修改启动接口时必须同时验证 `/admin/stats/overview`、`/admin/stats/daily`、`/admin/channels`、`/admin/stats/channels`、`/admin/usage-logs`、`/admin/profile`、`/admin/keys`、`/admin/rate-limits`、`/admin/models`、`/admin/quota-policies` 和 `/admin/quota-usage`。
 - 前端当前使用带 JSON 请求体的 `DELETE /admin/pricing`；除非同步修改前端，否则后端必须保持兼容。
 - 修改前检查工作区状态，不覆盖或回退他人改动，不做无关的大范围重排或格式化。提交应聚焦一个目标，不得提交 `communication/`、本地密钥或其他敏感文件。
 - 后端变更至少执行 `go test ./...`、`go build ./...`、`go vet ./...` 和 `gofmt -l cmd internal`。PostgreSQL 集成测试使用 `TEST_DATABASE_URL`；未设置时测试会跳过，不能据此宣称 PostgreSQL 路径已验证。
