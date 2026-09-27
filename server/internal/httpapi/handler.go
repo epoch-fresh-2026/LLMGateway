@@ -102,16 +102,6 @@ func WithMinimumRouteBalance(balance string) Option {
 	}
 }
 
-// WithRandSource injects the random source used for weighted routing so tests
-// can make selection deterministic.
-func WithRandSource(fn func(int) int) Option {
-	return func(o *options) {
-		if fn != nil {
-			o.randIntN = fn
-		}
-	}
-}
-
 // WithClock injects the clock used for key expiry and rate limit windows.
 func WithClock(fn func() time.Time) Option {
 	return func(o *options) {
