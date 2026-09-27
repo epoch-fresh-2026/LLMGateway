@@ -197,6 +197,14 @@ type RateLimitRule struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Session struct {
+	ID        int64              `json:"id"`
+	TokenHash string             `json:"token_hash"`
+	UserID    int64              `json:"user_id"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type UsageLog struct {
 	ID                   int64              `json:"id"`
 	RequestID            string             `json:"request_id"`
@@ -222,6 +230,7 @@ type UsageLog struct {
 
 type User struct {
 	ID           int64              `json:"id"`
+	Username     pgtype.Text        `json:"username"`
 	Nickname     string             `json:"nickname"`
 	UserGroup    string             `json:"user_group"`
 	Status       string             `json:"status"`

@@ -130,6 +130,71 @@ func (s *Store) UpdateKeyLastUsed(_ context.Context, keyID int) error {
 	return nil
 }
 
+func (s *Store) GetUserCredentialsByUsername(_ context.Context, username string) (domain.Credentials, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, creds := range s.credentials {
+		if creds.Username == username {
+			return creds, nil
+		}
+	}
+	return domain.Credentials{}, store.ErrNotFound
+}
+
+func (s *Store) GetAccountByID(_ context.Context, id int) (domain.Account, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.users[id]
+	if !ok {
+		return domain.Account{}, store.ErrNotFound
+	}
+	account := domain.Account{ID: id, Nickname: user.Nickname}
+	if creds, ok := s.credentials[id]; ok {
+		account.Username = creds.Username
+	}
+	return account, nil
+}
+
+func (s *Store) GetSessionByTokenHash(_ context.Context, tokenHash string) (domain.Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session, ok := s.sessions[tokenHash]
+	if !ok || !session.ExpiresAt.After(s.now()) {
+		return domain.Session{}, store.ErrNotFound
+	}
+	return session, nil
+}
+
+func (s *Store) DeleteSessionByTokenHash(_ context.Context, tokenHash string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.sessions[tokenHash]; !ok {
+		return false, nil
+	}
+	delete(s.sessions, tokenHash)
+	return true, nil
+}
+
+func (s *Store) DeleteExpiredSessions(_ context.Context, limit int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 {
+		limit = 100
+	}
+	removed := 0
+	for hash, session := range s.sessions {
+		if session.ExpiresAt.After(s.now()) {
+			continue
+		}
+		delete(s.sessions, hash)
+		removed++
+		if removed >= limit {
+			break
+		}
+	}
+	return removed, nil
+}
+
 // --- Tx primitives ---
 
 // accountsRunner runs the callback while holding the store mutex so the
@@ -167,6 +232,26 @@ func (t *accountsTx) InsertUser(nickname, group, status string) (domain.User, er
 
 func (t *accountsTx) InsertUserBalance(int) error { return nil }
 
+func (t *accountsTx) InsertUserWithCredentials(in domain.CredentialsInput) (domain.Account, error) {
+	for _, creds := range t.s.credentials {
+		if creds.Username == in.Username {
+			return domain.Account{}, fmt.Errorf("%w: username already exists", store.ErrInvalid)
+		}
+	}
+	user := &domain.User{ID: t.s.nextUserID, Nickname: in.Nickname, UserGroup: "default", Status: "active", AvailableBalance: "0.000000", FrozenBalance: "0.000000"}
+	t.s.nextUserID++
+	t.s.users[user.ID] = user
+	t.s.credentials[user.ID] = domain.Credentials{UserID: user.ID, Username: in.Username, Nickname: in.Nickname, PasswordHash: in.PasswordHash}
+	return domain.Account{ID: user.ID, Username: in.Username, Nickname: in.Nickname}, nil
+}
+
+func (t *accountsTx) InsertSession(in domain.SessionInput) (int, error) {
+	id := t.s.nextSessionID
+	t.s.nextSessionID++
+	t.s.sessions[in.TokenHash] = domain.Session{ID: id, UserID: in.UserID, ExpiresAt: in.ExpiresAt}
+	return id, nil
+}
+
 func (t *accountsTx) UpdateUser(id int, nickname, group string) (domain.User, bool, error) {
 	user, ok := t.s.users[id]
 	if !ok {
@@ -192,7 +277,13 @@ func (t *accountsTx) DeleteUser(id int) (bool, error) {
 	}
 	t.s.cleanupQuotaLocked(id, 0)
 	delete(t.s.users, id)
+	delete(t.s.credentials, id)
 	delete(t.s.transactions, id)
+	for hash, session := range t.s.sessions {
+		if session.UserID == id {
+			delete(t.s.sessions, hash)
+		}
+	}
 	for keyID, key := range t.s.keys {
 		if key.userID == id {
 			delete(t.s.keys, keyID)

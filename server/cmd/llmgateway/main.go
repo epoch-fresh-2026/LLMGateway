@@ -58,7 +58,8 @@ func run() error {
 			ErrorRatePercent:   cfg.ChannelBreakerErrorRatePercent,
 			TimeoutRatePercent: cfg.ChannelBreakerTimeoutRatePercent,
 		}),
-		httpapi.WithQuotaConfig(cfg.QuotaDefaultMaxTokens, time.Duration(cfg.QuotaReservationTTLSeconds)*time.Second))
+		httpapi.WithQuotaConfig(cfg.QuotaDefaultMaxTokens, time.Duration(cfg.QuotaReservationTTLSeconds)*time.Second),
+		httpapi.WithSessionConfig(time.Duration(cfg.SessionTTLSeconds)*time.Second, cfg.SessionCookieSecure, cfg.RegistrationEnabled, cfg.BcryptCost))
 	server := &http.Server{Addr: cfg.Addr, Handler: handler}
 	var workers sync.WaitGroup
 	workers.Add(1)
@@ -110,6 +111,9 @@ func runQuotaReaper(ctx context.Context, quotaServer *quota.Server, rateServer *
 			}
 			if _, err := apiServer.ReapChannelHealthBuckets(ctx, bucketRetention); err != nil && !errors.Is(err, context.Canceled) {
 				log.Printf("reap channel health buckets: %v", err)
+			}
+			if _, err := apiServer.ReapExpiredSessions(ctx, batchSize); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("reap expired sessions: %v", err)
 			}
 		}
 	}

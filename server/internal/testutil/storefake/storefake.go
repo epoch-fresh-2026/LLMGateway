@@ -26,13 +26,16 @@ type Store struct {
 	models        map[int]map[int]*catalog.ChannelModel
 	pricing       map[string]*catalog.Pricing
 
-	nextUserID   int
-	nextKeyID    int
-	nextTxID     int
-	users        map[int]*accounts.User
-	transactions map[int][]balanceTransaction
-	keys         map[int]*memoryKey
-	orders       map[string]balanceTransaction
+	nextUserID    int
+	nextKeyID     int
+	nextTxID      int
+	nextSessionID int
+	users         map[int]*accounts.User
+	credentials   map[int]accounts.Credentials
+	transactions  map[int][]balanceTransaction
+	keys          map[int]*memoryKey
+	orders        map[string]balanceTransaction
+	sessions      map[string]accounts.Session
 
 	nextRateLimitID int
 	rateLimits      map[int]*ratelimit.RateLimitRule
@@ -130,10 +133,13 @@ func New() *Store {
 		nextUserID:                 1,
 		nextKeyID:                  1,
 		nextTxID:                   1,
+		nextSessionID:              1,
 		users:                      map[int]*accounts.User{},
+		credentials:                map[int]accounts.Credentials{},
 		transactions:               map[int][]balanceTransaction{},
 		keys:                       map[int]*memoryKey{},
 		orders:                     map[string]balanceTransaction{},
+		sessions:                   map[string]accounts.Session{},
 		nextRateLimitID:            1,
 		rateLimits:                 map[int]*ratelimit.RateLimitRule{},
 		nextUsageLogID:             1,

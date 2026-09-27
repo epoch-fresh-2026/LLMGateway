@@ -20,18 +20,23 @@ func ParsePagination(r *http.Request) (int, int) {
 }
 
 // AdminResult carries a management API response and whether a module handled
-// the request path.
+// the request path. Cookies are attached to the response (used by the auth
+// module to set/clear the session cookie).
 type AdminResult struct {
 	Data    any
 	Handled bool
 	Status  int
 	Message string
+	Cookies []*http.Cookie
 }
 
 // AdminHandler adapts a module's AdminResult handler to net/http.
 func AdminHandler(fn func(*http.Request) AdminResult) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		result := fn(r)
+		for _, cookie := range result.Cookies {
+			http.SetCookie(w, cookie)
+		}
 		if result.Status != 0 {
 			writeAdminError(w, result.Status, result.Message)
 			return

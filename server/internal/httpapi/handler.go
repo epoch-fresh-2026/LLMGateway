@@ -64,6 +64,25 @@ type options struct {
 	minimumRouteBalance   string
 	cipher                *crypto.Cipher
 	breaker               catalog.ChannelBreakerConfig
+
+	sessionConfigured   bool
+	sessionTTL          time.Duration
+	sessionCookieSecure bool
+	registrationEnabled bool
+	bcryptCost          int
+}
+
+// WithSessionConfig injects the auth/session settings resolved by config.Load.
+// Without it the accounts module falls back to its built-in defaults, which
+// keeps unit tests free of session wiring.
+func WithSessionConfig(ttl time.Duration, cookieSecure, registrationEnabled bool, bcryptCost int) Option {
+	return func(o *options) {
+		o.sessionConfigured = true
+		o.sessionTTL = ttl
+		o.sessionCookieSecure = cookieSecure
+		o.registrationEnabled = registrationEnabled
+		o.bcryptCost = bcryptCost
+	}
 }
 
 func WithQuotaConfig(defaultMaxTokens int, reservationTTL time.Duration) Option {
@@ -161,7 +180,16 @@ func NewServer(st Port, opts ...Option) *Server {
 		writeJSON(w, http.StatusNotFound, map[string]any{"code": http.StatusNotFound, "message": "not found", "data": map[string]any{}})
 	})
 	catalogServer.RegisterAdminRoutes(adminMux)
-	accountsServer := accounts.New(st, st.AccountsTx())
+	accountsOpts := []accounts.Option{accounts.WithClock(settings.now)}
+	if settings.sessionConfigured {
+		accountsOpts = append(accountsOpts, accounts.WithAuthConfig(accounts.AuthConfig{
+			SessionTTL:       settings.sessionTTL,
+			CookieSecure:     settings.sessionCookieSecure,
+			RegistrationOpen: settings.registrationEnabled,
+			BcryptCost:       settings.bcryptCost,
+		}))
+	}
+	accountsServer := accounts.New(st, st.AccountsTx(), accountsOpts...)
 	accountsServer.RegisterAdminRoutes(adminMux)
 	ratelimitServer.RegisterAdminRoutes(adminMux)
 	quotaServer.RegisterAdminRoutes(adminMux)
@@ -193,6 +221,12 @@ func (a *Server) Healthz(w http.ResponseWriter, r *http.Request) {
 // catalog retention policy. It is called from the process background workers.
 func (a *Server) ReapChannelHealthBuckets(ctx context.Context, retention time.Duration) (int, error) {
 	return a.catalog.ReapChannelHealthBuckets(ctx, retention)
+}
+
+// ReapExpiredSessions deletes expired login sessions. It is called from the
+// process background workers on a best-effort basis.
+func (a *Server) ReapExpiredSessions(ctx context.Context, limit int) (int, error) {
+	return a.accounts.ReapExpiredSessions(ctx, limit)
 }
 
 // Admin handles the /admin management API.

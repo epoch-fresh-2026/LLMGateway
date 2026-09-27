@@ -63,6 +63,9 @@ type KeySecretDTO = accounts.KeySecretDTO
 type KeyInput = accounts.KeyInput
 type KeyUpdateInput = accounts.KeyUpdateInput
 type AuthContext = accounts.AuthContext
+type Account = accounts.Account
+type AuthConfig = accounts.AuthConfig
+type LoginResult = accounts.LoginResult
 
 type UsageLog = usage.UsageLog
 type UsageLogDTO = usage.UsageLogDTO

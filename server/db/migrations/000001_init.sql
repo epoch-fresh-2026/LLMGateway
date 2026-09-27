@@ -1,6 +1,11 @@
 -- Baseline schema for a fresh deployment, squashed from the former incremental
 -- migrations 000001..000010. The project has not shipped, so no upgrade path
 -- from the pre-squash version table is needed.
+--
+-- This baseline is still being reshaped in place (auth/session and per-user
+-- ownership work). Local development databases built from an earlier revision
+-- must be recreated, e.g. `docker compose -f deployments/docker-compose.yml
+-- down -v`.
 
 CREATE TABLE channels (
     id BIGSERIAL PRIMARY KEY,
@@ -42,6 +47,11 @@ CREATE TABLE model_pricing (
 
 CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
+    -- username/password_hash back self-service login. They stay nullable until
+    -- the admin-only user CRUD path is removed; only rows created through the
+    -- auth flow carry credentials. The partial unique index enforces uniqueness
+    -- for credential rows without blocking legacy rows.
+    username TEXT,
     nickname TEXT NOT NULL DEFAULT '',
     user_group TEXT NOT NULL DEFAULT 'default',
     status TEXT NOT NULL DEFAULT 'active',
@@ -50,6 +60,20 @@ CREATE TABLE users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (status IN ('active', 'suspended'))
 );
+
+CREATE UNIQUE INDEX users_username_unique ON users (username) WHERE username IS NOT NULL;
+
+-- Server-side browser sessions. Only the SHA-256 hash of the session token is
+-- stored, never the plaintext delivered as an HttpOnly cookie.
+CREATE TABLE sessions (
+    id BIGSERIAL PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
 
 CREATE TABLE user_balances (
     user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

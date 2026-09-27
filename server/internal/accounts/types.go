@@ -1,8 +1,11 @@
 package accounts
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
 
-import "LLMGateway/server/internal/pagination"
+	"LLMGateway/server/internal/pagination"
+)
 
 type ListResponse[T any] = pagination.List[T]
 
@@ -95,6 +98,43 @@ type KeyInput struct {
 
 type KeyUpdateInput struct {
 	IsActive *bool `json:"is_active"`
+}
+
+// Credentials is the stored login identity for a self-service account.
+// PasswordHash is a bcrypt hash and must never be returned in a DTO.
+type Credentials struct {
+	UserID       int
+	Username     string
+	Nickname     string
+	PasswordHash string
+}
+
+// Account is the self-view of an authenticated user, returned by /admin/auth/me.
+type Account struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	Nickname string `json:"nickname"`
+}
+
+// CredentialsInput creates a user together with its login credentials.
+type CredentialsInput struct {
+	Username     string
+	Nickname     string
+	PasswordHash string
+}
+
+// Session is a persisted server-side session. Only the token hash is stored.
+type Session struct {
+	ID        int
+	UserID    int
+	ExpiresAt time.Time
+}
+
+// SessionInput persists a new session row for a user.
+type SessionInput struct {
+	TokenHash string
+	UserID    int
+	ExpiresAt time.Time
 }
 
 // AuthContext is the raw authentication state for a downstream gateway key.
