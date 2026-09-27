@@ -5,16 +5,20 @@ import (
 	"time"
 )
 
-// Port is the quota persistence primitive surface. It exposes only CRUD and
-// query primitives: normalization, validation and reservation orchestration
-// live on Server.
+// Port is the quota persistence primitive surface. It exposes only CRUD, query
+// and ownership primitives: normalization, validation and reservation
+// orchestration live on Server. Policy reads/writes are scoped to their owner.
 type Port interface {
 	ListQuotaPolicies(ctx context.Context, filter QuotaPolicyFilter) (ListResponse[QuotaPolicyDTO], error)
-	GetQuotaPolicy(ctx context.Context, id int) (QuotaPolicy, error)
+	GetQuotaPolicy(ctx context.Context, ownerUserID, id int) (QuotaPolicy, error)
 	InsertQuotaPolicy(ctx context.Context, policy QuotaPolicy) (int, error)
-	UpdateQuotaPolicyRecord(ctx context.Context, id int, policy QuotaPolicy) (bool, error)
-	DeleteQuotaPolicy(ctx context.Context, id int) (bool, error)
+	UpdateQuotaPolicyRecord(ctx context.Context, ownerUserID, id int, policy QuotaPolicy) (bool, error)
+	DeleteQuotaPolicy(ctx context.Context, ownerUserID, id int) (bool, error)
 	ListQuotaUsage(ctx context.Context, filter QuotaPolicyFilter) (ListResponse[QuotaUsageDTO], error)
+
+	// KeyBelongsToUser reports whether a gateway key belongs to ownerUserID, so
+	// api_key-scoped policies cannot target another user's key.
+	KeyBelongsToUser(ctx context.Context, ownerUserID, keyID int) (bool, error)
 }
 
 // Tx is the transaction-scoped persistence surface for quota reservations.

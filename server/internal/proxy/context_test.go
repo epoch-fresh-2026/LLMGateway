@@ -80,7 +80,7 @@ func TestSettleCompletesDespiteCanceledParent(t *testing.T) {
 	if balance.AvailableBalance != "8.750000" {
 		t.Fatalf("user balance = %s, want 8.750000 after canceled-parent settlement", balance.AvailableBalance)
 	}
-	logs, _ := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 20})
+	logs, _ := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if logs.Total != 1 || logs.List[0].RequestID != "req-canceled" {
 		t.Fatalf("usage log missing after canceled-parent settlement: %+v", logs)
 	}
@@ -106,7 +106,7 @@ func TestBestEffortWritesCompleteDespiteCanceledParent(t *testing.T) {
 	svc.logUsage(ctx, "req-best-effort", auth, &channel.ID, "up-model", "model", nil, "0.000000", "", "", 5, "127.0.0.1", "error", "rate_limited")
 	svc.recordChannelHealth(ctx, channel.ID, true, "")
 
-	logs, err := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 20})
+	logs, err := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatal(err)
 	}

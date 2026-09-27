@@ -24,21 +24,29 @@ func (a *Server) rateLimits(r *http.Request) httpcommon.AdminResult {
 }
 
 func (a *Server) rateLimit(r *http.Request) httpcommon.AdminResult {
+	ownerUserID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid rule id")
 	}
 	switch r.Method {
 	case http.MethodPut:
-		return a.updateRateLimit(r, id)
+		return a.updateRateLimit(r, ownerUserID, id)
 	case http.MethodDelete:
-		return httpcommon.NoBody(a.DeleteRateLimit(r.Context(), id))
+		return httpcommon.NoBody(a.DeleteRateLimit(r.Context(), ownerUserID, id))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
 func (a *Server) listRateLimits(r *http.Request) httpcommon.AdminResult {
+	ownerUserID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
 	page, pageSize := httpcommon.ParsePagination(r)
 
 	var enabled *bool
@@ -50,21 +58,25 @@ func (a *Server) listRateLimits(r *http.Request) httpcommon.AdminResult {
 		value := false
 		enabled = &value
 	}
-	return httpcommon.Result(a.ListRateLimits(r.Context(), enabled, page, pageSize))
+	return httpcommon.Result(a.ListRateLimits(r.Context(), ownerUserID, enabled, page, pageSize))
 }
 
 func (a *Server) createRateLimit(r *http.Request) httpcommon.AdminResult {
+	ownerUserID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
 	var req RateLimitInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
-	return httpcommon.Result(a.CreateRateLimit(r.Context(), req))
+	return httpcommon.Result(a.CreateRateLimit(r.Context(), ownerUserID, req))
 }
 
-func (a *Server) updateRateLimit(r *http.Request, id int) httpcommon.AdminResult {
+func (a *Server) updateRateLimit(r *http.Request, ownerUserID, id int) httpcommon.AdminResult {
 	var req RateLimitInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
-	return httpcommon.Result(a.UpdateRateLimit(r.Context(), id, req))
+	return httpcommon.Result(a.UpdateRateLimit(r.Context(), ownerUserID, id, req))
 }

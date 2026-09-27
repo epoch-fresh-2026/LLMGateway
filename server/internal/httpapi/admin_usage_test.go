@@ -60,6 +60,12 @@ func TestUsageLogsAndStats(t *testing.T) {
 	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-2", UserID: intPtr(1), ChannelID: intPtr(1), Model: "gpt-4o", Status: "error", TotalTokens: 200, TotalCost: "0.002000"}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := handler.accounts.CreateUser(context.Background(), domain.UserInput{Nickname: "usage-user"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handler.accounts.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "active"}); err != nil {
+		t.Fatal(err)
+	}
 
 	logs := adminDo(t, handler, http.MethodGet, "/admin/usage-logs?page=1&page_size=20", nil)
 	listData := logs["data"].(map[string]any)
@@ -90,7 +96,7 @@ func TestUsageLogsAndStats(t *testing.T) {
 	if ov["request_count"].(float64) != 2 || ov["success_count"].(float64) != 1 || ov["error_count"].(float64) != 1 {
 		t.Fatalf("unexpected overview: %+v", ov)
 	}
-	if ov["total_tokens"].(float64) != 300 || ov["total_cost"] != "0.003000" || ov["active_user_count"].(float64) != 1 {
+	if ov["total_tokens"].(float64) != 300 || ov["total_cost"] != "0.003000" || ov["active_key_count"].(float64) != 1 {
 		t.Fatalf("unexpected overview aggregates: %+v", ov)
 	}
 
@@ -117,7 +123,7 @@ func TestUsageLogsAndStats(t *testing.T) {
 
 func TestTTFTStatsFiltersAndPercentiles(t *testing.T) {
 	handler, st := newUsageTestHandler(t)
-	userID, keyID, channelID := 7, 9, 11
+	userID, keyID, channelID := 1, 9, 11
 	for _, input := range []domain.UsageLogInput{
 		{RequestID: "ttft-1", UserID: &userID, APIKeyID: &keyID, ChannelID: &channelID, Model: "gpt", Status: "success", TTFTMs: intPtr(100)},
 		{RequestID: "ttft-2", UserID: &userID, APIKeyID: &keyID, ChannelID: &channelID, Model: "gpt", Status: "success", TTFTMs: intPtr(200)},
@@ -130,7 +136,7 @@ func TestTTFTStatsFiltersAndPercentiles(t *testing.T) {
 		}
 	}
 
-	stats := adminDo(t, handler, http.MethodGet, "/admin/stats/ttft?user_id=7&api_key_id=9&channel_id=11&model=gpt&start_time=2020-01-01T00:00:00Z&end_time=2100-01-01T00:00:00Z", nil)
+	stats := adminDo(t, handler, http.MethodGet, "/admin/stats/ttft?user_id=1&api_key_id=9&channel_id=11&model=gpt&start_time=2020-01-01T00:00:00Z&end_time=2100-01-01T00:00:00Z", nil)
 	data := stats["data"].(map[string]any)
 	for field, want := range map[string]float64{
 		"sample_count": 3,

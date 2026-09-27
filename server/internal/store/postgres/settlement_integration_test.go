@@ -72,7 +72,7 @@ func TestPGSettleChatCompletionPersistsTTFT(t *testing.T) {
 	if _, err := service.Settle(context.Background(), settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "0.000100", Description: "stream chat", UsageLog: usage}); err != nil {
 		t.Fatal(err)
 	}
-	logs, err := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 10})
+	logs, err := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

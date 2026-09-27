@@ -98,12 +98,12 @@ type UsageLogDTO struct {
 }
 
 type StatsOverviewDTO struct {
-	RequestCount    int64  `json:"request_count"`
-	SuccessCount    int64  `json:"success_count"`
-	ErrorCount      int64  `json:"error_count"`
-	TotalTokens     int64  `json:"total_tokens"`
-	TotalCost       string `json:"total_cost"`
-	ActiveUserCount int64  `json:"active_user_count"`
+	RequestCount   int64  `json:"request_count"`
+	SuccessCount   int64  `json:"success_count"`
+	ErrorCount     int64  `json:"error_count"`
+	TotalTokens    int64  `json:"total_tokens"`
+	TotalCost      string `json:"total_cost"`
+	ActiveKeyCount int64  `json:"active_key_count"`
 }
 
 // TTFTStatsFilter narrows stream first-token latency samples. Non-streaming

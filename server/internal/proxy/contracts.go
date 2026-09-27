@@ -30,7 +30,7 @@ type Quota interface {
 
 // RateLimit is the rate-limit surface proxy orchestration needs.
 type RateLimit interface {
-	ListRateLimits(ctx context.Context, enabled *bool, page, pageSize int) (ratelimit.ListResponse[ratelimit.RateLimitRuleDTO], error)
+	ListRateLimits(ctx context.Context, ownerUserID int, enabled *bool, page, pageSize int) (ratelimit.ListResponse[ratelimit.RateLimitRuleDTO], error)
 	ReserveRateLimit(ctx context.Context, in ratelimit.RateLimitReservationInput) (ratelimit.RateLimitReservation, error)
 	FinalizeRateLimit(ctx context.Context, id int64, tokens int64) error
 	ReleaseRateLimit(ctx context.Context, id int64) error

@@ -83,7 +83,7 @@ func (a *Service) checkRateLimit(ctx context.Context, auth *accounts.AuthContext
 	}
 
 	enabled := true
-	result, err := a.ratelimit.ListRateLimits(ctx, &enabled, 1, 1000)
+	result, err := a.ratelimit.ListRateLimits(ctx, auth.UserID, &enabled, 1, 1000)
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func metricSince(now time.Time, metric string, windowSeconds int) string {
 
 func (a *Service) checkChannelRateLimit(ctx context.Context, auth *accounts.AuthContext, model string, channelID int, estimatedTokens int64) error {
 	enabled := true
-	result, err := a.ratelimit.ListRateLimits(ctx, &enabled, 1, 1000)
+	result, err := a.ratelimit.ListRateLimits(ctx, auth.UserID, &enabled, 1, 1000)
 	if err != nil {
 		return err
 	}
@@ -208,8 +208,6 @@ func (a *Service) checkChannelRateLimit(ctx context.Context, auth *accounts.Auth
 // matchesTarget decides whether a rule applies to the current request.
 func matchesTarget(rule ratelimit.RateLimitRuleDTO, auth *accounts.AuthContext, model string) bool {
 	switch rule.TargetType {
-	case "global":
-		return true
 	case "user":
 		return rule.TargetValue == "*" || rule.TargetValue == strconv.Itoa(auth.UserID)
 	case "api_key":

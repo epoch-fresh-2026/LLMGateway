@@ -34,6 +34,9 @@ func (s *Store) ListQuotaPolicies(_ context.Context, filter domain.QuotaPolicyFi
 	defer s.mu.Unlock()
 	list := []domain.QuotaPolicyDTO{}
 	for _, policy := range s.quotaPolicies {
+		if s.quotaPolicyOwnerLocked(policy) != filter.OwnerUserID {
+			continue
+		}
 		if filter.ScopeType != "" && string(policy.ScopeType) != filter.ScopeType || filter.ScopeID > 0 && policy.ScopeID != filter.ScopeID || filter.Enabled != nil && policy.Enabled != *filter.Enabled {
 			continue
 		}
@@ -43,14 +46,34 @@ func (s *Store) ListQuotaPolicies(_ context.Context, filter domain.QuotaPolicyFi
 	return domain.ListResponse[domain.QuotaPolicyDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) GetQuotaPolicy(_ context.Context, id int) (domain.QuotaPolicy, error) {
+// quotaPolicyOwnerLocked resolves the owning user for a policy: the scope id
+// for user scope, or the key's user for api_key scope.
+func (s *Store) quotaPolicyOwnerLocked(policy *domain.QuotaPolicy) int {
+	if policy.ScopeType == domain.QuotaScopeUser {
+		return policy.ScopeID
+	}
+	key, ok := s.keys[policy.ScopeID]
+	if !ok {
+		return 0
+	}
+	return key.userID
+}
+
+func (s *Store) GetQuotaPolicy(_ context.Context, ownerUserID, id int) (domain.QuotaPolicy, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	policy, ok := s.quotaPolicies[id]
-	if !ok {
+	if !ok || s.quotaPolicyOwnerLocked(policy) != ownerUserID {
 		return domain.QuotaPolicy{}, store.ErrNotFound
 	}
 	return *policy, nil
+}
+
+func (s *Store) KeyBelongsToUser(_ context.Context, ownerUserID, keyID int) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key, ok := s.keys[keyID]
+	return ok && key.userID == ownerUserID, nil
 }
 
 func (s *Store) InsertQuotaPolicy(_ context.Context, policy domain.QuotaPolicy) (int, error) {
@@ -68,10 +91,11 @@ func (s *Store) InsertQuotaPolicy(_ context.Context, policy domain.QuotaPolicy) 
 	return stored.ID, nil
 }
 
-func (s *Store) UpdateQuotaPolicyRecord(_ context.Context, id int, policy domain.QuotaPolicy) (bool, error) {
+func (s *Store) UpdateQuotaPolicyRecord(_ context.Context, ownerUserID, id int, policy domain.QuotaPolicy) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.quotaPolicies[id]; !ok {
+	current, ok := s.quotaPolicies[id]
+	if !ok || s.quotaPolicyOwnerLocked(current) != ownerUserID {
 		return false, nil
 	}
 	policy.ID = id
@@ -80,10 +104,11 @@ func (s *Store) UpdateQuotaPolicyRecord(_ context.Context, id int, policy domain
 	return true, nil
 }
 
-func (s *Store) DeleteQuotaPolicy(_ context.Context, id int) (bool, error) {
+func (s *Store) DeleteQuotaPolicy(_ context.Context, ownerUserID, id int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.quotaPolicies[id]; !ok {
+	current, ok := s.quotaPolicies[id]
+	if !ok || s.quotaPolicyOwnerLocked(current) != ownerUserID {
 		return false, nil
 	}
 	delete(s.quotaPolicies, id)
@@ -96,7 +121,7 @@ func (s *Store) ListQuotaUsage(_ context.Context, filter domain.QuotaPolicyFilte
 	list := []domain.QuotaUsageDTO{}
 	for _, bucket := range s.quotaBuckets {
 		policy := s.quotaPolicies[bucket.policyID]
-		if policy == nil || filter.ScopeType != "" && string(policy.ScopeType) != filter.ScopeType || filter.ScopeID > 0 && policy.ScopeID != filter.ScopeID {
+		if policy == nil || s.quotaPolicyOwnerLocked(policy) != filter.OwnerUserID || filter.ScopeType != "" && string(policy.ScopeType) != filter.ScopeType || filter.ScopeID > 0 && policy.ScopeID != filter.ScopeID {
 			continue
 		}
 		list = append(list, domain.QuotaUsageDTO{PolicyID: policy.ID, PolicyName: policy.PolicyName, ScopeType: policy.ScopeType, ScopeID: policy.ScopeID, PeriodType: policy.PeriodType, PeriodStart: bucket.start.Format(time.RFC3339), PeriodEnd: bucket.end.Format(time.RFC3339), TokenLimit: policy.TokenLimit, UsedTokens: bucket.usedTokens, ReservedTokens: bucket.reservedTokens, CostLimit: policy.CostLimit, UsedCost: money.Format6(bucket.usedCost), ReservedCost: money.Format6(bucket.reservedCost)})

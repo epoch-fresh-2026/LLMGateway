@@ -3,17 +3,21 @@ package storefake
 import (
 	"context"
 	"sort"
+	"strconv"
 
 	domain "LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store"
 )
 
-func (s *Store) ListRateLimits(_ context.Context, enabled *bool, page, pageSize int) (domain.ListResponse[domain.RateLimitRuleDTO], error) {
+func (s *Store) ListRateLimits(_ context.Context, ownerUserID int, enabled *bool, page, pageSize int) (domain.ListResponse[domain.RateLimitRuleDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	rules := []*domain.RateLimitRule{}
-	for _, rule := range s.rateLimits {
+	for id, rule := range s.rateLimits {
+		if s.rateLimitOwners[id] != ownerUserID {
+			continue
+		}
 		if enabled != nil && rule.Enabled != *enabled {
 			continue
 		}
@@ -34,30 +38,31 @@ func (s *Store) ListRateLimits(_ context.Context, enabled *bool, page, pageSize 
 	return domain.ListResponse[domain.RateLimitRuleDTO]{List: list, Total: len(rules)}, nil
 }
 
-func (s *Store) GetRateLimit(_ context.Context, id int) (domain.RateLimitRule, error) {
+func (s *Store) GetRateLimit(_ context.Context, ownerUserID, id int) (domain.RateLimitRule, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rule, ok := s.rateLimits[id]
-	if !ok {
+	if !ok || s.rateLimitOwners[id] != ownerUserID {
 		return domain.RateLimitRule{}, store.ErrNotFound
 	}
 	return *rule, nil
 }
 
-func (s *Store) InsertRateLimit(_ context.Context, rule domain.RateLimitRule) (int, error) {
+func (s *Store) InsertRateLimit(_ context.Context, ownerUserID int, rule domain.RateLimitRule) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rule.ID = s.nextRateLimitID
 	s.nextRateLimitID++
 	stored := rule
 	s.rateLimits[stored.ID] = &stored
+	s.rateLimitOwners[stored.ID] = ownerUserID
 	return stored.ID, nil
 }
 
-func (s *Store) UpdateRateLimitRecord(_ context.Context, id int, rule domain.RateLimitRule) (bool, error) {
+func (s *Store) UpdateRateLimitRecord(_ context.Context, ownerUserID, id int, rule domain.RateLimitRule) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.rateLimits[id]; !ok {
+	if _, ok := s.rateLimits[id]; !ok || s.rateLimitOwners[id] != ownerUserID {
 		return false, nil
 	}
 	rule.ID = id
@@ -66,12 +71,54 @@ func (s *Store) UpdateRateLimitRecord(_ context.Context, id int, rule domain.Rat
 	return true, nil
 }
 
-func (s *Store) DeleteRateLimit(_ context.Context, id int) (bool, error) {
+func (s *Store) DeleteRateLimit(_ context.Context, ownerUserID, id int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.rateLimits[id]; !ok {
+	if _, ok := s.rateLimits[id]; !ok || s.rateLimitOwners[id] != ownerUserID {
 		return false, nil
 	}
 	delete(s.rateLimits, id)
+	delete(s.rateLimitOwners, id)
 	return true, nil
+}
+
+func (s *Store) TargetOwnedByUser(_ context.Context, ownerUserID int, targetType, targetValue string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if targetValue == "*" {
+		return true, nil
+	}
+	switch targetType {
+	case "user":
+		return targetValue == strconv.Itoa(ownerUserID), nil
+	case "api_key":
+		id, err := strconv.Atoi(targetValue)
+		if err != nil {
+			return false, nil
+		}
+		key, ok := s.keys[id]
+		return ok && key.userID == ownerUserID, nil
+	case "channel":
+		id, err := strconv.Atoi(targetValue)
+		if err != nil {
+			return false, nil
+		}
+		channel, ok := s.channels[id]
+		return ok && channel.OwnerUserID == ownerUserID, nil
+	case "model":
+		for channelID, models := range s.models {
+			channel := s.channels[channelID]
+			if channel == nil || channel.OwnerUserID != ownerUserID {
+				continue
+			}
+			for _, model := range models {
+				if model.ModelName == targetValue {
+					return true, nil
+				}
+			}
+		}
+		return false, nil
+	default:
+		return false, nil
+	}
 }

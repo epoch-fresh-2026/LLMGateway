@@ -48,11 +48,19 @@ func (q *Queries) CreateQuotaPolicy(ctx context.Context, arg CreateQuotaPolicyPa
 const deleteQuotaPolicy = `-- name: DeleteQuotaPolicy :execrows
 UPDATE quota_policies
 SET enabled = false, deleted_at = now(), updated_at = now()
-WHERE id = $1 AND deleted_at IS NULL
+WHERE quota_policies.id = $1 AND deleted_at IS NULL
+  AND ((quota_policies.scope_type = 'user' AND quota_policies.user_id = $2)
+       OR (quota_policies.scope_type = 'api_key' AND quota_policies.api_key_id IN (
+           SELECT k.id FROM client_api_keys k WHERE k.user_id = $2)))
 `
 
-func (q *Queries) DeleteQuotaPolicy(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteQuotaPolicy, id)
+type DeleteQuotaPolicyParams struct {
+	ID          int64       `json:"id"`
+	OwnerUserID pgtype.Int8 `json:"owner_user_id"`
+}
+
+func (q *Queries) DeleteQuotaPolicy(ctx context.Context, arg DeleteQuotaPolicyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteQuotaPolicy, arg.ID, arg.OwnerUserID)
 	if err != nil {
 		return 0, err
 	}
@@ -63,8 +71,16 @@ const getQuotaPolicy = `-- name: GetQuotaPolicy :one
 SELECT id, policy_name, scope_type, user_id, api_key_id, period_type,
        token_limit, cost_limit::text AS cost_limit, enabled
 FROM quota_policies
-WHERE id = $1 AND deleted_at IS NULL
+WHERE quota_policies.id = $1 AND deleted_at IS NULL
+  AND ((quota_policies.scope_type = 'user' AND quota_policies.user_id = $2)
+       OR (quota_policies.scope_type = 'api_key' AND quota_policies.api_key_id IN (
+           SELECT k.id FROM client_api_keys k WHERE k.user_id = $2)))
 `
+
+type GetQuotaPolicyParams struct {
+	ID          int64       `json:"id"`
+	OwnerUserID pgtype.Int8 `json:"owner_user_id"`
+}
 
 type GetQuotaPolicyRow struct {
 	ID         int64       `json:"id"`
@@ -78,8 +94,8 @@ type GetQuotaPolicyRow struct {
 	Enabled    bool        `json:"enabled"`
 }
 
-func (q *Queries) GetQuotaPolicy(ctx context.Context, id int64) (GetQuotaPolicyRow, error) {
-	row := q.db.QueryRow(ctx, getQuotaPolicy, id)
+func (q *Queries) GetQuotaPolicy(ctx context.Context, arg GetQuotaPolicyParams) (GetQuotaPolicyRow, error) {
+	row := q.db.QueryRow(ctx, getQuotaPolicy, arg.ID, arg.OwnerUserID)
 	var i GetQuotaPolicyRow
 	err := row.Scan(
 		&i.ID,
@@ -99,15 +115,19 @@ const updateQuotaPolicy = `-- name: UpdateQuotaPolicy :execrows
 UPDATE quota_policies
 SET policy_name = $1, token_limit = $2,
     cost_limit = $3, enabled = $4, updated_at = now()
-WHERE id = $5 AND deleted_at IS NULL
+WHERE quota_policies.id = $5 AND deleted_at IS NULL
+  AND ((quota_policies.scope_type = 'user' AND quota_policies.user_id = $6)
+       OR (quota_policies.scope_type = 'api_key' AND quota_policies.api_key_id IN (
+           SELECT k.id FROM client_api_keys k WHERE k.user_id = $6)))
 `
 
 type UpdateQuotaPolicyParams struct {
-	PolicyName string         `json:"policy_name"`
-	TokenLimit pgtype.Int8    `json:"token_limit"`
-	CostLimit  pgtype.Numeric `json:"cost_limit"`
-	Enabled    bool           `json:"enabled"`
-	ID         int64          `json:"id"`
+	PolicyName  string         `json:"policy_name"`
+	TokenLimit  pgtype.Int8    `json:"token_limit"`
+	CostLimit   pgtype.Numeric `json:"cost_limit"`
+	Enabled     bool           `json:"enabled"`
+	ID          int64          `json:"id"`
+	OwnerUserID pgtype.Int8    `json:"owner_user_id"`
 }
 
 func (q *Queries) UpdateQuotaPolicy(ctx context.Context, arg UpdateQuotaPolicyParams) (int64, error) {
@@ -117,6 +137,7 @@ func (q *Queries) UpdateQuotaPolicy(ctx context.Context, arg UpdateQuotaPolicyPa
 		arg.CostLimit,
 		arg.Enabled,
 		arg.ID,
+		arg.OwnerUserID,
 	)
 	if err != nil {
 		return 0, err

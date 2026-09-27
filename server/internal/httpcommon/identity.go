@@ -24,3 +24,14 @@ func IdentityFrom(r *http.Request) (Identity, bool) {
 	identity, ok := r.Context().Value(identityContextKey{}).(Identity)
 	return identity, ok
 }
+
+// RequireUserID returns the authenticated user id, or a 401 admin result when
+// the session layer did not inject an identity. Business modules use it to scope
+// owned data and must never fall back to unscoped access.
+func RequireUserID(r *http.Request) (int, AdminResult) {
+	identity, ok := IdentityFrom(r)
+	if !ok {
+		return 0, HTTPError(http.StatusUnauthorized, "unauthenticated")
+	}
+	return identity.UserID, AdminResult{}
+}

@@ -11,17 +11,21 @@ func (a *Server) ListQuotaPolicies(ctx context.Context, filter QuotaPolicyFilter
 	return a.store.ListQuotaPolicies(ctx, filter)
 }
 
-// CreateQuotaPolicy normalizes the input and persists the policy.
-func (a *Server) CreateQuotaPolicy(ctx context.Context, in QuotaPolicyInput) (QuotaPolicyDTO, error) {
+// CreateQuotaPolicy normalizes the input, checks the policy targets a resource
+// owned by ownerUserID, and persists it.
+func (a *Server) CreateQuotaPolicy(ctx context.Context, ownerUserID int, in QuotaPolicyInput) (QuotaPolicyDTO, error) {
 	policy, err := NormalizeQuotaPolicy(in, nil)
 	if err != nil {
+		return QuotaPolicyDTO{}, err
+	}
+	if err := a.validateScope(ctx, ownerUserID, policy); err != nil {
 		return QuotaPolicyDTO{}, err
 	}
 	id, err := a.store.InsertQuotaPolicy(ctx, policy)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
-	stored, err := a.store.GetQuotaPolicy(ctx, id)
+	stored, err := a.store.GetQuotaPolicy(ctx, ownerUserID, id)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
@@ -30,8 +34,8 @@ func (a *Server) CreateQuotaPolicy(ctx context.Context, in QuotaPolicyInput) (Qu
 
 // UpdateQuotaPolicy normalizes the input over the stored policy and rejects
 // changes to the scope or period.
-func (a *Server) UpdateQuotaPolicy(ctx context.Context, id int, in QuotaPolicyInput) (QuotaPolicyDTO, error) {
-	existing, err := a.store.GetQuotaPolicy(ctx, id)
+func (a *Server) UpdateQuotaPolicy(ctx context.Context, ownerUserID, id int, in QuotaPolicyInput) (QuotaPolicyDTO, error) {
+	existing, err := a.store.GetQuotaPolicy(ctx, ownerUserID, id)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
@@ -44,26 +48,46 @@ func (a *Server) UpdateQuotaPolicy(ctx context.Context, id int, in QuotaPolicyIn
 			return QuotaPolicyDTO{}, fmt.Errorf("%w: quota scope and period cannot be changed", ErrInvalid)
 		}
 	}
-	ok, err := a.store.UpdateQuotaPolicyRecord(ctx, id, policy)
+	ok, err := a.store.UpdateQuotaPolicyRecord(ctx, ownerUserID, id, policy)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
 	if !ok {
 		return QuotaPolicyDTO{}, ErrNotFound
 	}
-	stored, err := a.store.GetQuotaPolicy(ctx, id)
+	stored, err := a.store.GetQuotaPolicy(ctx, ownerUserID, id)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
 	return QuotaPolicyToDTO(stored), nil
 }
 
-func (a *Server) DeleteQuotaPolicy(ctx context.Context, id int) error {
-	ok, err := a.store.DeleteQuotaPolicy(ctx, id)
+func (a *Server) DeleteQuotaPolicy(ctx context.Context, ownerUserID, id int) error {
+	ok, err := a.store.DeleteQuotaPolicy(ctx, ownerUserID, id)
 	if err != nil {
 		return err
 	}
 	if !ok {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// validateScope ensures the policy targets the owner: user-scoped policies must
+// name the owner, api_key-scoped policies must reference the owner's key. A
+// mismatch returns ErrNotFound so it does not reveal other users' resources.
+func (a *Server) validateScope(ctx context.Context, ownerUserID int, policy QuotaPolicy) error {
+	if policy.ScopeType == QuotaScopeUser {
+		if policy.ScopeID != ownerUserID {
+			return ErrNotFound
+		}
+		return nil
+	}
+	owned, err := a.store.KeyBelongsToUser(ctx, ownerUserID, policy.ScopeID)
+	if err != nil {
+		return err
+	}
+	if !owned {
 		return ErrNotFound
 	}
 	return nil

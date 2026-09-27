@@ -11,21 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func (s *Store) ListUsageLogs(ctx context.Context, filter domain.UsageLogFilter) (domain.ListResponse[domain.UsageLogDTO], error) {
+func (s *Store) ListUsageLogs(ctx context.Context, ownerUserID int, filter domain.UsageLogFilter) (domain.ListResponse[domain.UsageLogDTO], error) {
 	if err := domain.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
 		return domain.ListResponse[domain.UsageLogDTO]{}, err
 	}
 	limit, offset := limitOffset(filter.Page, filter.PageSize)
 	params := sqlc.ListUsageLogsParams{
-		UserID:     int8Value(filter.UserID),
-		ApiKeyID:   int8Value(filter.APIKeyID),
-		ChannelID:  int8Value(filter.ChannelID),
-		Model:      textValueParam(filter.Model),
-		Status:     textValueParam(filter.Status),
-		StartTime:  timestampValue(filter.StartTime),
-		EndTime:    timestampValue(filter.EndTime),
-		PageOffset: offset,
-		PageLimit:  limit,
+		OwnerUserID: int8Value(&ownerUserID),
+		UserID:      int8Value(filter.UserID),
+		ApiKeyID:    int8Value(filter.APIKeyID),
+		ChannelID:   int8Value(filter.ChannelID),
+		Model:       textValueParam(filter.Model),
+		Status:      textValueParam(filter.Status),
+		StartTime:   timestampValue(filter.StartTime),
+		EndTime:     timestampValue(filter.EndTime),
+		PageOffset:  offset,
+		PageLimit:   limit,
 	}
 
 	rows, err := s.queries.ListUsageLogs(ctx, params)
@@ -33,13 +34,14 @@ func (s *Store) ListUsageLogs(ctx context.Context, filter domain.UsageLogFilter)
 		return domain.ListResponse[domain.UsageLogDTO]{}, mapError(err)
 	}
 	total, err := s.queries.CountUsageLogs(ctx, sqlc.CountUsageLogsParams{
-		UserID:    params.UserID,
-		ApiKeyID:  params.ApiKeyID,
-		ChannelID: params.ChannelID,
-		Model:     params.Model,
-		Status:    params.Status,
-		StartTime: params.StartTime,
-		EndTime:   params.EndTime,
+		OwnerUserID: params.OwnerUserID,
+		UserID:      params.UserID,
+		ApiKeyID:    params.ApiKeyID,
+		ChannelID:   params.ChannelID,
+		Model:       params.Model,
+		Status:      params.Status,
+		StartTime:   params.StartTime,
+		EndTime:     params.EndTime,
 	})
 	if err != nil {
 		return domain.ListResponse[domain.UsageLogDTO]{}, mapError(err)
@@ -52,8 +54,8 @@ func (s *Store) ListUsageLogs(ctx context.Context, filter domain.UsageLogFilter)
 	return domain.ListResponse[domain.UsageLogDTO]{List: list, Total: int(total)}, nil
 }
 
-func (s *Store) GetUsageLog(ctx context.Context, id int) (domain.UsageLogDTO, error) {
-	row, err := s.queries.GetUsageLog(ctx, int64(id))
+func (s *Store) GetUsageLog(ctx context.Context, ownerUserID, id int) (domain.UsageLogDTO, error) {
+	row, err := s.queries.GetUsageLog(ctx, sqlc.GetUsageLogParams{ID: int64(id), OwnerUserID: int8Value(&ownerUserID)})
 	if err != nil {
 		return domain.UsageLogDTO{}, mapError(err)
 	}
@@ -131,31 +133,32 @@ func optionalID(value *int) int {
 	return *value
 }
 
-func (s *Store) StatsOverview(ctx context.Context, startTime, endTime string) (domain.StatsOverviewDTO, error) {
+func (s *Store) StatsOverview(ctx context.Context, ownerUserID int, startTime, endTime string) (domain.StatsOverviewDTO, error) {
 	if err := domain.ValidateTimeRange(startTime, endTime); err != nil {
 		return domain.StatsOverviewDTO{}, err
 	}
 	row, err := s.queries.StatsOverview(ctx, sqlc.StatsOverviewParams{
-		CreatedAt:   timestampValue(startTime),
-		CreatedAt_2: timestampValue(endTime),
+		OwnerUserID: int64(ownerUserID),
+		StartTime:   timestampValue(startTime),
+		EndTime:     timestampValue(endTime),
 	})
 	if err != nil {
 		return domain.StatsOverviewDTO{}, mapError(err)
 	}
-	return domain.StatsOverviewDTO{RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, ActiveUserCount: row.ActiveUserCount}, nil
+	return domain.StatsOverviewDTO{RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, ActiveKeyCount: row.ActiveKeyCount}, nil
 }
 
-func (s *Store) StatsDaily(ctx context.Context, dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error) {
+func (s *Store) StatsDaily(ctx context.Context, ownerUserID int, dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error) {
 	if err := domain.ValidateDateRange(dateFrom, dateTo); err != nil {
 		return domain.ListResponse[domain.StatsDailyDTO]{}, err
 	}
 	limit, offset := limitOffset(page, pageSize)
 
-	rows, err := s.queries.StatsDaily(ctx, sqlc.StatsDailyParams{DateFrom: dateFrom, DateTo: dateTo, PageOffset: offset, PageLimit: limit})
+	rows, err := s.queries.StatsDaily(ctx, sqlc.StatsDailyParams{OwnerUserID: int8Value(&ownerUserID), DateFrom: dateFrom, DateTo: dateTo, PageOffset: offset, PageLimit: limit})
 	if err != nil {
 		return domain.ListResponse[domain.StatsDailyDTO]{}, mapError(err)
 	}
-	total, err := s.queries.CountStatsDaily(ctx, sqlc.CountStatsDailyParams{DateFrom: dateFrom, DateTo: dateTo})
+	total, err := s.queries.CountStatsDaily(ctx, sqlc.CountStatsDailyParams{OwnerUserID: int8Value(&ownerUserID), DateFrom: dateFrom, DateTo: dateTo})
 	if err != nil {
 		return domain.ListResponse[domain.StatsDailyDTO]{}, mapError(err)
 	}
@@ -167,13 +170,14 @@ func (s *Store) StatsDaily(ctx context.Context, dateFrom, dateTo string, page, p
 	return domain.ListResponse[domain.StatsDailyDTO]{List: list, Total: int(total)}, nil
 }
 
-func (s *Store) StatsChannels(ctx context.Context, startTime, endTime string) (domain.ListResponse[domain.StatsChannelDTO], error) {
+func (s *Store) StatsChannels(ctx context.Context, ownerUserID int, startTime, endTime string) (domain.ListResponse[domain.StatsChannelDTO], error) {
 	if err := domain.ValidateTimeRange(startTime, endTime); err != nil {
 		return domain.ListResponse[domain.StatsChannelDTO]{}, err
 	}
 	rows, err := s.queries.StatsChannels(ctx, sqlc.StatsChannelsParams{
-		CreatedAt:   timestampValue(startTime),
-		CreatedAt_2: timestampValue(endTime),
+		OwnerUserID: int8Value(&ownerUserID),
+		StartTime:   timestampValue(startTime),
+		EndTime:     timestampValue(endTime),
 	})
 	if err != nil {
 		return domain.ListResponse[domain.StatsChannelDTO]{}, mapError(err)
@@ -190,17 +194,18 @@ func (s *Store) StatsChannels(ctx context.Context, startTime, endTime string) (d
 	return domain.ListResponse[domain.StatsChannelDTO]{List: list}, nil
 }
 
-func (s *Store) StatsTTFT(ctx context.Context, filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, error) {
+func (s *Store) StatsTTFT(ctx context.Context, ownerUserID int, filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, error) {
 	if err := domain.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
 		return domain.TTFTStatsDTO{}, err
 	}
 	row, err := s.queries.StatsTTFT(ctx, sqlc.StatsTTFTParams{
-		UserID:    int8Value(filter.UserID),
-		ApiKeyID:  int8Value(filter.APIKeyID),
-		ChannelID: int8Value(filter.ChannelID),
-		Model:     textValueParam(filter.Model),
-		StartTime: timestampValue(filter.StartTime),
-		EndTime:   timestampValue(filter.EndTime),
+		OwnerUserID: int8Value(&ownerUserID),
+		UserID:      int8Value(filter.UserID),
+		ApiKeyID:    int8Value(filter.APIKeyID),
+		ChannelID:   int8Value(filter.ChannelID),
+		Model:       textValueParam(filter.Model),
+		StartTime:   timestampValue(filter.StartTime),
+		EndTime:     timestampValue(filter.EndTime),
 	})
 	if err != nil {
 		return domain.TTFTStatsDTO{}, mapError(err)
@@ -208,12 +213,12 @@ func (s *Store) StatsTTFT(ctx context.Context, filter domain.TTFTStatsFilter) (d
 	return domain.TTFTStatsDTO{SampleCount: row.SampleCount, AverageMs: row.AverageMs, P50Ms: row.P50Ms, P95Ms: row.P95Ms, P99Ms: row.P99Ms}, nil
 }
 
-func (s *Store) AggregateUsage(ctx context.Context, filter domain.UsageAggregateFilter) (domain.ListResponse[domain.UsageAggregateDTO], error) {
+func (s *Store) AggregateUsage(ctx context.Context, ownerUserID int, filter domain.UsageAggregateFilter) (domain.ListResponse[domain.UsageAggregateDTO], error) {
 	if err := domain.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
 		return domain.ListResponse[domain.UsageAggregateDTO]{}, err
 	}
 	limit, offset := limitOffset(filter.Page, filter.PageSize)
-	params := sqlc.AggregateUsageByModelParams{StartTime: timestampValue(filter.StartTime), EndTime: timestampValue(filter.EndTime), UserID: int8Value(filter.UserID), ApiKeyID: int8Value(filter.APIKeyID), ChannelID: int8Value(filter.ChannelID), Model: textValueParam(filter.Model), Status: textValueParam(filter.Status), PageOffset: offset, PageLimit: limit}
+	params := sqlc.AggregateUsageByModelParams{OwnerUserID: int8Value(&ownerUserID), StartTime: timestampValue(filter.StartTime), EndTime: timestampValue(filter.EndTime), UserID: int8Value(filter.UserID), ApiKeyID: int8Value(filter.APIKeyID), ChannelID: int8Value(filter.ChannelID), Model: textValueParam(filter.Model), Status: textValueParam(filter.Status), PageOffset: offset, PageLimit: limit}
 	list := []domain.UsageAggregateDTO{}
 	total := 0
 	switch filter.GroupBy {

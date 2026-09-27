@@ -1,23 +1,26 @@
 -- name: ListRateLimitRules :many
 SELECT id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras
 FROM rate_limit_rules
-WHERE sqlc.narg(enabled)::boolean IS NULL OR enabled = sqlc.narg(enabled)::boolean
+WHERE owner_user_id = sqlc.arg(owner_user_id)
+  AND (sqlc.narg(enabled)::boolean IS NULL OR enabled = sqlc.narg(enabled)::boolean)
 ORDER BY priority, id
 LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
 -- name: CountRateLimitRules :one
 SELECT count(*)::int
 FROM rate_limit_rules
-WHERE sqlc.narg(enabled)::boolean IS NULL OR enabled = sqlc.narg(enabled)::boolean;
+WHERE owner_user_id = sqlc.arg(owner_user_id)
+  AND (sqlc.narg(enabled)::boolean IS NULL OR enabled = sqlc.narg(enabled)::boolean);
 
 -- name: GetRateLimitRule :one
 SELECT id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras
 FROM rate_limit_rules
-WHERE id = $1;
+WHERE id = sqlc.arg(id) AND owner_user_id = sqlc.arg(owner_user_id);
 
 -- name: CreateRateLimitRule :one
-INSERT INTO rate_limit_rules (rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras)
+INSERT INTO rate_limit_rules (owner_user_id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras)
 VALUES (
+    sqlc.arg(owner_user_id),
     sqlc.arg(rule_name),
     sqlc.arg(target_type),
     sqlc.arg(target_value),
@@ -44,12 +47,12 @@ SET rule_name = sqlc.arg(rule_name),
     enabled = sqlc.arg(enabled),
     extras = sqlc.arg(extras),
     updated_at = now()
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id) AND owner_user_id = sqlc.arg(owner_user_id);
 
 -- name: UpdateRateLimitRuleEnabled :execrows
 UPDATE rate_limit_rules
 SET enabled = sqlc.arg(enabled), updated_at = now()
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id) AND owner_user_id = sqlc.arg(owner_user_id);
 
 -- name: DeleteRateLimitRule :execrows
-DELETE FROM rate_limit_rules WHERE id = $1;
+DELETE FROM rate_limit_rules WHERE id = sqlc.arg(id) AND owner_user_id = sqlc.arg(owner_user_id);

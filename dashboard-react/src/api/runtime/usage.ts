@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { listSchema, MoneySchema } from './common'
 
 const Counts = { request_count: z.number().int(), success_count: z.number().int(), error_count: z.number().int(), total_tokens: z.number().int(), total_cost: MoneySchema }
-export const StatsSchema = z.object({ ...Counts, active_user_count: z.number().int() })
+export const StatsSchema = z.object({ ...Counts, active_key_count: z.number().int() })
 export const DailyStatsSchema = z.object({ stat_date: z.string().date(), ...Counts })
 export const DailyStatsListSchema = listSchema(DailyStatsSchema)
 export const ChannelStatsSchema = z.object({ channel_id: z.number().int(), channel_name: z.string(), ...Counts })

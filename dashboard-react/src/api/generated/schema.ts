@@ -914,7 +914,7 @@ export interface components {
             error_count: number;
             total_tokens: number;
             total_cost: components["schemas"]["Money"];
-            active_user_count: number;
+            active_key_count: number;
         };
         DailyStats: {
             /** Format: date */
@@ -989,7 +989,7 @@ export interface components {
         RateLimitCreateInput: {
             rule_name: string;
             /** @enum {string} */
-            target_type: "global" | "user" | "api_key" | "model" | "channel";
+            target_type: "user" | "api_key" | "model" | "channel";
             target_value?: string;
             /** @enum {string} */
             metric: "rpm" | "tpm" | "rpd" | "concurrency";
@@ -1006,7 +1006,7 @@ export interface components {
         RateLimitUpdateInput: {
             rule_name?: string;
             /** @enum {string} */
-            target_type?: "global" | "user" | "api_key" | "model" | "channel";
+            target_type?: "user" | "api_key" | "model" | "channel";
             target_value?: string;
             /** @enum {string} */
             metric?: "rpm" | "tpm" | "rpd" | "concurrency";

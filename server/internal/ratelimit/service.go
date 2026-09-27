@@ -1,18 +1,24 @@
 package ratelimit
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
-func (a *Server) ListRateLimits(ctx context.Context, enabled *bool, page, pageSize int) (ListResponse[RateLimitRuleDTO], error) {
-	return a.store.ListRateLimits(ctx, enabled, page, pageSize)
+func (a *Server) ListRateLimits(ctx context.Context, ownerUserID int, enabled *bool, page, pageSize int) (ListResponse[RateLimitRuleDTO], error) {
+	return a.store.ListRateLimits(ctx, ownerUserID, enabled, page, pageSize)
 }
 
-// CreateRateLimit normalizes and persists a new rule.
-func (a *Server) CreateRateLimit(ctx context.Context, in RateLimitInput) (RateLimitRuleDTO, error) {
+// CreateRateLimit normalizes and persists a new rule owned by ownerUserID.
+func (a *Server) CreateRateLimit(ctx context.Context, ownerUserID int, in RateLimitInput) (RateLimitRuleDTO, error) {
 	rule, err := NormalizeRateLimit(in, nil)
 	if err != nil {
 		return RateLimitRuleDTO{}, err
 	}
-	id, err := a.store.InsertRateLimit(ctx, rule)
+	if err := a.validateTarget(ctx, ownerUserID, rule); err != nil {
+		return RateLimitRuleDTO{}, err
+	}
+	id, err := a.store.InsertRateLimit(ctx, ownerUserID, rule)
 	if err != nil {
 		return RateLimitRuleDTO{}, err
 	}
@@ -21,8 +27,8 @@ func (a *Server) CreateRateLimit(ctx context.Context, in RateLimitInput) (RateLi
 }
 
 // UpdateRateLimit merges the partial input over the stored rule and persists it.
-func (a *Server) UpdateRateLimit(ctx context.Context, id int, in RateLimitInput) (RateLimitRuleDTO, error) {
-	existing, err := a.store.GetRateLimit(ctx, id)
+func (a *Server) UpdateRateLimit(ctx context.Context, ownerUserID, id int, in RateLimitInput) (RateLimitRuleDTO, error) {
+	existing, err := a.store.GetRateLimit(ctx, ownerUserID, id)
 	if err != nil {
 		return RateLimitRuleDTO{}, err
 	}
@@ -30,7 +36,12 @@ func (a *Server) UpdateRateLimit(ctx context.Context, id int, in RateLimitInput)
 	if err != nil {
 		return RateLimitRuleDTO{}, err
 	}
-	ok, err := a.store.UpdateRateLimitRecord(ctx, id, rule)
+	if rule.TargetType != existing.TargetType || rule.TargetValue != existing.TargetValue {
+		if err := a.validateTarget(ctx, ownerUserID, rule); err != nil {
+			return RateLimitRuleDTO{}, err
+		}
+	}
+	ok, err := a.store.UpdateRateLimitRecord(ctx, ownerUserID, id, rule)
 	if err != nil {
 		return RateLimitRuleDTO{}, err
 	}
@@ -41,13 +52,27 @@ func (a *Server) UpdateRateLimit(ctx context.Context, id int, in RateLimitInput)
 	return RateLimitRuleToDTO(rule), nil
 }
 
-func (a *Server) DeleteRateLimit(ctx context.Context, id int) error {
-	ok, err := a.store.DeleteRateLimit(ctx, id)
+func (a *Server) DeleteRateLimit(ctx context.Context, ownerUserID, id int) error {
+	ok, err := a.store.DeleteRateLimit(ctx, ownerUserID, id)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// validateTarget rejects targets that reference another user's resource. The
+// same value would otherwise be inert at runtime, but rejecting it up front
+// keeps the rule scope honest.
+func (a *Server) validateTarget(ctx context.Context, ownerUserID int, rule RateLimitRule) error {
+	owned, err := a.store.TargetOwnedByUser(ctx, ownerUserID, rule.TargetType, rule.TargetValue)
+	if err != nil {
+		return err
+	}
+	if !owned {
+		return fmt.Errorf("%w: target_value is not owned by the current user", ErrInvalid)
 	}
 	return nil
 }

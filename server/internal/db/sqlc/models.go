@@ -184,6 +184,7 @@ type RateLimitReservation struct {
 
 type RateLimitRule struct {
 	ID            int64              `json:"id"`
+	OwnerUserID   int64              `json:"owner_user_id"`
 	RuleName      string             `json:"rule_name"`
 	TargetType    string             `json:"target_type"`
 	TargetValue   string             `json:"target_value"`
