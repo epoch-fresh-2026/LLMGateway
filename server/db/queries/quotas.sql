@@ -1,6 +1,6 @@
 -- name: GetQuotaPolicy :one
 SELECT id, policy_name, scope_type, user_id, api_key_id, period_type,
-       token_limit, cost_limit::text AS cost_limit, enabled
+       token_limit, COALESCE(cost_limit::text, '') AS cost_limit, enabled
 FROM quota_policies
 WHERE quota_policies.id = sqlc.arg(id) AND deleted_at IS NULL
   AND ((quota_policies.scope_type = 'user' AND quota_policies.user_id = sqlc.arg(owner_user_id))

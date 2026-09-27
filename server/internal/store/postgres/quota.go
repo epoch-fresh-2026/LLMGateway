@@ -55,7 +55,7 @@ func (s *Store) GetQuotaPolicy(ctx context.Context, ownerUserID, id int) (domain
 		ScopeID:    *scopeID,
 		PeriodType: domain.QuotaPeriodType(row.PeriodType),
 		TokenLimit: tokenLimit,
-		CostLimit:  optionalString(row.CostLimit),
+		CostLimit:  optionalString(textValue(row.CostLimit)),
 		Enabled:    row.Enabled,
 	}, nil
 }

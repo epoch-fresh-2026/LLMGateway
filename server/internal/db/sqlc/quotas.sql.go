@@ -69,7 +69,7 @@ func (q *Queries) DeleteQuotaPolicy(ctx context.Context, arg DeleteQuotaPolicyPa
 
 const getQuotaPolicy = `-- name: GetQuotaPolicy :one
 SELECT id, policy_name, scope_type, user_id, api_key_id, period_type,
-       token_limit, cost_limit::text AS cost_limit, enabled
+       token_limit, COALESCE(cost_limit::text, '') AS cost_limit, enabled
 FROM quota_policies
 WHERE quota_policies.id = $1 AND deleted_at IS NULL
   AND ((quota_policies.scope_type = 'user' AND quota_policies.user_id = $2)
@@ -90,7 +90,7 @@ type GetQuotaPolicyRow struct {
 	ApiKeyID   pgtype.Int8 `json:"api_key_id"`
 	PeriodType string      `json:"period_type"`
 	TokenLimit pgtype.Int8 `json:"token_limit"`
-	CostLimit  string      `json:"cost_limit"`
+	CostLimit  interface{} `json:"cost_limit"`
 	Enabled    bool        `json:"enabled"`
 }
 

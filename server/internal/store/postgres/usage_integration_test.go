@@ -242,7 +242,7 @@ func TestPGUsageOwnerIsolation(t *testing.T) {
 	if logs.Total != 1 {
 		t.Fatalf("owner 1 logs = %d, want 1", logs.Total)
 	}
-	overview, err := st.StatsOverview(ctx, 1, "", "")
+	overview, err := st.StatsOverview(ctx, 1, "1970-01-01T00:00:00Z", "9999-12-31T23:59:59Z")
 	if err != nil {
 		t.Fatal(err)
 	}
