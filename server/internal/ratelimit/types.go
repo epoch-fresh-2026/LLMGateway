@@ -40,7 +40,7 @@ type RateLimitRuleDTO struct {
 }
 
 var (
-	validTargetTypes = map[string]bool{"global": true, "user": true, "api_key": true, "model": true, "channel": true}
+	validTargetTypes = map[string]bool{"user": true, "api_key": true, "model": true, "channel": true}
 	validMetrics     = map[string]bool{"rpm": true, "tpm": true, "rpd": true, "concurrency": true}
 	validActions     = map[string]bool{"reject": true}
 )

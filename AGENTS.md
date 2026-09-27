@@ -38,6 +38,7 @@
 - `money` 和 `crypto` 是叶子能力包，不得依赖 `store`、`httpapi` 或业务模块。禁止各业务模块或 Store 重复实现金额、加密、密码哈希和哈希逻辑；`store/postgres` 不得 import `money` 或 `crypto`（由架构测试强制）。
 - 会话与注册安全变量 `SESSION_TTL_SECONDS`、`SESSION_COOKIE_SECURE`、`REGISTRATION_ENABLED`、`BCRYPT_COST` 由 `server/internal/config` 解析，缺省值集中在 `config.go`；这些安全变量非法时 `config.Load` 返回错误使进程启动失败，而历史非安全变量仍保持静默回退。密码哈希成本范围以 `crypto.MinPasswordCost`/`crypto.MaxPasswordCost` 为准。
 - 自助账户认证与会话归 `server/internal/accounts`：`/admin/auth/{register,login,logout,me}` 与 `sessions` 表（只存 token 哈希），Cookie 名为 `llmgateway_session`；`server/internal/httpapi/session.go` 的 `requireSession` 对 `/admin`（除 `/admin/auth/*`）强制会话并注入 `httpcommon.Identity`，业务模块通过 `server/internal/httpcommon.IdentityFrom` 读取当前用户。同源部署不返回 CORS 头。
+- 业务数据按会话用户隔离：`channels`/`rate_limit_rules` 携带 `owner_user_id`，`usage_logs`/`quota_policies` 按用户过滤；`/v1` 只使用 Key 所属用户的渠道与限流规则。跨用户列表/读写一律返回 404/空列表。
 - `/admin` 接口统一返回 `{code,message,data}`，列表统一返回 `{list,total}`。时间使用 RFC3339，自然日使用 `YYYY-MM-DD`。
 - `/v1` 尽量保持 OpenAI 兼容；认证使用 `Authorization: Bearer <gateway-key>`，错误响应保持稳定、可识别。
 - 金额禁止使用 `float64` 参与计算。数据库使用 `NUMERIC`，Go 使用定点整数，对外使用字符串。

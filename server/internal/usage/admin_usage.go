@@ -36,14 +36,22 @@ func (a *Server) usageLog(r *http.Request) httpcommon.AdminResult {
 	if r.Method != http.MethodGet {
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
+	ownerUserID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid log id")
 	}
-	return httpcommon.Result(a.store.GetUsageLog(r.Context(), id))
+	return httpcommon.Result(a.store.GetUsageLog(r.Context(), ownerUserID, id))
 }
 
 func (a *Server) listUsageLogs(r *http.Request) httpcommon.AdminResult {
+	ownerUserID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
 	query := r.URL.Query()
 	page, pageSize := httpcommon.ParsePagination(r)
 
@@ -76,26 +84,42 @@ func (a *Server) listUsageLogs(r *http.Request) httpcommon.AdminResult {
 		}
 		filter.APIKeyID = &id
 	}
-	return httpcommon.Result(a.store.ListUsageLogs(r.Context(), filter))
+	return httpcommon.Result(a.store.ListUsageLogs(r.Context(), ownerUserID, filter))
 }
 
 func (a *Server) statsOverview(r *http.Request) httpcommon.AdminResult {
+	ownerUserID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
 	query := r.URL.Query()
-	return httpcommon.Result(a.store.StatsOverview(r.Context(), orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
+	return httpcommon.Result(a.store.StatsOverview(r.Context(), ownerUserID, orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
 }
 
 func (a *Server) statsDaily(r *http.Request) httpcommon.AdminResult {
+	ownerUserID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
 	query := r.URL.Query()
 	page, pageSize := httpcommon.ParsePagination(r)
-	return httpcommon.Result(a.store.StatsDaily(r.Context(), orDefault(query.Get("date_from"), defaultDateFrom), orDefault(query.Get("date_to"), defaultDateTo), page, pageSize))
+	return httpcommon.Result(a.store.StatsDaily(r.Context(), ownerUserID, orDefault(query.Get("date_from"), defaultDateFrom), orDefault(query.Get("date_to"), defaultDateTo), page, pageSize))
 }
 
 func (a *Server) statsChannels(r *http.Request) httpcommon.AdminResult {
+	ownerUserID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
 	query := r.URL.Query()
-	return httpcommon.Result(a.store.StatsChannels(r.Context(), orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
+	return httpcommon.Result(a.store.StatsChannels(r.Context(), ownerUserID, orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
 }
 
 func (a *Server) statsTTFT(r *http.Request) httpcommon.AdminResult {
+	ownerUserID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
 	query := r.URL.Query()
 	filter := TTFTStatsFilter{Model: query.Get("model"), StartTime: orDefault(query.Get("start_time"), defaultStartTime), EndTime: orDefault(query.Get("end_time"), defaultEndTime)}
 	for name, target := range map[string]**int{"user_id": &filter.UserID, "api_key_id": &filter.APIKeyID, "channel_id": &filter.ChannelID} {
@@ -107,10 +131,14 @@ func (a *Server) statsTTFT(r *http.Request) httpcommon.AdminResult {
 			*target = &id
 		}
 	}
-	return httpcommon.Result(a.store.StatsTTFT(r.Context(), filter))
+	return httpcommon.Result(a.store.StatsTTFT(r.Context(), ownerUserID, filter))
 }
 
 func (a *Server) aggregateUsage(r *http.Request) httpcommon.AdminResult {
+	ownerUserID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
 	query := r.URL.Query()
 	groupBy := query.Get("group_by")
 	if groupBy != "user" && groupBy != "api_key" && groupBy != "model" && groupBy != "channel" {
@@ -143,7 +171,7 @@ func (a *Server) aggregateUsage(r *http.Request) httpcommon.AdminResult {
 			*target = &id
 		}
 	}
-	return httpcommon.Result(a.store.AggregateUsage(r.Context(), filter))
+	return httpcommon.Result(a.store.AggregateUsage(r.Context(), ownerUserID, filter))
 }
 
 func orDefault(value, fallback string) string {

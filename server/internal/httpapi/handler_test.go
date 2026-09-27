@@ -68,7 +68,7 @@ func TestDashboardStartupEndpoints(t *testing.T) {
 		wantFields   []string
 		wantListData bool
 	}{
-		{"/admin/stats/overview?start_time=2026-09-16T10:00:00Z&end_time=2026-09-16T11:00:00Z", []string{"request_count", "success_count", "error_count", "total_tokens", "total_cost", "active_user_count"}, false},
+		{"/admin/stats/overview?start_time=2026-09-16T10:00:00Z&end_time=2026-09-16T11:00:00Z", []string{"request_count", "success_count", "error_count", "total_tokens", "total_cost", "active_key_count"}, false},
 		{"/admin/stats/ttft?start_time=2026-09-16T10:00:00Z&end_time=2026-09-16T11:00:00Z", []string{"sample_count", "average_ms", "p50_ms", "p95_ms", "p99_ms"}, false},
 		{"/admin/stats/daily?date_from=2026-09-10&date_to=2026-09-16&page=1&page_size=100", nil, true},
 		{"/admin/channels?page=1&page_size=100", nil, true},

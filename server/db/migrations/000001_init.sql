@@ -124,6 +124,9 @@ CREATE TABLE client_api_keys (
 
 CREATE TABLE rate_limit_rules (
     id BIGSERIAL PRIMARY KEY,
+    -- Rules are private to one user; runtime evaluation only considers the
+    -- requesting key's owner rules.
+    owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     rule_name TEXT NOT NULL,
     target_type TEXT NOT NULL,
     target_value TEXT NOT NULL DEFAULT '*',
@@ -136,14 +139,14 @@ CREATE TABLE rate_limit_rules (
     extras JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (target_type IN ('global', 'user', 'api_key', 'model', 'channel')),
+    CHECK (target_type IN ('user', 'api_key', 'model', 'channel')),
     CHECK (metric IN ('rpm', 'tpm', 'rpd', 'concurrency')),
     -- Queueing synchronous proxy requests is unsupported, so 'reject' is the
     -- only valid action.
     CHECK (action = 'reject')
 );
 
-CREATE INDEX rate_limit_rules_enabled_idx ON rate_limit_rules (enabled, priority, id);
+CREATE INDEX rate_limit_rules_enabled_idx ON rate_limit_rules (owner_user_id, enabled, priority, id);
 
 CREATE TABLE usage_logs (
     id BIGSERIAL PRIMARY KEY,

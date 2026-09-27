@@ -55,11 +55,12 @@ type QuotaPolicyInput struct {
 }
 
 type QuotaPolicyFilter struct {
-	ScopeType string
-	ScopeID   int
-	Enabled   *bool
-	Page      int
-	PageSize  int
+	OwnerUserID int
+	ScopeType   string
+	ScopeID     int
+	Enabled     *bool
+	Page        int
+	PageSize    int
 }
 
 type QuotaReserveInput struct {

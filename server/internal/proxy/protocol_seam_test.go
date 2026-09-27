@@ -93,7 +93,7 @@ func TestChatCompletionsUsesProtocolNeutralAdapterAndSettles(t *testing.T) {
 	if response.Usage == nil || response.Usage.TotalTokens != 1500 {
 		t.Fatalf("response usage = %+v", response.Usage)
 	}
-	logs, err := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 10})
+	logs, err := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestChatCompletionsFailsOverAndSettlesOnlyFinalSuccess(t *testing.T) {
 	if len(calls) != 2 || calls[0] != "first.test" || calls[1] != "second.test" {
 		t.Fatalf("calls = %+v, want first then second", calls)
 	}
-	logs, _ := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 10})
+	logs, _ := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if logs.Total != 1 || logs.List[0].Status != "success" || logs.List[0].ChannelID == nil || *logs.List[0].ChannelID != second.ID {
 		t.Fatalf("usage logs = %+v, want one final success", logs)
 	}

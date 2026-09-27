@@ -55,7 +55,7 @@ func TestSettleDebitsUserChannelAndWritesUsage(t *testing.T) {
 	if secret.Balance == nil || *secret.Balance != "3.750000" {
 		t.Fatalf("channel balance = %v, want 3.750000", secret.Balance)
 	}
-	logs, _ := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 20})
+	logs, _ := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if logs.Total != 1 || logs.List[0].RequestID != "req-1" || logs.List[0].Status != "success" {
 		t.Fatalf("unexpected usage logs: %+v", logs)
 	}
@@ -85,7 +85,7 @@ func TestSettleRejectsInsufficientBalanceWithoutSuccessLog(t *testing.T) {
 	if balance.AvailableBalance != "1.000000" {
 		t.Fatalf("balance changed: %s", balance.AvailableBalance)
 	}
-	logs, _ := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 20})
+	logs, _ := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if logs.Total != 0 {
 		t.Fatalf("success usage written despite failed settlement: %+v", logs)
 	}
@@ -114,7 +114,7 @@ func TestSettleCostZeroWritesUsageWithoutDebit(t *testing.T) {
 	if txs.Total != 1 {
 		t.Fatalf("zero-cost settlement created consume transaction: %+v", txs)
 	}
-	logs, _ := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 20})
+	logs, _ := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if logs.Total != 1 {
 		t.Fatalf("zero-cost settlement did not write usage log: %+v", logs)
 	}

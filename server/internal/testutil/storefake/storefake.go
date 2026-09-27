@@ -39,6 +39,7 @@ type Store struct {
 
 	nextRateLimitID int
 	rateLimits      map[int]*ratelimit.RateLimitRule
+	rateLimitOwners map[int]int
 	nextUsageLogID  int
 	usageLogs       []usage.UsageLog
 
@@ -142,6 +143,7 @@ func New() *Store {
 		sessions:                   map[string]accounts.Session{},
 		nextRateLimitID:            1,
 		rateLimits:                 map[int]*ratelimit.RateLimitRule{},
+		rateLimitOwners:            map[int]int{},
 		nextUsageLogID:             1,
 		nextQuotaPolicyID:          1,
 		nextQuotaReservationID:     1,

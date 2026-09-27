@@ -31,8 +31,8 @@ type quotaItemRow struct {
 	reservedCost  string
 }
 
-func (s *Store) GetQuotaPolicy(ctx context.Context, id int) (domain.QuotaPolicy, error) {
-	row, err := s.queries.GetQuotaPolicy(ctx, int64(id))
+func (s *Store) GetQuotaPolicy(ctx context.Context, ownerUserID, id int) (domain.QuotaPolicy, error) {
+	row, err := s.queries.GetQuotaPolicy(ctx, sqlc.GetQuotaPolicyParams{ID: int64(id), OwnerUserID: pgtype.Int8{Int64: int64(ownerUserID), Valid: true}})
 	if err != nil {
 		return domain.QuotaPolicy{}, mapError(err)
 	}
@@ -55,7 +55,7 @@ func (s *Store) GetQuotaPolicy(ctx context.Context, id int) (domain.QuotaPolicy,
 		ScopeID:    *scopeID,
 		PeriodType: domain.QuotaPeriodType(row.PeriodType),
 		TokenLimit: tokenLimit,
-		CostLimit:  optionalString(row.CostLimit),
+		CostLimit:  optionalString(textValue(row.CostLimit)),
 		Enabled:    row.Enabled,
 	}, nil
 }
@@ -84,12 +84,13 @@ func (s *Store) InsertQuotaPolicy(ctx context.Context, policy domain.QuotaPolicy
 	return int(id), nil
 }
 
-func (s *Store) UpdateQuotaPolicyRecord(ctx context.Context, id int, policy domain.QuotaPolicy) (bool, error) {
+func (s *Store) UpdateQuotaPolicyRecord(ctx context.Context, ownerUserID, id int, policy domain.QuotaPolicy) (bool, error) {
 	params := sqlc.UpdateQuotaPolicyParams{
-		ID:         int64(id),
-		PolicyName: policy.PolicyName,
-		Enabled:    policy.Enabled,
-		CostLimit:  numericValue(policy.CostLimit),
+		ID:          int64(id),
+		OwnerUserID: pgtype.Int8{Int64: int64(ownerUserID), Valid: true},
+		PolicyName:  policy.PolicyName,
+		Enabled:     policy.Enabled,
+		CostLimit:   numericValue(policy.CostLimit),
 	}
 	if policy.TokenLimit != nil {
 		params.TokenLimit = pgtype.Int8{Int64: *policy.TokenLimit, Valid: true}
@@ -101,12 +102,20 @@ func (s *Store) UpdateQuotaPolicyRecord(ctx context.Context, id int, policy doma
 	return affected > 0, nil
 }
 
-func (s *Store) DeleteQuotaPolicy(ctx context.Context, id int) (bool, error) {
-	affected, err := s.queries.DeleteQuotaPolicy(ctx, int64(id))
+func (s *Store) DeleteQuotaPolicy(ctx context.Context, ownerUserID, id int) (bool, error) {
+	affected, err := s.queries.DeleteQuotaPolicy(ctx, sqlc.DeleteQuotaPolicyParams{ID: int64(id), OwnerUserID: pgtype.Int8{Int64: int64(ownerUserID), Valid: true}})
 	if err != nil {
 		return false, mapError(err)
 	}
 	return affected > 0, nil
+}
+
+func (s *Store) KeyBelongsToUser(ctx context.Context, ownerUserID, keyID int) (bool, error) {
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM client_api_keys WHERE id = $1 AND user_id = $2)`, keyID, ownerUserID).Scan(&exists); err != nil {
+		return false, mapError(err)
+	}
+	return exists, nil
 }
 
 func (s *Store) ListQuotaPolicies(ctx context.Context, filter domain.QuotaPolicyFilter) (domain.ListResponse[domain.QuotaPolicyDTO], error) {
@@ -116,11 +125,14 @@ SELECT id, policy_name, scope_type, COALESCE(user_id, api_key_id), period_type,
        token_limit, cost_limit::text, enabled
 FROM quota_policies
 WHERE deleted_at IS NULL
-  AND ($1 = '' OR scope_type = $1)
-  AND ($2 = 0 OR COALESCE(user_id, api_key_id) = $2)
-  AND ($3::boolean IS NULL OR enabled = $3)
+  AND ((quota_policies.scope_type = 'user' AND quota_policies.user_id = $1)
+       OR (quota_policies.scope_type = 'api_key' AND quota_policies.api_key_id IN (
+           SELECT k.id FROM client_api_keys k WHERE k.user_id = $1)))
+  AND ($2 = '' OR scope_type = $2)
+  AND ($3 = 0 OR COALESCE(user_id, api_key_id) = $3)
+  AND ($4::boolean IS NULL OR enabled = $4)
 ORDER BY id
-LIMIT $4 OFFSET $5`, filter.ScopeType, filter.ScopeID, filter.Enabled, limit, offset)
+LIMIT $5 OFFSET $6`, filter.OwnerUserID, filter.ScopeType, filter.ScopeID, filter.Enabled, limit, offset)
 	if err != nil {
 		return domain.ListResponse[domain.QuotaPolicyDTO]{}, mapError(err)
 	}
@@ -146,7 +158,7 @@ LIMIT $4 OFFSET $5`, filter.ScopeType, filter.ScopeID, filter.Enabled, limit, of
 		return domain.ListResponse[domain.QuotaPolicyDTO]{}, mapError(err)
 	}
 	var total int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM quota_policies WHERE deleted_at IS NULL AND ($1 = '' OR scope_type = $1) AND ($2 = 0 OR COALESCE(user_id, api_key_id) = $2) AND ($3::boolean IS NULL OR enabled = $3)`, filter.ScopeType, filter.ScopeID, filter.Enabled).Scan(&total); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM quota_policies WHERE deleted_at IS NULL AND ((quota_policies.scope_type = 'user' AND quota_policies.user_id = $1) OR (quota_policies.scope_type = 'api_key' AND quota_policies.api_key_id IN (SELECT k.id FROM client_api_keys k WHERE k.user_id = $1))) AND ($2 = '' OR scope_type = $2) AND ($3 = 0 OR COALESCE(user_id, api_key_id) = $3) AND ($4::boolean IS NULL OR enabled = $4)`, filter.OwnerUserID, filter.ScopeType, filter.ScopeID, filter.Enabled).Scan(&total); err != nil {
 		return domain.ListResponse[domain.QuotaPolicyDTO]{}, mapError(err)
 	}
 	return domain.ListResponse[domain.QuotaPolicyDTO]{List: list, Total: total}, nil
@@ -159,10 +171,13 @@ SELECT p.id, p.policy_name, p.scope_type, COALESCE(p.user_id, p.api_key_id), p.p
        b.period_start, b.period_end, p.token_limit, b.used_tokens, b.reserved_tokens,
        p.cost_limit::text, b.used_cost::text, b.reserved_cost::text
 FROM quota_policies p JOIN quota_buckets b ON b.policy_id = p.id
-WHERE p.deleted_at IS NULL AND ($1 = '' OR p.scope_type = $1) AND ($2 = 0 OR COALESCE(p.user_id, p.api_key_id) = $2)
+WHERE p.deleted_at IS NULL
+  AND ((p.scope_type = 'user' AND p.user_id = $1)
+       OR (p.scope_type = 'api_key' AND p.api_key_id IN (SELECT k.id FROM client_api_keys k WHERE k.user_id = $1)))
+  AND ($2 = '' OR p.scope_type = $2) AND ($3 = 0 OR COALESCE(p.user_id, p.api_key_id) = $3)
   AND b.period_start <= now() AND b.period_end > now()
 ORDER BY p.id
-LIMIT $3 OFFSET $4`, filter.ScopeType, filter.ScopeID, limit, offset)
+LIMIT $4 OFFSET $5`, filter.OwnerUserID, filter.ScopeType, filter.ScopeID, limit, offset)
 	if err != nil {
 		return domain.ListResponse[domain.QuotaUsageDTO]{}, mapError(err)
 	}
@@ -190,7 +205,7 @@ LIMIT $3 OFFSET $4`, filter.ScopeType, filter.ScopeID, limit, offset)
 		return domain.ListResponse[domain.QuotaUsageDTO]{}, mapError(err)
 	}
 	var total int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM quota_policies p JOIN quota_buckets b ON b.policy_id=p.id WHERE p.deleted_at IS NULL AND ($1='' OR p.scope_type=$1) AND ($2=0 OR COALESCE(p.user_id,p.api_key_id)=$2) AND b.period_start <= now() AND b.period_end > now()`, filter.ScopeType, filter.ScopeID).Scan(&total); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM quota_policies p JOIN quota_buckets b ON b.policy_id=p.id WHERE p.deleted_at IS NULL AND ((p.scope_type='user' AND p.user_id=$1) OR (p.scope_type='api_key' AND p.api_key_id IN (SELECT k.id FROM client_api_keys k WHERE k.user_id=$1))) AND ($2='' OR p.scope_type=$2) AND ($3=0 OR COALESCE(p.user_id,p.api_key_id)=$3) AND b.period_start <= now() AND b.period_end > now()`, filter.OwnerUserID, filter.ScopeType, filter.ScopeID).Scan(&total); err != nil {
 		return domain.ListResponse[domain.QuotaUsageDTO]{}, mapError(err)
 	}
 	return domain.ListResponse[domain.QuotaUsageDTO]{List: list, Total: total}, nil

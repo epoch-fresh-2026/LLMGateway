@@ -158,7 +158,7 @@ end_time=RFC3339
   "error_count": 0,
   "total_tokens": 0,
   "total_cost": "0.000000",
-  "active_user_count": 0
+  "active_key_count": 0
 }
 ```
 
@@ -800,7 +800,6 @@ enabled=true
 支持的 `target_type`：
 
 ```text
-global
 user
 api_key
 model

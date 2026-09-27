@@ -81,7 +81,7 @@ func TestAdminMutationResponseContract(t *testing.T) {
 	assertNoSecret(t, key, "sk-contract-secret")
 
 	rateLimit := assertAdminSuccess(t, adminRaw(t, server, http.MethodPost, "/admin/rate-limits", map[string]any{
-		"rule_name": "contract-rpm", "target_type": "global", "metric": "rpm", "limit_value": 60, "window_seconds": 60, "action": "reject",
+		"rule_name": "contract-rpm", "target_type": "user", "metric": "rpm", "limit_value": 60, "window_seconds": 60, "action": "reject",
 	}))
 	assertFields(t, rateLimit, "id", "rule_name", "target_type", "target_value", "metric", "limit_value", "window_seconds", "action", "priority", "enabled", "extras")
 

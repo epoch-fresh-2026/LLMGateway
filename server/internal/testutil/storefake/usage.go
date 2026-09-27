@@ -52,7 +52,7 @@ func (s *Store) insertUsageLogLocked(in domain.UsageLogInput) (int, error) {
 	return log.ID, nil
 }
 
-func (s *Store) ListUsageLogs(_ context.Context, filter domain.UsageLogFilter) (domain.ListResponse[domain.UsageLogDTO], error) {
+func (s *Store) ListUsageLogs(_ context.Context, ownerUserID int, filter domain.UsageLogFilter) (domain.ListResponse[domain.UsageLogDTO], error) {
 	if err := domain.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
 		return domain.ListResponse[domain.UsageLogDTO]{}, err
 	}
@@ -60,7 +60,7 @@ func (s *Store) ListUsageLogs(_ context.Context, filter domain.UsageLogFilter) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	rows, err := s.filterUsageLogsLocked(filter)
+	rows, err := s.filterUsageLogsLocked(ownerUserID, filter)
 	if err != nil {
 		return domain.ListResponse[domain.UsageLogDTO]{}, err
 	}
@@ -79,12 +79,13 @@ func (s *Store) ListUsageLogs(_ context.Context, filter domain.UsageLogFilter) (
 	return domain.ListResponse[domain.UsageLogDTO]{List: list, Total: len(rows)}, nil
 }
 
-func (s *Store) GetUsageLog(_ context.Context, id int) (domain.UsageLogDTO, error) {
+func (s *Store) GetUsageLog(_ context.Context, ownerUserID, id int) (domain.UsageLogDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.usageLogs {
-		if s.usageLogs[i].ID == id {
-			return usageLogDTO(&s.usageLogs[i]), nil
+		log := &s.usageLogs[i]
+		if log.ID == id && log.UserID != nil && *log.UserID == ownerUserID {
+			return usageLogDTO(log), nil
 		}
 	}
 	return domain.UsageLogDTO{}, store.ErrNotFound
@@ -146,7 +147,7 @@ func (s *Store) CountTokensSince(_ context.Context, filter domain.TokenCountFilt
 	return total, nil
 }
 
-func (s *Store) StatsOverview(_ context.Context, startTime, endTime string) (domain.StatsOverviewDTO, error) {
+func (s *Store) StatsOverview(_ context.Context, ownerUserID int, startTime, endTime string) (domain.StatsOverviewDTO, error) {
 	start, end, err := parseRange(startTime, endTime)
 	if err != nil {
 		return domain.StatsOverviewDTO{}, err
@@ -157,8 +158,10 @@ func (s *Store) StatsOverview(_ context.Context, startTime, endTime string) (dom
 
 	var requests, success, errors, tokens int
 	cost := money.Amount(0)
-	users := map[int]bool{}
 	for _, log := range s.usageLogs {
+		if log.UserID == nil || *log.UserID != ownerUserID {
+			continue
+		}
 		if !withinRange(log.CreatedAt, start, end) {
 			continue
 		}
@@ -172,15 +175,31 @@ func (s *Store) StatsOverview(_ context.Context, startTime, endTime string) (dom
 		if parsed, err := money.Parse6(log.TotalCost); err == nil {
 			cost = cost.Add(parsed)
 		}
-		if log.UserID != nil {
-			users[*log.UserID] = true
-		}
 	}
 
-	return domain.StatsOverviewDTO{RequestCount: int64(requests), SuccessCount: int64(success), ErrorCount: int64(errors), TotalTokens: int64(tokens), TotalCost: money.Format6(cost), ActiveUserCount: int64(len(users))}, nil
+	return domain.StatsOverviewDTO{RequestCount: int64(requests), SuccessCount: int64(success), ErrorCount: int64(errors), TotalTokens: int64(tokens), TotalCost: money.Format6(cost), ActiveKeyCount: s.activeKeyCountLocked(ownerUserID)}, nil
 }
 
-func (s *Store) StatsDaily(_ context.Context, dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error) {
+// activeKeyCountLocked counts the owner's active, unexpired gateway keys.
+func (s *Store) activeKeyCountLocked(ownerUserID int) int64 {
+	now := s.now()
+	var count int64
+	for _, key := range s.keys {
+		if key.userID != ownerUserID || !key.isActive {
+			continue
+		}
+		if key.expiresAt != nil {
+			parsed, err := time.Parse(time.RFC3339, *key.expiresAt)
+			if err != nil || !parsed.After(now) {
+				continue
+			}
+		}
+		count++
+	}
+	return count
+}
+
+func (s *Store) StatsDaily(_ context.Context, ownerUserID int, dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error) {
 	if err := domain.ValidateDateRange(dateFrom, dateTo); err != nil {
 		return domain.ListResponse[domain.StatsDailyDTO]{}, err
 	}
@@ -194,6 +213,9 @@ func (s *Store) StatsDaily(_ context.Context, dateFrom, dateTo string, page, pag
 	}
 	byDate := map[string]*bucket{}
 	for _, log := range s.usageLogs {
+		if log.UserID == nil || *log.UserID != ownerUserID {
+			continue
+		}
 		date := utcDate(log.CreatedAt)
 		if date == "" || date < dateFrom || date > dateTo {
 			continue
@@ -230,7 +252,7 @@ func (s *Store) StatsDaily(_ context.Context, dateFrom, dateTo string, page, pag
 	return domain.ListResponse[domain.StatsDailyDTO]{List: list, Total: len(dates)}, nil
 }
 
-func (s *Store) StatsChannels(_ context.Context, startTime, endTime string) (domain.ListResponse[domain.StatsChannelDTO], error) {
+func (s *Store) StatsChannels(_ context.Context, ownerUserID int, startTime, endTime string) (domain.ListResponse[domain.StatsChannelDTO], error) {
 	start, end, err := parseRange(startTime, endTime)
 	if err != nil {
 		return domain.ListResponse[domain.StatsChannelDTO]{}, err
@@ -247,6 +269,9 @@ func (s *Store) StatsChannels(_ context.Context, startTime, endTime string) (dom
 	byChannel := map[int]*bucket{}
 	order := []int{}
 	for _, log := range s.usageLogs {
+		if log.UserID == nil || *log.UserID != ownerUserID {
+			continue
+		}
 		if !withinRange(log.CreatedAt, start, end) {
 			continue
 		}
@@ -287,7 +312,7 @@ func (s *Store) StatsChannels(_ context.Context, startTime, endTime string) (dom
 	return domain.ListResponse[domain.StatsChannelDTO]{List: list}, nil
 }
 
-func (s *Store) StatsTTFT(_ context.Context, filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, error) {
+func (s *Store) StatsTTFT(_ context.Context, ownerUserID int, filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, error) {
 	start, end, err := parseRange(filter.StartTime, filter.EndTime)
 	if err != nil {
 		return domain.TTFTStatsDTO{}, err
@@ -296,6 +321,9 @@ func (s *Store) StatsTTFT(_ context.Context, filter domain.TTFTStatsFilter) (dom
 	defer s.mu.Unlock()
 	var values []int
 	for _, log := range s.usageLogs {
+		if log.UserID == nil || *log.UserID != ownerUserID {
+			continue
+		}
 		if log.TTFTMs == nil || !withinRange(log.CreatedAt, start, end) ||
 			(filter.UserID != nil && (log.UserID == nil || *log.UserID != *filter.UserID)) ||
 			(filter.APIKeyID != nil && (log.APIKeyID == nil || *log.APIKeyID != *filter.APIKeyID)) ||
@@ -316,7 +344,7 @@ func (s *Store) StatsTTFT(_ context.Context, filter domain.TTFTStatsFilter) (dom
 	return domain.TTFTStatsDTO{SampleCount: int64(len(values)), AverageMs: sum / int64(len(values)), P50Ms: percentile(values, 50), P95Ms: percentile(values, 95), P99Ms: percentile(values, 99)}, nil
 }
 
-func (s *Store) AggregateUsage(_ context.Context, filter domain.UsageAggregateFilter) (domain.ListResponse[domain.UsageAggregateDTO], error) {
+func (s *Store) AggregateUsage(_ context.Context, ownerUserID int, filter domain.UsageAggregateFilter) (domain.ListResponse[domain.UsageAggregateDTO], error) {
 	start, end, err := parseRange(filter.StartTime, filter.EndTime)
 	if err != nil {
 		return domain.ListResponse[domain.UsageAggregateDTO]{}, err
@@ -325,6 +353,9 @@ func (s *Store) AggregateUsage(_ context.Context, filter domain.UsageAggregateFi
 	defer s.mu.Unlock()
 	byGroup := map[string]*domain.UsageAggregateDTO{}
 	for _, log := range s.usageLogs {
+		if log.UserID == nil || *log.UserID != ownerUserID {
+			continue
+		}
 		created, err := time.Parse(time.RFC3339, log.CreatedAt)
 		if err != nil || (!start.IsZero() && created.Before(start)) || (!end.IsZero() && !created.Before(end)) || (filter.UserID != nil && (log.UserID == nil || *log.UserID != *filter.UserID)) || (filter.APIKeyID != nil && (log.APIKeyID == nil || *log.APIKeyID != *filter.APIKeyID)) || (filter.ChannelID != nil && (log.ChannelID == nil || *log.ChannelID != *filter.ChannelID)) || (filter.Model != "" && log.Model != filter.Model) || (filter.Status != "" && log.Status != filter.Status) {
 			continue
@@ -432,13 +463,16 @@ func orZero8(value string) string {
 	return value
 }
 
-func (s *Store) filterUsageLogsLocked(filter domain.UsageLogFilter) ([]domain.UsageLog, error) {
+func (s *Store) filterUsageLogsLocked(ownerUserID int, filter domain.UsageLogFilter) ([]domain.UsageLog, error) {
 	start, end, err := parseRange(filter.StartTime, filter.EndTime)
 	if err != nil {
 		return nil, err
 	}
 	rows := []domain.UsageLog{}
 	for _, log := range s.usageLogs {
+		if log.UserID == nil || *log.UserID != ownerUserID {
+			continue
+		}
 		if filter.UserID != nil && (log.UserID == nil || *log.UserID != *filter.UserID) {
 			continue
 		}

@@ -43,7 +43,7 @@ func TestPGQuotaReservationRequiresUserAndKeyQuota(t *testing.T) {
 		t.Fatalf("second reservation error = %v, want ErrQuotaExceeded", err)
 	}
 
-	usage, err := q.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
+	usage, err := q.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{OwnerUserID: 1, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestPGQuotaReleaseAndSettlementMoveReservedToUsed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, err := q.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
+	rows, err := q.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{OwnerUserID: 1, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestPGQuotaConcurrentReservationsDoNotOversell(t *testing.T) {
 	if successes.Load() != 10 {
 		t.Fatalf("successful reservations = %d, want 10", successes.Load())
 	}
-	usage, err := q.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
+	usage, err := q.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{OwnerUserID: 1, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestPGQuotaReaperReleasesExpiredReservation(t *testing.T) {
 	if err != nil || count != 1 {
 		t.Fatalf("reap = %d, %v", count, err)
 	}
-	usage, err := q.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
+	usage, err := q.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{OwnerUserID: 1, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,6 +179,35 @@ func TestPGQuotaMonthlyCostLimitIsEnforced(t *testing.T) {
 	}
 }
 
+func TestPGQuotaPolicyOwnerIsolation(t *testing.T) {
+	st := testStore(t)
+	q := testQuota(t, st)
+	_, key1 := createQuotaTestIdentity(t, st)
+	createQuotaTestIdentity(t, st)
+	ctx := context.Background()
+
+	name, scopeUser, period, limit := "mine", "user", "day", int64(100)
+	ownerOne := 1
+	if _, err := q.CreateQuotaPolicy(ctx, 1, domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scopeUser, ScopeID: &ownerOne, PeriodType: &period, TokenLimit: &limit}); err != nil {
+		t.Fatal(err)
+	}
+	other, err := q.ListQuotaPolicies(ctx, domain.QuotaPolicyFilter{OwnerUserID: 2, Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.Total != 0 {
+		t.Fatalf("other owner sees %d policies, want 0", other.Total)
+	}
+
+	scopeKey := "api_key"
+	if _, err := q.CreateQuotaPolicy(ctx, 2, domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scopeKey, ScopeID: &key1, PeriodType: &period, TokenLimit: &limit}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("foreign key scope err = %v, want ErrNotFound", err)
+	}
+	if _, err := q.CreateQuotaPolicy(ctx, 1, domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scopeKey, ScopeID: &key1, PeriodType: &period, TokenLimit: &limit}); err != nil {
+		t.Fatalf("own key scope: %v", err)
+	}
+}
+
 func createQuotaTestIdentity(t *testing.T, st *Store) (string, int) {
 	t.Helper()
 	acc := accounts.New(st, st.AccountsTx())
@@ -197,7 +226,7 @@ func createQuotaTestIdentity(t *testing.T, st *Store) (string, int) {
 
 func createQuotaPolicy(t *testing.T, q *quota.Server, name, scope string, scopeID int, period string, tokens int64, cost string) {
 	t.Helper()
-	if _, err := q.CreateQuotaPolicy(context.Background(), domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &tokens, CostLimit: &cost}); err != nil {
+	if _, err := q.CreateQuotaPolicy(context.Background(), 1, domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &tokens, CostLimit: &cost}); err != nil {
 		t.Fatal(err)
 	}
 }

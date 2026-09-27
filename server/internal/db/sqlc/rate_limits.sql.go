@@ -14,18 +14,24 @@ import (
 const countRateLimitRules = `-- name: CountRateLimitRules :one
 SELECT count(*)::int
 FROM rate_limit_rules
-WHERE $1::boolean IS NULL OR enabled = $1::boolean
+WHERE owner_user_id = $1
+  AND ($2::boolean IS NULL OR enabled = $2::boolean)
 `
 
-func (q *Queries) CountRateLimitRules(ctx context.Context, enabled pgtype.Bool) (int32, error) {
-	row := q.db.QueryRow(ctx, countRateLimitRules, enabled)
+type CountRateLimitRulesParams struct {
+	OwnerUserID int64       `json:"owner_user_id"`
+	Enabled     pgtype.Bool `json:"enabled"`
+}
+
+func (q *Queries) CountRateLimitRules(ctx context.Context, arg CountRateLimitRulesParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countRateLimitRules, arg.OwnerUserID, arg.Enabled)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
 }
 
 const createRateLimitRule = `-- name: CreateRateLimitRule :one
-INSERT INTO rate_limit_rules (rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras)
+INSERT INTO rate_limit_rules (owner_user_id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras)
 VALUES (
     $1,
     $2,
@@ -36,12 +42,14 @@ VALUES (
     $7,
     $8,
     $9,
-    $10
+    $10,
+    $11
 )
 RETURNING id
 `
 
 type CreateRateLimitRuleParams struct {
+	OwnerUserID   int64  `json:"owner_user_id"`
 	RuleName      string `json:"rule_name"`
 	TargetType    string `json:"target_type"`
 	TargetValue   string `json:"target_value"`
@@ -56,6 +64,7 @@ type CreateRateLimitRuleParams struct {
 
 func (q *Queries) CreateRateLimitRule(ctx context.Context, arg CreateRateLimitRuleParams) (int64, error) {
 	row := q.db.QueryRow(ctx, createRateLimitRule,
+		arg.OwnerUserID,
 		arg.RuleName,
 		arg.TargetType,
 		arg.TargetValue,
@@ -73,11 +82,16 @@ func (q *Queries) CreateRateLimitRule(ctx context.Context, arg CreateRateLimitRu
 }
 
 const deleteRateLimitRule = `-- name: DeleteRateLimitRule :execrows
-DELETE FROM rate_limit_rules WHERE id = $1
+DELETE FROM rate_limit_rules WHERE id = $1 AND owner_user_id = $2
 `
 
-func (q *Queries) DeleteRateLimitRule(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteRateLimitRule, id)
+type DeleteRateLimitRuleParams struct {
+	ID          int64 `json:"id"`
+	OwnerUserID int64 `json:"owner_user_id"`
+}
+
+func (q *Queries) DeleteRateLimitRule(ctx context.Context, arg DeleteRateLimitRuleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRateLimitRule, arg.ID, arg.OwnerUserID)
 	if err != nil {
 		return 0, err
 	}
@@ -87,8 +101,13 @@ func (q *Queries) DeleteRateLimitRule(ctx context.Context, id int64) (int64, err
 const getRateLimitRule = `-- name: GetRateLimitRule :one
 SELECT id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras
 FROM rate_limit_rules
-WHERE id = $1
+WHERE id = $1 AND owner_user_id = $2
 `
+
+type GetRateLimitRuleParams struct {
+	ID          int64 `json:"id"`
+	OwnerUserID int64 `json:"owner_user_id"`
+}
 
 type GetRateLimitRuleRow struct {
 	ID            int64  `json:"id"`
@@ -104,8 +123,8 @@ type GetRateLimitRuleRow struct {
 	Extras        []byte `json:"extras"`
 }
 
-func (q *Queries) GetRateLimitRule(ctx context.Context, id int64) (GetRateLimitRuleRow, error) {
-	row := q.db.QueryRow(ctx, getRateLimitRule, id)
+func (q *Queries) GetRateLimitRule(ctx context.Context, arg GetRateLimitRuleParams) (GetRateLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, getRateLimitRule, arg.ID, arg.OwnerUserID)
 	var i GetRateLimitRuleRow
 	err := row.Scan(
 		&i.ID,
@@ -126,15 +145,17 @@ func (q *Queries) GetRateLimitRule(ctx context.Context, id int64) (GetRateLimitR
 const listRateLimitRules = `-- name: ListRateLimitRules :many
 SELECT id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras
 FROM rate_limit_rules
-WHERE $1::boolean IS NULL OR enabled = $1::boolean
+WHERE owner_user_id = $1
+  AND ($2::boolean IS NULL OR enabled = $2::boolean)
 ORDER BY priority, id
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListRateLimitRulesParams struct {
-	Enabled    pgtype.Bool `json:"enabled"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	OwnerUserID int64       `json:"owner_user_id"`
+	Enabled     pgtype.Bool `json:"enabled"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListRateLimitRulesRow struct {
@@ -152,7 +173,12 @@ type ListRateLimitRulesRow struct {
 }
 
 func (q *Queries) ListRateLimitRules(ctx context.Context, arg ListRateLimitRulesParams) ([]ListRateLimitRulesRow, error) {
-	rows, err := q.db.Query(ctx, listRateLimitRules, arg.Enabled, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listRateLimitRules,
+		arg.OwnerUserID,
+		arg.Enabled,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +222,7 @@ SET rule_name = $1,
     enabled = $9,
     extras = $10,
     updated_at = now()
-WHERE id = $11
+WHERE id = $11 AND owner_user_id = $12
 `
 
 type UpdateRateLimitRuleParams struct {
@@ -211,6 +237,7 @@ type UpdateRateLimitRuleParams struct {
 	Enabled       bool   `json:"enabled"`
 	Extras        []byte `json:"extras"`
 	ID            int64  `json:"id"`
+	OwnerUserID   int64  `json:"owner_user_id"`
 }
 
 func (q *Queries) UpdateRateLimitRule(ctx context.Context, arg UpdateRateLimitRuleParams) (int64, error) {
@@ -226,6 +253,7 @@ func (q *Queries) UpdateRateLimitRule(ctx context.Context, arg UpdateRateLimitRu
 		arg.Enabled,
 		arg.Extras,
 		arg.ID,
+		arg.OwnerUserID,
 	)
 	if err != nil {
 		return 0, err
@@ -236,16 +264,17 @@ func (q *Queries) UpdateRateLimitRule(ctx context.Context, arg UpdateRateLimitRu
 const updateRateLimitRuleEnabled = `-- name: UpdateRateLimitRuleEnabled :execrows
 UPDATE rate_limit_rules
 SET enabled = $1, updated_at = now()
-WHERE id = $2
+WHERE id = $2 AND owner_user_id = $3
 `
 
 type UpdateRateLimitRuleEnabledParams struct {
-	Enabled bool  `json:"enabled"`
-	ID      int64 `json:"id"`
+	Enabled     bool  `json:"enabled"`
+	ID          int64 `json:"id"`
+	OwnerUserID int64 `json:"owner_user_id"`
 }
 
 func (q *Queries) UpdateRateLimitRuleEnabled(ctx context.Context, arg UpdateRateLimitRuleEnabledParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateRateLimitRuleEnabled, arg.Enabled, arg.ID)
+	result, err := q.db.Exec(ctx, updateRateLimitRuleEnabled, arg.Enabled, arg.ID, arg.OwnerUserID)
 	if err != nil {
 		return 0, err
 	}
