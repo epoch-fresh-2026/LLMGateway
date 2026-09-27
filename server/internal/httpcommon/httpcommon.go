@@ -13,15 +13,6 @@ import (
 // ReadJSON decodes a request body into value.
 func ReadJSON(r *http.Request, value any) error { return json.NewDecoder(r.Body).Decode(value) }
 
-// SplitPath returns non-empty path components.
-func SplitPath(path string) []string {
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) == 1 && parts[0] == "" {
-		return nil
-	}
-	return parts
-}
-
 // ParsePagination reads the shared admin list pagination parameters.
 func ParsePagination(r *http.Request) (int, int) {
 	q := r.URL.Query()

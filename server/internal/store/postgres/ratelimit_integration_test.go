@@ -23,7 +23,7 @@ func TestPGRateLimitCRUDAndFilter(t *testing.T) {
 		t.Fatalf("unexpected rule: %+v", created)
 	}
 
-	if _, err := rl.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: strp("q"), TargetType: strp("model"), Metric: strp("tpd"), LimitValue: i64p(1000), WindowSeconds: intp(86400), Action: strp("queue")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := rl.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: strp("q"), TargetType: strp("model"), Metric: strp("rpm"), LimitValue: i64p(1000), WindowSeconds: intp(60), Action: strp("queue")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("queue action err = %v, want ErrInvalid", err)
 	}
 	if _, err := rl.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("user"), Metric: strp("bogus"), LimitValue: i64p(1), WindowSeconds: intp(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {

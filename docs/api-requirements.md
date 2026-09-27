@@ -773,9 +773,10 @@ channel
 rpm
 tpm
 rpd
-tpd
 concurrency
 ```
+
+> `tpd`（自然日 token 上限）已废弃：日 token/费用预算由配额模块（`/admin/quota-policies`）承担，具备原子预留与费用维度。
 
 支持的 `action`：
 
@@ -990,7 +991,7 @@ Authorization: Bearer <gateway-key>
 - `stream=true` 返回 `text/event-stream`，按 SSE 事件持续 flush，并保持 OpenAI `data:` 与 `[DONE]` 语义。
 - 流式请求会强制向上游设置 `stream_options.include_usage=true`；首个合法 JSON `data:` 帧记录 `ttft_ms`。SSE 空帧、心跳和注释不会被计为首个 token；非流式请求保持 `ttft_ms=null`。
 - 上游可切换故障仅包括传输错误、429、401/402/403 和 5xx；400/404/409/422 等调用方错误保持透传。请求级配额预留只执行一次，只有最终成功候选结算；流式响应收到 2xx 后不再切换渠道。
-- RPM/TPM/RPD/TPD/concurrency 限流拒绝统一返回 OpenAI `rate_limit_exceeded` 错误；Token 预检失败采用输入 Token 加 `max_tokens` 的保守估算，无法解析请求 Token 时对 Token 规则稳定拒绝。Key override 仅覆盖 `api_key` 级对应规则，global/user/model/channel 规则仍照常检查。
+- RPM/TPM/RPD/concurrency 限流拒绝统一返回 OpenAI `rate_limit_exceeded` 错误；Token 预检失败采用输入 Token 加 `max_tokens` 的保守估算，无法解析请求 Token 时对 Token 规则稳定拒绝。Key override 仅覆盖 `api_key` 级对应规则，global/user/model/channel 规则仍照常检查。
 - 流式成功必须同时收到 usage 与 `[DONE]`，随后按上游实际 usage 一次原子结算。中途断流、客户端取消或流协议错误时，网关仅对已成功写入下游的文本 delta 以本地 tokenizer 估算 completion token，并连同请求 prompt 估算结算；用量日志以 `partial_estimated_*` 标识。未写出文本、缺 usage 或估算失败时不扣费；客户端取消会及时取消上游请求。
 - 记录 `usage_logs`。
 - 按 `model_pricing` 计算费用。

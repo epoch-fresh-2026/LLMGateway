@@ -9,8 +9,8 @@ import (
 )
 
 func TestRateLimitOverrideParsesAllMetricsAndOnlyKeyScope(t *testing.T) {
-	overrides := parseRateLimitOverrides(json.RawMessage(`{"rpm":2,"tpm":100,"rpd":3,"tpd":400,"concurrency":1}`))
-	if overrides.RPM != 2 || overrides.TPM != 100 || overrides.RPD != 3 || overrides.TPD != 400 || overrides.Concurrency != 1 {
+	overrides := parseRateLimitOverrides(json.RawMessage(`{"rpm":2,"tpm":100,"rpd":3,"concurrency":1}`))
+	if overrides.RPM != 2 || overrides.TPM != 100 || overrides.RPD != 3 || overrides.Concurrency != 1 {
 		t.Fatalf("overrides = %+v", overrides)
 	}
 	if _, ok := applicableOverride(overrides, domain.RateLimitRuleDTO{TargetType: "user", Metric: "rpm"}); ok {

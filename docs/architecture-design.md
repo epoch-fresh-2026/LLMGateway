@@ -137,7 +137,7 @@
 
 ### 3.2 限流语义
 
-当前支持 RPM、TPM、RPD、TPD 和 concurrency，作用域包括 global、user、api_key、model、channel。
+当前支持 RPM、TPM、RPD 和 concurrency，作用域包括 global、user、api_key、model、channel。`tpd` 已废弃，日 token/费用预算由配额模块承担。
 
 - 用户、Key、模型等请求前即可确定的规则先检查。
 - 渠道规则在路由选出具体渠道后检查。

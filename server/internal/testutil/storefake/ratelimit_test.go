@@ -42,11 +42,14 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 	if _, err := rl.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("user"), Metric: strp("bogus"), LimitValue: int64p(1), WindowSeconds: intp(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid metric err = %v, want ErrInvalid", err)
 	}
+	if _, err := rl.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: strp("deprecated"), TargetType: strp("user"), Metric: strp("tpd"), LimitValue: int64p(1), WindowSeconds: intp(86400), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("deprecated tpd metric err = %v, want ErrInvalid", err)
+	}
 	if _, err := rl.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("user"), Metric: strp("rpm"), LimitValue: int64p(0), WindowSeconds: intp(60), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("non-positive limit err = %v, want ErrInvalid", err)
 	}
 
-	if _, err := rl.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: strp("queue"), TargetType: strp("model"), Metric: strp("tpd"), LimitValue: int64p(1000), WindowSeconds: intp(86400), Action: strp("queue")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := rl.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: strp("queue"), TargetType: strp("model"), Metric: strp("rpm"), LimitValue: int64p(1000), WindowSeconds: intp(60), Action: strp("queue")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("queue action err = %v, want ErrInvalid", err)
 	}
 

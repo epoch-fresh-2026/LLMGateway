@@ -12,17 +12,17 @@ import (
 )
 
 type rateLimitOverrides struct {
-	RPM, TPM, RPD, TPD, Concurrency int64
-	RPMWindowSeconds                int
+	RPM, TPM, RPD, Concurrency int64
+	RPMWindowSeconds           int
 }
 
 func parseRateLimitOverrides(raw json.RawMessage) rateLimitOverrides {
 	var value struct {
-		RPM, TPM, RPD, TPD, Concurrency int64
-		RPMWindowSeconds                int `json:"rpm_window_seconds"`
+		RPM, TPM, RPD, Concurrency int64
+		RPMWindowSeconds           int `json:"rpm_window_seconds"`
 	}
 	_ = json.Unmarshal(raw, &value)
-	return rateLimitOverrides{RPM: value.RPM, TPM: value.TPM, RPD: value.RPD, TPD: value.TPD, Concurrency: value.Concurrency, RPMWindowSeconds: value.RPMWindowSeconds}
+	return rateLimitOverrides{RPM: value.RPM, TPM: value.TPM, RPD: value.RPD, Concurrency: value.Concurrency, RPMWindowSeconds: value.RPMWindowSeconds}
 }
 
 func applicableOverride(overrides rateLimitOverrides, rule ratelimit.RateLimitRuleDTO) (int64, bool) {
@@ -36,8 +36,6 @@ func applicableOverride(overrides rateLimitOverrides, rule ratelimit.RateLimitRu
 		return overrides.TPM, overrides.TPM > 0
 	case "rpd":
 		return overrides.RPD, overrides.RPD > 0
-	case "tpd":
-		return overrides.TPD, overrides.TPD > 0
 	case "concurrency":
 		return overrides.Concurrency, overrides.Concurrency > 0
 	}
@@ -128,7 +126,7 @@ func (a *Service) checkRateLimit(ctx context.Context, auth *accounts.AuthContext
 				return countErr
 			}
 			count = slidingWindowCount(0, int64(current), int64(item.WindowSeconds), a.now(), requestWindowStart(a.now(), item.WindowSeconds))
-		} else if item.Metric == "tpm" || item.Metric == "tpd" {
+		} else if item.Metric == "tpm" {
 			if estimatedTokens == nil {
 				return ErrRateLimited
 			}
@@ -158,7 +156,7 @@ func (a *Service) checkRateLimit(ctx context.Context, auth *accounts.AuthContext
 
 func metricSince(now time.Time, metric string, windowSeconds int) string {
 	now = now.UTC()
-	if metric == "rpd" || metric == "tpd" {
+	if metric == "rpd" {
 		return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
 	}
 	return now.Add(-time.Duration(windowSeconds) * time.Second).Format(time.RFC3339)
@@ -186,7 +184,7 @@ func (a *Service) checkChannelRateLimit(ctx context.Context, auth *accounts.Auth
 			current, countErr := a.store.CountRequestsSince(ctx, usage.UsageCountFilter{Since: metricSince(a.now(), item.Metric, item.WindowSeconds), ChannelID: &channelID})
 			err = countErr
 			count = slidingWindowCount(0, int64(current), int64(item.WindowSeconds), a.now(), requestWindowStart(a.now(), item.WindowSeconds))
-		} else if item.Metric == "tpm" || item.Metric == "tpd" {
+		} else if item.Metric == "tpm" {
 			current, countErr := a.store.CountTokensSince(ctx, usage.TokenCountFilter{Since: metricSince(a.now(), item.Metric, item.WindowSeconds), Model: model, ChannelID: &channelID})
 			err = countErr
 			count = current + estimatedTokens

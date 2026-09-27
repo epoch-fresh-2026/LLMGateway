@@ -916,7 +916,7 @@ export interface components {
             target_type: "global" | "user" | "api_key" | "model" | "channel";
             target_value?: string;
             /** @enum {string} */
-            metric: "rpm" | "tpm" | "rpd" | "tpd" | "concurrency";
+            metric: "rpm" | "tpm" | "rpd" | "concurrency";
             limit_value: number;
             window_seconds: number;
             /** @enum {string} */
@@ -933,7 +933,7 @@ export interface components {
             target_type?: "global" | "user" | "api_key" | "model" | "channel";
             target_value?: string;
             /** @enum {string} */
-            metric?: "rpm" | "tpm" | "rpd" | "tpd" | "concurrency";
+            metric?: "rpm" | "tpm" | "rpd" | "concurrency";
             limit_value?: number;
             window_seconds?: number;
             /** @enum {string} */
