@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"LLMGateway/server/internal/catalog"
+	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/testutil/storefake"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
@@ -118,7 +120,7 @@ func TestSelectChannelExcludesBalanceBelowConfiguredReserve(t *testing.T) {
 
 	a := newRouteTestApp(st, func(int) int { return 0 })
 	a.ConfigureMinimumRouteBalance("1.000000")
-	candidates, err := a.orderedCandidates(context.Background(), "gpt")
+	candidates, _, err := a.orderedCandidates(context.Background(), "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +156,7 @@ func TestOrderedCandidatesDeduplicateChannelsAndKeepPriorityFallbacks(t *testing
 		}
 	}
 	service := NewService(st, cat, newTestQuota(st, nil), newTestRateLimit(st, nil), nil, func(int) int { return 0 }, time.Now)
-	candidates, err := service.orderedCandidates(context.Background(), "gpt")
+	candidates, _, err := service.orderedCandidates(context.Background(), "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,21 +165,70 @@ func TestOrderedCandidatesDeduplicateChannelsAndKeepPriorityFallbacks(t *testing
 	}
 }
 
-func TestOrderedCandidatesSticksAPIKeyAndModelToSameChannel(t *testing.T) {
-	st := seedRoutingStore(t)
-	a := newRouteTestApp(st, func(int) int { return 299 })
-	first, err := a.orderedCandidates(context.Background(), "gpt", 42)
+func TestHalfOpenProbeLeaseIsAcquiredOnlyOnceAndReleased(t *testing.T) {
+	ctx := context.Background()
+	clock := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	st := storefake.NewWithClock(func() time.Time { return clock })
+	cipher, err := crypto.NewCipher([]byte(testEncryptionKey))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := a.orderedCandidates(context.Background(), "gpt", 42)
+	cat := catalog.New(catalog.Deps{Store: st, Health: st, Tx: st.CatalogTx(), Cipher: cipher, Client: &http.Client{}, Now: func() time.Time { return clock }})
+	channel, err := cat.CreateChannel(ctx, domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.CreateChannelModel(ctx, channel.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		if _, err := cat.RecordChannelFailure(ctx, channel.ID, domain.FailureUpstream5xx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clock = clock.Add(30 * time.Second)
+
+	svc := &Service{
+		store: st, catalog: cat, quota: newTestQuota(st, nil), ratelimit: newTestRateLimit(st, nil),
+		settleTx: st.SettlementTx(), client: &http.Client{}, randIntN: func(int) int { return 0 },
+		now: func() time.Time { return clock }, requestTimeout: time.Minute,
+	}
+
+	candidates, probes, err := svc.orderedCandidates(ctx, "gpt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || probes[channel.ID] == "" {
+		t.Fatalf("candidates=%d probes=%v, want one half-open probe lease", len(candidates), probes)
+	}
+
+	// A concurrent request must not get a second probe while the lease is held.
+	if _, second, err := svc.orderedCandidates(ctx, "gpt"); err != nil || len(second) != 0 {
+		t.Fatalf("second orderedCandidates probes=%v err=%v, want denied", second, err)
+	}
+
+	// Releasing by owner frees the gate immediately.
+	svc.releaseProbes(ctx, probes)
+	if _, ok, err := st.AcquireChannelProbe(ctx, channel.ID, time.Minute); err != nil || !ok {
+		t.Fatalf("probe lease not released: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestOrderedCandidatesSticksAPIKeyAndModelToSameChannel(t *testing.T) {
+	st := seedRoutingStore(t)
+	a := newRouteTestApp(st, func(int) int { return 299 })
+	first, _, err := a.orderedCandidates(context.Background(), "gpt", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := a.orderedCandidates(context.Background(), "gpt", 42)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first[0].ChannelID != second[0].ChannelID {
 		t.Fatalf("sticky first candidates = %d,%d, want same channel", first[0].ChannelID, second[0].ChannelID)
 	}
-	otherKey, err := a.orderedCandidates(context.Background(), "gpt", 43)
+	otherKey, _, err := a.orderedCandidates(context.Background(), "gpt", 43)
 	if err != nil {
 		t.Fatal(err)
 	}

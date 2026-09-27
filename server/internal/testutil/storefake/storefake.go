@@ -51,7 +51,14 @@ type Store struct {
 	rateLimitReservations      map[int64]ratelimit.RateLimitReservationInput
 	breaker                    catalog.ChannelBreakerConfig
 	now                        func() time.Time
-	probes                     map[int]time.Time
+	nextProbeLeaseID           int
+	probes                     map[int]fakeProbeLease
+}
+
+// fakeProbeLease is one held half-open probe lease.
+type fakeProbeLease struct {
+	id    string
+	until time.Time
 }
 
 // balanceTransaction is the fake store's private ledger record. The accounts
@@ -142,7 +149,8 @@ func New() *Store {
 		breakerConfigs:             map[int]catalog.ChannelBreakerConfig{},
 		breaker:                    catalog.DefaultChannelBreakerConfig(),
 		now:                        time.Now,
-		probes:                     map[int]time.Time{},
+		nextProbeLeaseID:           1,
+		probes:                     map[int]fakeProbeLease{},
 	}
 }
 

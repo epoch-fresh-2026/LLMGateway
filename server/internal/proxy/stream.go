@@ -31,6 +31,7 @@ type completionStream struct {
 	rateReservationID     int64
 	estimatedPromptTokens int
 	cancel                context.CancelFunc
+	probeLeaseID          string
 
 	mu        sync.Mutex
 	forwarded bool
@@ -43,6 +44,11 @@ func (s *completionStream) Close() error {
 	if s.rateReservationID != 0 {
 		relCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
 		_ = s.service.ratelimit.ReleaseRateLimit(relCtx, s.rateReservationID)
+		cancel()
+	}
+	if s.probeLeaseID != "" {
+		relCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
+		_, _ = s.service.catalog.ReleaseChannelProbe(relCtx, s.candidate.ChannelID, s.probeLeaseID)
 		cancel()
 	}
 	return s.body.Close()

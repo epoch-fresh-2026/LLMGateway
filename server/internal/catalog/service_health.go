@@ -66,8 +66,12 @@ func (a *Server) ListChannelHealth(ctx context.Context) (ListResponse[ChannelHea
 	return ListResponse[ChannelHealthDTO]{List: list, Total: len(list)}, nil
 }
 
-func (a *Server) AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (bool, error) {
+func (a *Server) AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (string, bool, error) {
 	return a.health.AcquireChannelProbe(ctx, channelID, lease)
+}
+
+func (a *Server) ReleaseChannelProbe(ctx context.Context, channelID int, leaseID string) (bool, error) {
+	return a.health.ReleaseChannelProbe(ctx, channelID, leaseID)
 }
 
 // ReapChannelHealthBuckets removes attempt buckets older than the retention

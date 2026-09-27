@@ -47,12 +47,24 @@ func (s *Store) ListChannelHealthRows(ctx context.Context) ([]domain.ChannelHeal
 	return list, nil
 }
 
-func (s *Store) AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (bool, error) {
-	result, err := s.pool.Exec(ctx, `INSERT INTO channel_breaker_probes(channel_id, lease_id, leased_until) VALUES($1, gen_random_uuid(), now()+$2::int*interval '1 second') ON CONFLICT(channel_id) DO UPDATE SET lease_id=gen_random_uuid(), leased_until=EXCLUDED.leased_until WHERE channel_breaker_probes.leased_until <= now()`, channelID, int(lease.Seconds()))
+func (s *Store) AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (string, bool, error) {
+	var leaseID string
+	err := s.pool.QueryRow(ctx, `INSERT INTO channel_breaker_probes(channel_id, lease_id, leased_until) VALUES($1, gen_random_uuid(), now()+$2::int*interval '1 second') ON CONFLICT(channel_id) DO UPDATE SET lease_id=gen_random_uuid(), leased_until=EXCLUDED.leased_until WHERE channel_breaker_probes.leased_until <= now() RETURNING lease_id`, channelID, int(lease.Seconds())).Scan(&leaseID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, mapError(err)
+	}
+	return leaseID, true, nil
+}
+
+func (s *Store) ReleaseChannelProbe(ctx context.Context, channelID int, leaseID string) (bool, error) {
+	result, err := s.pool.Exec(ctx, `DELETE FROM channel_breaker_probes WHERE channel_id=$1 AND lease_id=$2`, channelID, leaseID)
 	if err != nil {
 		return false, mapError(err)
 	}
-	return result.RowsAffected() == 1, nil
+	return result.RowsAffected() > 0, nil
 }
 
 func (s *Store) GetChannelBreakerConfigRow(ctx context.Context, channelID int) (domain.ChannelBreakerConfig, bool, error) {

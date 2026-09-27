@@ -98,7 +98,8 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		}
 	}()
 
-	candidates, err := a.orderedCandidates(ctx, req.Model, auth.KeyID)
+	candidates, probes, err := a.orderedCandidates(ctx, req.Model, auth.KeyID)
+	defer a.releaseProbes(ctx, probes)
 	if err != nil {
 		if errors.Is(err, ErrNoHealthyChannel) {
 			// Degraded: every candidate is tripped open or there is no mapping.
@@ -230,9 +231,13 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		releaseReservation = false
 		streamOwnsCancel = true
 		rateReservationOpen = false
+		// The stream outlives this call, so it owns the probe lease until it
+		// closes; remove it from the deferred release set.
+		probeLeaseID := probes[candidate.ChannelID]
+		delete(probes, candidate.ChannelID)
 		return ChatResponse{Status: resp.StatusCode, Stream: &completionStream{
 			service: a, body: resp.Body, ctx: ctx, requestID: requestID, auth: auth,
-			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID, rateReservationID: rateReservation.ID, estimatedPromptTokens: estimate.InputTokens, cancel: cancel,
+			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID, rateReservationID: rateReservation.ID, estimatedPromptTokens: estimate.InputTokens, cancel: cancel, probeLeaseID: probeLeaseID,
 		}}, nil
 	}
 

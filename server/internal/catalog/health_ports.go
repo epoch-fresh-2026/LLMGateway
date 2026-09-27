@@ -13,7 +13,13 @@ type HealthPort interface {
 	ListChannelHealthRows(ctx context.Context) ([]ChannelHealth, error)
 	// GetChannelHealthRow returns the stored row and whether it exists.
 	GetChannelHealthRow(ctx context.Context, channelID int) (ChannelHealth, bool, error)
-	AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (bool, error)
+	// AcquireChannelProbe grants a single-flight half-open probe lease and
+	// returns its id. A non-nil err means the gate could not be evaluated;
+	// ok=false means another probe already holds an unexpired lease.
+	AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (leaseID string, ok bool, err error)
+	// ReleaseChannelProbe deletes the lease only when it is still owned by
+	// leaseID, so a late release cannot clobber a newer probe. It is idempotent.
+	ReleaseChannelProbe(ctx context.Context, channelID int, leaseID string) (bool, error)
 
 	// GetChannelBreakerConfigRow returns the per-channel override and whether it
 	// exists; a missing row means the channel inherits the global defaults.

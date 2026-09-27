@@ -170,13 +170,23 @@ func TestChannelHealthConcurrentFailures(t *testing.T) {
 
 func TestChannelProbeLeaseAllowsOnlyOneConcurrentProbe(t *testing.T) {
 	st := NewWithClock(func() time.Time { return time.Unix(100, 0).UTC() })
-	first, err := st.AcquireChannelProbe(context.Background(), 1, time.Minute)
-	if err != nil || !first {
-		t.Fatalf("first probe = %v,%v", first, err)
+	first, ok, err := st.AcquireChannelProbe(context.Background(), 1, time.Minute)
+	if err != nil || !ok || first == "" {
+		t.Fatalf("first probe = %q,%v,%v", first, ok, err)
 	}
-	second, err := st.AcquireChannelProbe(context.Background(), 1, time.Minute)
-	if err != nil || second {
-		t.Fatalf("second probe = %v,%v, want denied", second, err)
+	if _, ok, err := st.AcquireChannelProbe(context.Background(), 1, time.Minute); err != nil || ok {
+		t.Fatalf("second probe = ok:%v err:%v, want denied", ok, err)
+	}
+	// A release from a different owner must not free the lease.
+	if released, _ := st.ReleaseChannelProbe(context.Background(), 1, "other-owner"); released {
+		t.Fatal("wrong-owner release freed the lease")
+	}
+	if released, err := st.ReleaseChannelProbe(context.Background(), 1, first); err != nil || !released {
+		t.Fatalf("release = %v,%v, want freed", released, err)
+	}
+	// Once released, the gate admits a new probe immediately.
+	if _, ok, err := st.AcquireChannelProbe(context.Background(), 1, time.Minute); err != nil || !ok {
+		t.Fatalf("re-acquire = ok:%v err:%v, want allowed", ok, err)
 	}
 }
 

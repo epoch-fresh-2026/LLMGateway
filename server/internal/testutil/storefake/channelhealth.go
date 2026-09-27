@@ -2,6 +2,7 @@ package storefake
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -40,14 +41,27 @@ func (s *Store) ListChannelHealthRows(_ context.Context) ([]domain.ChannelHealth
 	return list, nil
 }
 
-func (s *Store) AcquireChannelProbe(_ context.Context, channelID int, lease time.Duration) (bool, error) {
+func (s *Store) AcquireChannelProbe(_ context.Context, channelID int, lease time.Duration) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	if until, ok := s.probes[channelID]; ok && until.After(now) {
+	if current, ok := s.probes[channelID]; ok && current.until.After(now) {
+		return "", false, nil
+	}
+	leaseID := fmt.Sprintf("probe-%d", s.nextProbeLeaseID)
+	s.nextProbeLeaseID++
+	s.probes[channelID] = fakeProbeLease{id: leaseID, until: now.Add(lease)}
+	return leaseID, true, nil
+}
+
+func (s *Store) ReleaseChannelProbe(_ context.Context, channelID int, leaseID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.probes[channelID]
+	if !ok || current.id != leaseID {
 		return false, nil
 	}
-	s.probes[channelID] = now.Add(lease)
+	delete(s.probes, channelID)
 	return true, nil
 }
 
