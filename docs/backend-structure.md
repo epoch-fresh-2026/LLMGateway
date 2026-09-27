@@ -63,6 +63,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - 渠道 `api_key` 落库为密文，网关 Key 只存哈希；任何响应、日志、错误都不得出现明文密钥。
 - `server/internal/money` 与 `server/internal/crypto` 为叶子包，不得依赖 `server/internal/store` 或 `server/internal/httpapi`。
 - `server/internal/crypto` 的渠道密钥加密密钥来自环境变量 `CHANNEL_KEY_ENCRYPTION_KEY`（原始字节，长度 16/24/32）；缺失或非法时返回错误，禁止明文回退。
+- `server/internal/crypto` 还提供 `HashPassword`/`VerifyPassword`（bcrypt，成本范围见 `MinPasswordCost`/`MaxPasswordCost`，默认 `DefaultPasswordCost`）与 `GenerateSessionToken`/`HashSessionToken`（高熵随机 token，落库只存 SHA-256 哈希）。
 - 网关 Key 仅保存 `server/internal/crypto.HashKey` 的哈希，明文 `full_key` 只在创建/重置时返回一次。
 - PostgreSQL 以 `api_key_ciphertext` 保存渠道密钥；测试 fake 仅存在于 `internal/testutil`，不得作为生产持久化实现。
 - 共享 HTTP parsing/response glue 由 `server/internal/httpcommon` 统一持有；业务模块只保留领域相关的请求分派，顶层 HTTP 路由仍由 `server/cmd/llmgateway/router.go` 统一装配。
@@ -159,9 +160,13 @@ CHANNEL_BREAKER_MINIMUM_SAMPLES=10
 CHANNEL_BREAKER_ERROR_RATE_PERCENT=50
 CHANNEL_BREAKER_TIMEOUT_RATE_PERCENT=50
 CHANNEL_BREAKER_BUCKET_RETENTION_SECONDS=600
+SESSION_TTL_SECONDS=604800
+SESSION_COOKIE_SECURE=true
+REGISTRATION_ENABLED=true
+BCRYPT_COST=10
 ```
 
-路径均相对于运行目录 `server/`；`MIGRATIONS_DIR` 默认 `db/migrations`。生产环境由独立 nginx 容器托管前端并将 `/admin`、`/v1` 和 `/healthz` 反向代理到 Go 网关。
+路径均相对于运行目录 `server/`；`MIGRATIONS_DIR` 默认 `db/migrations`。`SESSION_TTL_SECONDS`（默认 7 天）、`SESSION_COOKIE_SECURE`（默认 `true`，纯 HTTP 本地部署设为 `false`）、`REGISTRATION_ENABLED`（默认 `true`）与 `BCRYPT_COST`（默认 10，范围 4–31）为安全相关配置，值非法时 `config.Load` 返回错误使进程启动失败。生产环境由独立 nginx 容器托管前端并将 `/admin`、`/v1` 和 `/healthz` 反向代理到 Go 网关。
 
 启动前必须设置 PostgreSQL URL 和 16/24/32 字节的渠道密钥加密密钥：
 

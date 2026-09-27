@@ -20,7 +20,7 @@
 - `server/internal/store/postgres/` 放 PostgreSQL Store 实现，只提供持久化原语（CRUD/lock/query）与事务边界，不承担业务规则或跨表流程编排；业务模块不得直接导入该包。
 - `server/internal/store/postgres/` 是唯一生产 Store 实现；`server/internal/testutil/storefake/` 与 `server/internal/testutil/app/` 仅供不需要数据库的单元与 HTTP 契约测试使用，生产代码不得导入，运行时不得提供 memory fallback。
 - `server/db/migrations/` 放 schema 迁移，`server/db/queries/` 放 sqlc 查询，`server/internal/db/migrate/` 放迁移 runner，`server/internal/db/sqlc/` 放生成代码。禁止手改 sqlc 生成文件。
-- `server/internal/money/` 放定点金额能力，`server/internal/crypto/` 放密钥加密、生成与哈希，`server/internal/config/` 放环境变量名称、解析和默认值。
+- `server/internal/money/` 放定点金额能力，`server/internal/crypto/` 放渠道密钥加密、网关 Key 与 session token 哈希、bcrypt 密码哈希与 token 生成，`server/internal/config/` 放环境变量名称、解析和默认值。
 - `dashboard-react/` 是 React + TypeScript + Vite 前端工程；`dashboard-react/src/api/` 放 `/admin` 数据接入，`dashboard-react/src/pages/` 按页面放视图代码，生产构建产物由独立 nginx 静态托管。
 - `docs/api-requirements.md` 是管理端与下游 API 契约来源，`docs/backend-structure.md` 记录后端结构细节。接口或结构发生变化时同步更新对应文档。
 - `deployments/` 放本地部署配置。`communication/` 只用于本地协作，不得提交。
@@ -35,7 +35,8 @@
 - `server/internal/httpapi` 负责协议入口和委托，不负责选路、计费、认证、限流、熔断或结算等代理业务。
 - OpenAI JSON wire type 只能出现在 `server/internal/proxy/openai` 和必要的 HTTP 适配边界，业务模块不能依赖 OpenAI 协议 DTO。
 - `server/internal/proxy` 使用协议中立 contract 编排业务，不直接操作 `http.ResponseWriter`，也不依赖具体 Store 实现。
-- `money` 和 `crypto` 是叶子能力包，不得依赖 `store`、`httpapi` 或业务模块。禁止各业务模块或 Store 重复实现金额、加密和哈希逻辑；`store/postgres` 不得 import `money` 或 `crypto`（由架构测试强制）。
+- `money` 和 `crypto` 是叶子能力包，不得依赖 `store`、`httpapi` 或业务模块。禁止各业务模块或 Store 重复实现金额、加密、密码哈希和哈希逻辑；`store/postgres` 不得 import `money` 或 `crypto`（由架构测试强制）。
+- 会话与注册安全变量 `SESSION_TTL_SECONDS`、`SESSION_COOKIE_SECURE`、`REGISTRATION_ENABLED`、`BCRYPT_COST` 由 `server/internal/config` 解析，缺省值集中在 `config.go`；这些安全变量非法时 `config.Load` 返回错误使进程启动失败，而历史非安全变量仍保持静默回退。密码哈希成本范围以 `crypto.MinPasswordCost`/`crypto.MaxPasswordCost` 为准。
 - `/admin` 接口统一返回 `{code,message,data}`，列表统一返回 `{list,total}`。时间使用 RFC3339，自然日使用 `YYYY-MM-DD`。
 - `/v1` 尽量保持 OpenAI 兼容；认证使用 `Authorization: Bearer <gateway-key>`，错误响应保持稳定、可识别。
 - 金额禁止使用 `float64` 参与计算。数据库使用 `NUMERIC`，Go 使用定点整数，对外使用字符串。
