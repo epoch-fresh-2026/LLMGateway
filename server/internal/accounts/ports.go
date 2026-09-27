@@ -21,6 +21,20 @@ type Port interface {
 	AuthenticateKey(ctx context.Context, keyHash string) (*AuthContext, error)
 	// UpdateKeyLastUsed records key usage. Missing keys return ErrNotFound.
 	UpdateKeyLastUsed(ctx context.Context, keyID int) error
+
+	// GetUserCredentialsByUsername reads the login identity for a username.
+	// Missing usernames return ErrNotFound.
+	GetUserCredentialsByUsername(ctx context.Context, username string) (Credentials, error)
+	// GetAccountByID reads the self-view of a user. Missing users return ErrNotFound.
+	GetAccountByID(ctx context.Context, id int) (Account, error)
+	// GetSessionByTokenHash returns the live session for a token hash. Expired
+	// sessions and unknown tokens both return ErrNotFound.
+	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
+	// DeleteSessionByTokenHash removes a session; found=false means no such token.
+	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) (found bool, err error)
+	// DeleteExpiredSessions removes at most limit expired sessions and reports
+	// how many rows were removed. It is intended for the background reaper.
+	DeleteExpiredSessions(ctx context.Context, limit int) (int, error)
 }
 
 // Tx is the transaction-scoped persistence surface. It exposes only CRUD,
@@ -41,6 +55,9 @@ type Tx interface {
 	// GetBalanceTransactionByOrder returns the stored balance_after for an
 	// idempotency key, or found=false when no transaction matches.
 	GetBalanceTransactionByOrder(userID int, orderID string) (balanceAfter string, found bool, err error)
+
+	InsertUserWithCredentials(in CredentialsInput) (Account, error)
+	InsertSession(in SessionInput) (int, error)
 
 	GetKey(keyID, userID int) (ClientKey, error)
 	InsertKey(in KeyInsert) (int, error)

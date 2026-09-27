@@ -29,19 +29,24 @@ type Querier interface {
 	CreateKey(ctx context.Context, arg CreateKeyParams) (int64, error)
 	CreateQuotaPolicy(ctx context.Context, arg CreateQuotaPolicyParams) (int64, error)
 	CreateRateLimitRule(ctx context.Context, arg CreateRateLimitRuleParams) (int64, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (int64, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (int64, error)
 	CreateUserBalance(ctx context.Context, userID int64) error
+	CreateUserWithCredentials(ctx context.Context, arg CreateUserWithCredentialsParams) (int64, error)
 	DeleteChannel(ctx context.Context, id int64) (int64, error)
 	DeleteChannelBreakerConfig(ctx context.Context, channelID int64) (int64, error)
 	DeleteChannelHealth(ctx context.Context, channelID int64) (int64, error)
 	DeleteChannelModel(ctx context.Context, arg DeleteChannelModelParams) (int64, error)
+	DeleteExpiredSessions(ctx context.Context, maxRows int32) (int64, error)
 	DeleteKey(ctx context.Context, arg DeleteKeyParams) (int64, error)
 	DeletePricing(ctx context.Context, arg DeletePricingParams) error
 	DeleteQuotaPolicy(ctx context.Context, id int64) (int64, error)
 	DeleteRateLimitRule(ctx context.Context, id int64) (int64, error)
+	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) (int64, error)
 	DeleteStaleChannelHealthBuckets(ctx context.Context, before pgtype.Timestamptz) (int64, error)
 	DeleteUser(ctx context.Context, id int64) (int64, error)
 	EnsureChannelHealth(ctx context.Context, channelID int64) error
+	GetAccountByID(ctx context.Context, id int64) (GetAccountByIDRow, error)
 	GetAuthContextByKeyHash(ctx context.Context, keyHash string) (GetAuthContextByKeyHashRow, error)
 	GetBalanceTransactionByOrder(ctx context.Context, arg GetBalanceTransactionByOrderParams) (GetBalanceTransactionByOrderRow, error)
 	GetChannel(ctx context.Context, id int64) (GetChannelRow, error)
@@ -54,9 +59,13 @@ type Querier interface {
 	GetPricing(ctx context.Context, arg GetPricingParams) (GetPricingRow, error)
 	GetQuotaPolicy(ctx context.Context, id int64) (GetQuotaPolicyRow, error)
 	GetRateLimitRule(ctx context.Context, id int64) (GetRateLimitRuleRow, error)
+	// GetSessionByTokenHash only returns live sessions; an expired token must not
+	// authenticate even if its row has not been reaped yet.
+	GetSessionByTokenHash(ctx context.Context, tokenHash string) (GetSessionByTokenHashRow, error)
 	GetUsageLog(ctx context.Context, id int64) (GetUsageLogRow, error)
 	GetUser(ctx context.Context, id int64) (GetUserRow, error)
 	GetUserBalanceText(ctx context.Context, userID int64) (GetUserBalanceTextRow, error)
+	GetUserCredentialsByUsername(ctx context.Context, username pgtype.Text) (GetUserCredentialsByUsernameRow, error)
 	InsertUsageLog(ctx context.Context, arg InsertUsageLogParams) (int64, error)
 	ListBalanceTransactions(ctx context.Context, arg ListBalanceTransactionsParams) ([]ListBalanceTransactionsRow, error)
 	ListCatalogModels(ctx context.Context, enabledOnly bool) ([]ListCatalogModelsRow, error)

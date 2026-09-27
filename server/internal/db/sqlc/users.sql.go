@@ -133,6 +133,25 @@ func (q *Queries) CreateKey(ctx context.Context, arg CreateKeyParams) (int64, er
 	return id, err
 }
 
+const createSession = `-- name: CreateSession :one
+INSERT INTO sessions (token_hash, user_id, expires_at)
+VALUES ($1, $2, $3)
+RETURNING id
+`
+
+type CreateSessionParams struct {
+	TokenHash string             `json:"token_hash"`
+	UserID    int64              `json:"user_id"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createSession, arg.TokenHash, arg.UserID, arg.ExpiresAt)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (nickname, user_group, status)
 VALUES ($1, $2, $3)
@@ -163,6 +182,40 @@ func (q *Queries) CreateUserBalance(ctx context.Context, userID int64) error {
 	return err
 }
 
+const createUserWithCredentials = `-- name: CreateUserWithCredentials :one
+INSERT INTO users (username, nickname, password_hash)
+VALUES ($1, $2, $3)
+RETURNING id
+`
+
+type CreateUserWithCredentialsParams struct {
+	Username     pgtype.Text `json:"username"`
+	Nickname     string      `json:"nickname"`
+	PasswordHash pgtype.Text `json:"password_hash"`
+}
+
+func (q *Queries) CreateUserWithCredentials(ctx context.Context, arg CreateUserWithCredentialsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createUserWithCredentials, arg.Username, arg.Nickname, arg.PasswordHash)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const deleteExpiredSessions = `-- name: DeleteExpiredSessions :execrows
+DELETE FROM sessions
+WHERE id IN (
+    SELECT id FROM sessions WHERE expires_at <= now() ORDER BY id LIMIT $1
+)
+`
+
+func (q *Queries) DeleteExpiredSessions(ctx context.Context, maxRows int32) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredSessions, maxRows)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteKey = `-- name: DeleteKey :execrows
 DELETE FROM client_api_keys WHERE id = $1 AND user_id = $2
 `
@@ -180,6 +233,18 @@ func (q *Queries) DeleteKey(ctx context.Context, arg DeleteKeyParams) (int64, er
 	return result.RowsAffected(), nil
 }
 
+const deleteSessionByTokenHash = `-- name: DeleteSessionByTokenHash :execrows
+DELETE FROM sessions WHERE token_hash = $1
+`
+
+func (q *Queries) DeleteSessionByTokenHash(ctx context.Context, tokenHash string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteSessionByTokenHash, tokenHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteUser = `-- name: DeleteUser :execrows
 DELETE FROM users WHERE id = $1
 `
@@ -190,6 +255,25 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getAccountByID = `-- name: GetAccountByID :one
+SELECT id, username, nickname
+FROM users
+WHERE id = $1
+`
+
+type GetAccountByIDRow struct {
+	ID       int64       `json:"id"`
+	Username pgtype.Text `json:"username"`
+	Nickname string      `json:"nickname"`
+}
+
+func (q *Queries) GetAccountByID(ctx context.Context, id int64) (GetAccountByIDRow, error) {
+	row := q.db.QueryRow(ctx, getAccountByID, id)
+	var i GetAccountByIDRow
+	err := row.Scan(&i.ID, &i.Username, &i.Nickname)
+	return i, err
 }
 
 const getAuthContextByKeyHash = `-- name: GetAuthContextByKeyHash :one
@@ -323,6 +407,33 @@ func (q *Queries) GetKey(ctx context.Context, arg GetKeyParams) (GetKeyRow, erro
 	return i, err
 }
 
+const getSessionByTokenHash = `-- name: GetSessionByTokenHash :one
+SELECT id, token_hash, user_id, expires_at
+FROM sessions
+WHERE token_hash = $1 AND expires_at > now()
+`
+
+type GetSessionByTokenHashRow struct {
+	ID        int64              `json:"id"`
+	TokenHash string             `json:"token_hash"`
+	UserID    int64              `json:"user_id"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+// GetSessionByTokenHash only returns live sessions; an expired token must not
+// authenticate even if its row has not been reaped yet.
+func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (GetSessionByTokenHashRow, error) {
+	row := q.db.QueryRow(ctx, getSessionByTokenHash, tokenHash)
+	var i GetSessionByTokenHashRow
+	err := row.Scan(
+		&i.ID,
+		&i.TokenHash,
+		&i.UserID,
+		&i.ExpiresAt,
+	)
+	return i, err
+}
+
 const getUser = `-- name: GetUser :one
 SELECT id, nickname, user_group, status
 FROM users
@@ -365,6 +476,31 @@ func (q *Queries) GetUserBalanceText(ctx context.Context, userID int64) (GetUser
 	row := q.db.QueryRow(ctx, getUserBalanceText, userID)
 	var i GetUserBalanceTextRow
 	err := row.Scan(&i.AvailableBalance, &i.FrozenBalance)
+	return i, err
+}
+
+const getUserCredentialsByUsername = `-- name: GetUserCredentialsByUsername :one
+SELECT id, username, nickname, password_hash
+FROM users
+WHERE username = $1
+`
+
+type GetUserCredentialsByUsernameRow struct {
+	ID           int64       `json:"id"`
+	Username     pgtype.Text `json:"username"`
+	Nickname     string      `json:"nickname"`
+	PasswordHash pgtype.Text `json:"password_hash"`
+}
+
+func (q *Queries) GetUserCredentialsByUsername(ctx context.Context, username pgtype.Text) (GetUserCredentialsByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, getUserCredentialsByUsername, username)
+	var i GetUserCredentialsByUsernameRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Nickname,
+		&i.PasswordHash,
+	)
 	return i, err
 }
 

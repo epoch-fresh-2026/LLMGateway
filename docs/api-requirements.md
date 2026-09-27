@@ -84,6 +84,44 @@ GET /admin/rate-limits
 GET /admin/models
 ```
 
+## 认证与会话
+
+浏览器登录使用服务端 Session + HttpOnly Cookie：`llmgateway_session`。请求不需要额外认证头，浏览器会自动携带 Cookie。
+
+Cookie 属性为 `HttpOnly; SameSite=Lax; Path=/`；`Secure` 由 `SESSION_COOKIE_SECURE` 控制；有效期由 `SESSION_TTL_SECONDS` 控制。
+
+### POST /admin/auth/register
+
+请求：
+
+```json
+{ "username": "alice", "password": "password123" }
+```
+
+注册成功即建立会话（注册即登录）并通过 `Set-Cookie` 下发会话。`REGISTRATION_ENABLED=false` 时返回 403；用户名需 3–64 字符且不含空白，密码需 8–72 字节；重名或非法输入返回 400。
+
+### POST /admin/auth/login
+
+请求体同注册。用户名不存在或密码错误统一返回 401，不区分具体原因。
+
+### POST /admin/auth/logout
+
+删除当前会话并清除 Cookie；幂等，重复调用仍返回成功。
+
+### GET /admin/auth/me
+
+返回当前会话账户：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": { "id": 1, "username": "alice", "nickname": "alice" }
+}
+```
+
+未登录、会话过期或已登出均返回 401。
+
 ## 健康检查
 
 ### GET /healthz

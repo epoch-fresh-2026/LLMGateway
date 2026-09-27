@@ -19,6 +19,7 @@ func (a *Server) RegisterAdminRoutes(mux *http.ServeMux) {
 	httpcommon.HandleAdmin(mux, "/admin/users/{id}/keys/{key_id}", a.userKey)
 	httpcommon.HandleAdmin(mux, "/admin/users/{id}/keys/{key_id}/reset", a.userKeyReset)
 	httpcommon.HandleAdmin(mux, "/admin/keys", a.keys)
+	a.registerAuthRoutes(mux)
 }
 
 func (a *Server) users(r *http.Request) httpcommon.AdminResult {
