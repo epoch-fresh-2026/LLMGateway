@@ -118,13 +118,13 @@ func TestResetChannelHealth(t *testing.T) {
 func TestListChannelHealth(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)
-	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "channel", BaseURL: "https://channel.test", APIKey: "secret", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "channel", BaseURL: "https://channel.test", APIKey: "secret", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx); err != nil {
 		t.Fatal(err)
 	}
-	list, err := cat.ListChannelHealth(context.Background())
+	list, err := cat.ListChannelHealth(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,13 +241,13 @@ func TestPerChannelBreakerConfigOverridesCooldown(t *testing.T) {
 func TestChannelBreakerConfigAdminLifecycle(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)
-	created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
+	created, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := created.ID
 
-	got, err := cat.GetChannelBreakerConfig(context.Background(), id)
+	got, err := cat.GetChannelBreakerConfig(context.Background(), 1, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,21 +255,21 @@ func TestChannelBreakerConfigAdminLifecycle(t *testing.T) {
 		t.Fatalf("defaults = %+v, want global defaults", got)
 	}
 
-	updated, err := cat.UpdateChannelBreakerConfig(context.Background(), id, catalog.ChannelBreakerConfigInput{WindowSeconds: 120, MinimumSamples: 20, ErrorRatePercent: 30, TimeoutRatePercent: 40, CooldownSeconds: 15})
+	updated, err := cat.UpdateChannelBreakerConfig(context.Background(), 1, id, catalog.ChannelBreakerConfigInput{WindowSeconds: 120, MinimumSamples: 20, ErrorRatePercent: 30, TimeoutRatePercent: 40, CooldownSeconds: 15})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.WindowSeconds != 120 || updated.CooldownSeconds != 15 || updated.MinimumSamples != 20 {
 		t.Fatalf("updated = %+v", updated)
 	}
-	if _, err := cat.UpdateChannelBreakerConfig(context.Background(), id, catalog.ChannelBreakerConfigInput{WindowSeconds: 0, MinimumSamples: 1, ErrorRatePercent: 50, TimeoutRatePercent: 50, CooldownSeconds: 10}); err == nil {
+	if _, err := cat.UpdateChannelBreakerConfig(context.Background(), 1, id, catalog.ChannelBreakerConfigInput{WindowSeconds: 0, MinimumSamples: 1, ErrorRatePercent: 50, TimeoutRatePercent: 50, CooldownSeconds: 10}); err == nil {
 		t.Fatal("expected validation error for non-positive window")
 	}
 
-	if err := cat.DeleteChannelBreakerConfig(context.Background(), id); err != nil {
+	if err := cat.DeleteChannelBreakerConfig(context.Background(), 1, id); err != nil {
 		t.Fatal(err)
 	}
-	back, _ := cat.GetChannelBreakerConfig(context.Background(), id)
+	back, _ := cat.GetChannelBreakerConfig(context.Background(), 1, id)
 	if back.WindowSeconds != 60 || back.CooldownSeconds != 30 {
 		t.Fatalf("after delete = %+v, want global defaults", back)
 	}
@@ -298,16 +298,16 @@ func TestReapChannelHealthBuckets(t *testing.T) {
 func TestRouteCandidatesExcludeOpenChannel(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)
-	created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	created, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	channelID := created.ID
-	if _, err := cat.CreateChannelModel(context.Background(), channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(context.Background(), 1, channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 
-	candidates, err := cat.RouteCandidates(context.Background(), "gpt")
+	candidates, err := cat.RouteCandidates(context.Background(), 1, "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +320,7 @@ func TestRouteCandidatesExcludeOpenChannel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	candidates, err = cat.RouteCandidates(context.Background(), "gpt")
+	candidates, err = cat.RouteCandidates(context.Background(), 1, "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}

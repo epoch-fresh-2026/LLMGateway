@@ -20,12 +20,15 @@ func (s *Store) GetChannelHealthRow(_ context.Context, channelID int) (domain.Ch
 	return *current, true, nil
 }
 
-func (s *Store) ListChannelHealthRows(_ context.Context) ([]domain.ChannelHealth, error) {
+func (s *Store) ListChannelHealthRows(_ context.Context, ownerUserID int) ([]domain.ChannelHealth, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	ids := make([]int, 0, len(s.channels))
-	for id := range s.channels {
+	for id, channel := range s.channels {
+		if channel.OwnerUserID != ownerUserID {
+			continue
+		}
 		ids = append(ids, id)
 	}
 	sort.Ints(ids)
@@ -72,11 +75,15 @@ func (s *Store) GetChannelBreakerConfigRow(_ context.Context, channelID int) (do
 	return cfg, ok, nil
 }
 
-func (s *Store) ListChannelBreakerConfigRows(_ context.Context) (map[int]domain.ChannelBreakerConfig, error) {
+func (s *Store) ListChannelBreakerConfigRows(_ context.Context, ownerUserID int) (map[int]domain.ChannelBreakerConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	result := make(map[int]domain.ChannelBreakerConfig, len(s.breakerConfigs))
 	for id, cfg := range s.breakerConfigs {
+		channel := s.channels[id]
+		if channel == nil || channel.OwnerUserID != ownerUserID {
+			continue
+		}
 		result[id] = cfg
 	}
 	return result, nil
@@ -199,16 +206,17 @@ func (t *catalogTx) DeleteChannelBreakerConfig(channelID int) error {
 	return nil
 }
 
-func (t *catalogTx) LockChannel(channelID int) error {
-	if t.s.channels[channelID] == nil {
+func (t *catalogTx) LockChannel(ownerUserID, channelID int) error {
+	channel, ok := t.s.channels[channelID]
+	if !ok || channel.OwnerUserID != ownerUserID {
 		return store.ErrNotFound
 	}
 	return nil
 }
 
-func (t *catalogTx) GetChannelBalanceText(channelID int) (string, error) {
+func (t *catalogTx) GetChannelBalanceText(ownerUserID, channelID int) (string, error) {
 	channel, ok := t.s.channels[channelID]
-	if !ok {
+	if !ok || channel.OwnerUserID != ownerUserID {
 		return "", store.ErrNotFound
 	}
 	if channel.Balance == nil {
@@ -217,9 +225,9 @@ func (t *catalogTx) GetChannelBalanceText(channelID int) (string, error) {
 	return *channel.Balance, nil
 }
 
-func (t *catalogTx) UpdateChannelBalance(channelID int, balance string) (bool, error) {
+func (t *catalogTx) UpdateChannelBalance(ownerUserID, channelID int, balance string) (bool, error) {
 	channel, ok := t.s.channels[channelID]
-	if !ok {
+	if !ok || channel.OwnerUserID != ownerUserID {
 		return false, nil
 	}
 	value := balance

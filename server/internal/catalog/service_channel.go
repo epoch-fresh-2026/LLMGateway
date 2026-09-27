@@ -9,13 +9,13 @@ import (
 	"LLMGateway/server/internal/money"
 )
 
-func (a *Server) ListChannels(ctx context.Context) (ListResponse[ChannelDTO], error) {
-	return a.store.ListChannels(ctx)
+func (a *Server) ListChannels(ctx context.Context, ownerUserID int) (ListResponse[ChannelDTO], error) {
+	return a.store.ListChannels(ctx, ownerUserID)
 }
 
 // CreateChannel applies channel defaults, normalizes the balance, encrypts the
-// upstream key and inserts the channel.
-func (a *Server) CreateChannel(ctx context.Context, in ChannelInput) (ChannelDTO, error) {
+// upstream key and inserts the channel owned by ownerUserID.
+func (a *Server) CreateChannel(ctx context.Context, ownerUserID int, in ChannelInput) (ChannelDTO, error) {
 	if strings.TrimSpace(in.APIKey) == "" {
 		return ChannelDTO{}, fmt.Errorf("%w: api_key is required", ErrInvalid)
 	}
@@ -36,6 +36,7 @@ func (a *Server) CreateChannel(ctx context.Context, in ChannelInput) (ChannelDTO
 	}
 
 	id, err := a.store.InsertChannel(ctx, ChannelInsert{
+		OwnerUserID:      ownerUserID,
 		Name:             in.Name,
 		BaseURL:          in.BaseURL,
 		APIKeyCiphertext: ciphertext,
@@ -48,12 +49,12 @@ func (a *Server) CreateChannel(ctx context.Context, in ChannelInput) (ChannelDTO
 	if err != nil {
 		return ChannelDTO{}, err
 	}
-	return a.store.GetChannelDTO(ctx, id)
+	return a.store.GetChannelDTO(ctx, ownerUserID, id)
 }
 
 // UpdateChannel normalizes the balance and rotates the upstream key only when a
 // new plaintext key is supplied.
-func (a *Server) UpdateChannel(ctx context.Context, id int, in ChannelInput) (ChannelDTO, error) {
+func (a *Server) UpdateChannel(ctx context.Context, ownerUserID, id int, in ChannelInput) (ChannelDTO, error) {
 	balance, err := normalizeBalance(in.Balance)
 	if err != nil {
 		return ChannelDTO{}, err
@@ -68,7 +69,7 @@ func (a *Server) UpdateChannel(ctx context.Context, id int, in ChannelInput) (Ch
 		ciphertext = encrypted
 	}
 
-	ok, err := a.store.UpdateChannelRecord(ctx, id, ChannelUpdate{
+	ok, err := a.store.UpdateChannelRecord(ctx, ownerUserID, id, ChannelUpdate{
 		Name:             in.Name,
 		BaseURL:          in.BaseURL,
 		AuthType:         in.AuthType,
@@ -84,32 +85,32 @@ func (a *Server) UpdateChannel(ctx context.Context, id int, in ChannelInput) (Ch
 	if !ok {
 		return ChannelDTO{}, ErrNotFound
 	}
-	return a.store.GetChannelDTO(ctx, id)
+	return a.store.GetChannelDTO(ctx, ownerUserID, id)
 }
 
-func (a *Server) UpdateChannelStatus(ctx context.Context, id, status int) (ChannelDTO, error) {
-	ok, err := a.store.UpdateChannelStatusRecord(ctx, id, status)
+func (a *Server) UpdateChannelStatus(ctx context.Context, ownerUserID, id, status int) (ChannelDTO, error) {
+	ok, err := a.store.UpdateChannelStatusRecord(ctx, ownerUserID, id, status)
 	if err != nil {
 		return ChannelDTO{}, err
 	}
 	if !ok {
 		return ChannelDTO{}, ErrNotFound
 	}
-	return a.store.GetChannelDTO(ctx, id)
+	return a.store.GetChannelDTO(ctx, ownerUserID, id)
 }
 
 // UpdateChannelBalance sets and/or adjusts the balance inside a transaction,
 // holding the channel row lock so concurrent read-modify-write cannot be lost.
-func (a *Server) UpdateChannelBalance(ctx context.Context, id int, balance, delta string) (ChannelDTO, error) {
+func (a *Server) UpdateChannelBalance(ctx context.Context, ownerUserID, id int, balance, delta string) (ChannelDTO, error) {
 	if balance == "" && delta == "" {
 		return ChannelDTO{}, fmt.Errorf("%w: balance or delta is required", ErrInvalid)
 	}
 
 	err := a.tx.InTx(ctx, func(tx Tx) error {
-		if err := tx.LockChannel(id); err != nil {
+		if err := tx.LockChannel(ownerUserID, id); err != nil {
 			return err
 		}
-		currentText, err := tx.GetChannelBalanceText(id)
+		currentText, err := tx.GetChannelBalanceText(ownerUserID, id)
 		if err != nil {
 			return err
 		}
@@ -135,7 +136,7 @@ func (a *Server) UpdateChannelBalance(ctx context.Context, id int, balance, delt
 			}
 			base = base.Add(parsed)
 		}
-		ok, err := tx.UpdateChannelBalance(id, money.Format6(base))
+		ok, err := tx.UpdateChannelBalance(ownerUserID, id, money.Format6(base))
 		if err != nil {
 			return err
 		}
@@ -147,11 +148,11 @@ func (a *Server) UpdateChannelBalance(ctx context.Context, id int, balance, delt
 	if err != nil {
 		return ChannelDTO{}, err
 	}
-	return a.store.GetChannelDTO(ctx, id)
+	return a.store.GetChannelDTO(ctx, ownerUserID, id)
 }
 
-func (a *Server) DeleteChannel(ctx context.Context, id int) error {
-	ok, err := a.store.DeleteChannel(ctx, id)
+func (a *Server) DeleteChannel(ctx context.Context, ownerUserID, id int) error {
+	ok, err := a.store.DeleteChannel(ctx, ownerUserID, id)
 	if err != nil {
 		return err
 	}
@@ -163,8 +164,8 @@ func (a *Server) DeleteChannel(ctx context.Context, id int) error {
 
 // GetChannelSecret returns the channel with the decrypted upstream key. The
 // plaintext key never leaves the process.
-func (a *Server) GetChannelSecret(ctx context.Context, id int) (*Channel, error) {
-	record, err := a.store.GetChannelRecord(ctx, id)
+func (a *Server) GetChannelSecret(ctx context.Context, ownerUserID, id int) (*Channel, error) {
+	record, err := a.store.GetChannelRecord(ctx, ownerUserID, id)
 	if err != nil {
 		return nil, err
 	}

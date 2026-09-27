@@ -15,7 +15,7 @@ import (
 
 const channelTestTimeout = 10 * time.Second
 
-func (a *Server) testChannel(r *http.Request, channelID int) httpcommon.AdminResult {
+func (a *Server) testChannel(r *http.Request, ownerUserID, channelID int) httpcommon.AdminResult {
 	var request struct {
 		CheckAll *bool `json:"check_all"`
 	}
@@ -23,11 +23,11 @@ func (a *Server) testChannel(r *http.Request, channelID int) httpcommon.AdminRes
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	checkAll := request.CheckAll == nil || *request.CheckAll
-	channel, err := a.GetChannelSecret(r.Context(), channelID)
+	channel, err := a.GetChannelSecret(r.Context(), ownerUserID, channelID)
 	if err != nil {
 		return httpcommon.Result(nil, err)
 	}
-	models, err := a.ListChannelModels(r.Context(), channelID)
+	models, err := a.ListChannelModels(r.Context(), ownerUserID, channelID)
 	if err != nil {
 		return httpcommon.Result(nil, err)
 	}
@@ -46,8 +46,8 @@ func (a *Server) testChannel(r *http.Request, channelID int) httpcommon.AdminRes
 }
 
 // TestChannel exposes the admin channel probe to external package tests.
-func (a *Server) TestChannel(r *http.Request, channelID int) httpcommon.AdminResult {
-	return a.testChannel(r, channelID)
+func (a *Server) TestChannel(r *http.Request, ownerUserID, channelID int) httpcommon.AdminResult {
+	return a.testChannel(r, ownerUserID, channelID)
 }
 
 // ConfigureTestTimeout changes the probe timeout for deterministic tests.

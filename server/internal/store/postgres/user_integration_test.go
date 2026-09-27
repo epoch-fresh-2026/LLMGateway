@@ -238,10 +238,10 @@ func TestPGDeleteUserCascadesAllRelatedRows(t *testing.T) {
 	acc := accounts.New(st, st.AccountsTx())
 	ctx := context.Background()
 
-	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1}); err != nil {
+	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := acc.RechargeUser(ctx, 1, domain.RechargeInput{Amount: "5.000000"}); err != nil {

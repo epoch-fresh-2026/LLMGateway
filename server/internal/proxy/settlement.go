@@ -71,10 +71,10 @@ func (a *Service) Settle(ctx context.Context, in settlement.Input) (int, error) 
 			if in.ChannelID == nil {
 				return fmt.Errorf("%w: channel_id is required", apperrors.ErrInvalid)
 			}
-			if err := tx.LockChannel(*in.ChannelID); err != nil {
+			if err := tx.LockChannel(in.UserID, *in.ChannelID); err != nil {
 				return err
 			}
-			baseText, err := tx.GetChannelBalanceText(*in.ChannelID)
+			baseText, err := tx.GetChannelBalanceText(in.UserID, *in.ChannelID)
 			if err != nil {
 				return err
 			}
@@ -86,7 +86,7 @@ func (a *Service) Settle(ctx context.Context, in settlement.Input) (int, error) 
 				}
 				base = parsed
 			}
-			ok, err := tx.UpdateChannelBalance(*in.ChannelID, money.Format6(base.Sub(cost)))
+			ok, err := tx.UpdateChannelBalance(in.UserID, *in.ChannelID, money.Format6(base.Sub(cost)))
 			if err != nil {
 				return err
 			}

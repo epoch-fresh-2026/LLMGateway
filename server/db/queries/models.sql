@@ -1,13 +1,17 @@
 -- name: ListChannelModels :many
-SELECT id, model_name, upstream_model, enabled
-FROM channel_models
-WHERE channel_id = $1
-ORDER BY id;
+SELECT cm.id, cm.model_name, cm.upstream_model, cm.enabled
+FROM channel_models cm
+JOIN channels c ON c.id = cm.channel_id
+WHERE cm.channel_id = sqlc.arg(channel_id) AND c.owner_user_id = sqlc.arg(owner_user_id)
+ORDER BY cm.id;
 
 -- name: GetChannelModel :one
-SELECT id, model_name, upstream_model, enabled
-FROM channel_models
-WHERE channel_id = $1 AND model_name = $2;
+SELECT cm.id, cm.model_name, cm.upstream_model, cm.enabled
+FROM channel_models cm
+JOIN channels c ON c.id = cm.channel_id
+WHERE cm.channel_id = sqlc.arg(channel_id)
+  AND cm.model_name = sqlc.arg(model_name)
+  AND c.owner_user_id = sqlc.arg(owner_user_id);
 
 -- name: CreateChannelModel :one
 INSERT INTO channel_models (channel_id, model_name, upstream_model, enabled)
@@ -36,6 +40,7 @@ JOIN channels c ON c.id = cm.channel_id
 LEFT JOIN channel_health h ON h.channel_id = c.id
 LEFT JOIN channel_breaker_configs cbc ON cbc.channel_id = c.id
 WHERE cm.model_name = sqlc.arg(model_name) AND cm.enabled = true AND c.status = 1
+  AND c.owner_user_id = sqlc.arg(owner_user_id)
   -- Exclude open channels, but treat them as half-open (allowed) once the
   -- cooldown has elapsed; a missing health row means closed. The cooldown is
   -- the per-channel override when set, otherwise the global default.
@@ -57,5 +62,6 @@ SELECT
     cm.enabled
 FROM channel_models cm
 JOIN channels c ON c.id = cm.channel_id
-WHERE sqlc.arg(enabled_only)::boolean = false OR cm.enabled = true
+WHERE c.owner_user_id = sqlc.arg(owner_user_id)
+  AND (sqlc.arg(enabled_only)::boolean = false OR cm.enabled = true)
 ORDER BY cm.model_name, c.priority DESC, c.weight DESC, c.id;

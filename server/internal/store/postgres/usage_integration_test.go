@@ -16,13 +16,13 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	acc := accounts.New(st, st.AccountsTx())
 	ctx := context.Background()
 
-	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1}); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "A"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "B"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -136,16 +136,16 @@ func TestPGCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {
 	st := testStore(t)
 	cat := testCatalog(t, st)
 	acc := accounts.New(st, st.AccountsTx())
-	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "A", BaseURL: "https://a.test", APIKey: "sk", Status: 1}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "B", BaseURL: "https://b.test", APIKey: "sk", Status: 1}); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "A"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "B"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "A", BaseURL: "https://a.test", APIKey: "sk", Status: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "B", BaseURL: "https://b.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "count-1", UserID: intp(1), ChannelID: intp(1), Model: "gpt", Status: "success"}); err != nil {

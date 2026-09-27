@@ -120,7 +120,7 @@ func TestAdminErrorEnvelopeContract(t *testing.T) {
 				req.Header.Set("Content-Type", "application/json")
 			}
 			res := httptest.NewRecorder()
-			server.Admin(res, req)
+			server.Admin(res, withTestOwner(req))
 			if res.Code != tt.status {
 				t.Fatalf("status = %d, want %d; body=%s", res.Code, tt.status, res.Body.String())
 			}

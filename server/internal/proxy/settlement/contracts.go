@@ -31,9 +31,9 @@ type Tx interface {
 	UpdateUserBalance(userID int, available string) (bool, error)
 	InsertBalanceTransaction(in accounts.BalanceTransactionInput) error
 
-	LockChannel(channelID int) error
-	GetChannelBalanceText(channelID int) (string, error)
-	UpdateChannelBalance(channelID int, balance string) (bool, error)
+	LockChannel(userID, channelID int) error
+	GetChannelBalanceText(userID, channelID int) (string, error)
+	UpdateChannelBalance(userID, channelID int, balance string) (bool, error)
 
 	SettleQuotaReservation(reservationID int64, requestID string, userID, keyID int, actualTokens int64, actualCost string) error
 	InsertUsageLog(in usage.UsageLogInput) (int, error)

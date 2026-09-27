@@ -5,9 +5,10 @@ import "LLMGateway/server/internal/pagination"
 type ListResponse[T any] = pagination.List[T]
 
 type Channel struct {
-	ID      int
-	Name    string
-	BaseURL string
+	ID          int
+	OwnerUserID int
+	Name        string
+	BaseURL     string
 	// APIKey is the upstream secret. It is never serialized into responses.
 	// Persistence layers must store it encrypted (see internal/crypto) and
 	// expose only ciphertext; test fakes keep placeholder values in-process.

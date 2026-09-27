@@ -32,3 +32,14 @@ func parseID(value, name string) (int, httpcommon.AdminResult) {
 	}
 	return id, httpcommon.AdminResult{}
 }
+
+// ownerFromRequest resolves the authenticated user for owner-scoped catalog
+// operations. The session middleware normally injects it; a missing identity is
+// reported as 401 so the module cannot fall back to unscoped access.
+func ownerFromRequest(r *http.Request) (int, httpcommon.AdminResult) {
+	identity, ok := httpcommon.IdentityFrom(r)
+	if !ok {
+		return 0, httpcommon.HTTPError(http.StatusUnauthorized, "unauthenticated")
+	}
+	return identity.UserID, httpcommon.AdminResult{}
+}

@@ -16,7 +16,7 @@ func strPtr(value string) *string {
 
 func createTestChannel(t *testing.T, cat *catalog.Server, balance *string) domain.ChannelDTO {
 	t.Helper()
-	created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1, Balance: balance})
+	created, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1, Balance: balance})
 	if err != nil {
 		t.Fatalf("CreateChannel: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestCreateChannelNormalizesBalance(t *testing.T) {
 		t.Fatalf("empty balance should be nil, got %v", empty.Balance)
 	}
 
-	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "bad", BaseURL: "https://api.test", APIKey: "sk-secret", Balance: strPtr("abc")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "bad", BaseURL: "https://api.test", APIKey: "sk-secret", Balance: strPtr("abc")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid balance err = %v, want ErrInvalid", err)
 	}
 }
@@ -47,7 +47,7 @@ func TestUpdateChannelNormalizesBalance(t *testing.T) {
 	cat := newCatalog(st)
 	createTestChannel(t, cat, strPtr("1.000000"))
 
-	updated, err := cat.UpdateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", Balance: strPtr("10.5")})
+	updated, err := cat.UpdateChannel(context.Background(), 1, 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", Balance: strPtr("10.5")})
 	if err != nil {
 		t.Fatalf("UpdateChannel: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestUpdateChannelNormalizesBalance(t *testing.T) {
 		t.Fatalf("balance = %q, want 10.500000", got)
 	}
 
-	if _, err := cat.UpdateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", Balance: strPtr("bad")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpdateChannel(context.Background(), 1, 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", Balance: strPtr("bad")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid balance err = %v, want ErrInvalid", err)
 	}
 }
@@ -65,10 +65,10 @@ func TestCreateChannelModelRejectsDuplicate(t *testing.T) {
 	cat := newCatalog(st)
 	createTestChannel(t, cat, nil)
 
-	if _, err := cat.CreateChannelModel(context.Background(), 1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "gpt-4o-mini-up", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(context.Background(), 1, 1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "gpt-4o-mini-up", Enabled: true}); err != nil {
 		t.Fatalf("first mapping: %v", err)
 	}
-	if _, err := cat.CreateChannelModel(context.Background(), 1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "other", Enabled: true}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.CreateChannelModel(context.Background(), 1, 1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "other", Enabled: true}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("duplicate mapping err = %v, want ErrInvalid", err)
 	}
 }
@@ -77,11 +77,11 @@ func TestUpsertPricingNormalizesAndValidates(t *testing.T) {
 	st := New()
 	cat := newCatalog(st)
 	createTestChannel(t, cat, nil)
-	if _, err := cat.CreateChannelModel(context.Background(), 1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "gpt-4o-mini-up", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(context.Background(), 1, 1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "gpt-4o-mini-up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 
-	dto, err := cat.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.1", OutputPricePer1M: "0.2", Currency: "USD"})
+	dto, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.1", OutputPricePer1M: "0.2", Currency: "USD"})
 	if err != nil {
 		t.Fatalf("UpsertPricing: %v", err)
 	}
@@ -89,13 +89,13 @@ func TestUpsertPricingNormalizesAndValidates(t *testing.T) {
 		t.Fatalf("prices not normalized: %+v", dto)
 	}
 
-	if _, err := cat.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "bad", OutputPricePer1M: "0.2"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "bad", OutputPricePer1M: "0.2"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid input price err = %v, want ErrInvalid", err)
 	}
-	if _, err := cat.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.1"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.1"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("missing output price err = %v, want ErrInvalid", err)
 	}
-	if _, err := cat.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.1", OutputPricePer1M: "0.2", CachedInputPricePer1M: "bad"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.1", OutputPricePer1M: "0.2", CachedInputPricePer1M: "bad"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid cached price err = %v, want ErrInvalid", err)
 	}
 }

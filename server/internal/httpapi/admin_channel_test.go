@@ -86,12 +86,58 @@ func TestModelMappingsCatalogPricingAndCascadeDelete(t *testing.T) {
 
 	adminDo(t, handler, http.MethodPost, "/admin/pricing", map[string]any{"channel_id": 1, "model_name": "gpt-4o-mini", "input_price_per_1m": "0.15000000", "output_price_per_1m": "0.60000000", "currency": "USD"})
 	adminDo(t, handler, http.MethodDelete, "/admin/channels/1", nil)
-	if adminDo(t, handler, http.MethodGet, "/admin/channels/1/models", nil)["data"].(map[string]any)["total"].(float64) != 0 {
-		t.Fatal("model mappings were not cascade deleted")
+	if res := adminRaw(t, handler, http.MethodGet, "/admin/channels/1/models", nil); res.Code != http.StatusNotFound {
+		t.Fatalf("model mappings should be gone with the channel, status = %d", res.Code)
 	}
 	if adminDo(t, handler, http.MethodGet, "/admin/pricing", nil)["data"].(map[string]any)["total"].(float64) != 0 {
 		t.Fatal("pricing was not cascade deleted")
 	}
+}
+
+func TestChannelOwnershipIsolation(t *testing.T) {
+	handler := newTestServer()
+
+	created := adminRawAs(t, handler, 1, http.MethodPost, "/admin/channels", map[string]any{"name": "mine", "base_url": "https://mine.test", "api_key": "sk", "status": 1})
+	if created.Code != http.StatusOK {
+		t.Fatalf("owner create status = %d; body=%s", created.Code, created.Body.String())
+	}
+
+	// Another user sees none of it and cannot read, update or delete it.
+	if res := adminRawAs(t, handler, 2, http.MethodGet, "/admin/channels", nil); res.Code != http.StatusOK {
+		t.Fatalf("other list status = %d", res.Code)
+	} else if decoded := decodeAdminData(t, res); decoded["total"].(float64) != 0 {
+		t.Fatalf("other user sees %v channels, want 0", decoded["total"])
+	}
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   any
+	}{
+		{http.MethodGet, "/admin/channels/1/health", nil},
+		{http.MethodPut, "/admin/channels/1", map[string]any{"name": "x", "base_url": "https://x.test", "status": 1}},
+		{http.MethodDelete, "/admin/channels/1", nil},
+	} {
+		if res := adminRawAs(t, handler, 2, tc.method, tc.path, tc.body); res.Code != http.StatusNotFound {
+			t.Fatalf("other user %s %s status = %d, want 404", tc.method, tc.path, res.Code)
+		}
+	}
+
+	if res := adminRawAs(t, handler, 1, http.MethodGet, "/admin/channels", nil); res.Code != http.StatusOK {
+		t.Fatalf("owner list status = %d", res.Code)
+	} else if decoded := decodeAdminData(t, res); decoded["total"].(float64) != 1 {
+		t.Fatalf("owner sees %v channels, want 1", decoded["total"])
+	}
+}
+
+func decodeAdminData(t *testing.T, res *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var envelope map[string]any
+	decodeJSON(t, res, &envelope)
+	data, ok := envelope["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("data type = %T", envelope["data"])
+	}
+	return data
 }
 
 func TestRemoteModelsUsesFakeUpstream(t *testing.T) {

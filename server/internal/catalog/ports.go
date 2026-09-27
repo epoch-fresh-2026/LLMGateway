@@ -7,34 +7,34 @@ import (
 
 // Port is the catalog persistence primitive surface. It exposes only CRUD and
 // query primitives: business rules, defaults, encryption and orchestration live
-// on Server.
+// on Server. Every channel read/write is scoped by ownerUserID.
 type Port interface {
-	ListChannels(ctx context.Context) (ListResponse[ChannelDTO], error)
-	GetChannelDTO(ctx context.Context, id int) (ChannelDTO, error)
-	GetChannelRecord(ctx context.Context, id int) (ChannelRecord, error)
+	ListChannels(ctx context.Context, ownerUserID int) (ListResponse[ChannelDTO], error)
+	GetChannelDTO(ctx context.Context, ownerUserID, id int) (ChannelDTO, error)
+	GetChannelRecord(ctx context.Context, ownerUserID, id int) (ChannelRecord, error)
 	InsertChannel(ctx context.Context, in ChannelInsert) (int, error)
-	UpdateChannelRecord(ctx context.Context, id int, in ChannelUpdate) (bool, error)
-	UpdateChannelStatusRecord(ctx context.Context, id, status int) (bool, error)
-	DeleteChannel(ctx context.Context, id int) (bool, error)
+	UpdateChannelRecord(ctx context.Context, ownerUserID, id int, in ChannelUpdate) (bool, error)
+	UpdateChannelStatusRecord(ctx context.Context, ownerUserID, id, status int) (bool, error)
+	DeleteChannel(ctx context.Context, ownerUserID, id int) (bool, error)
 
-	ListChannelModels(ctx context.Context, channelID int) (ListResponse[ChannelModel], error)
+	ListChannelModels(ctx context.Context, ownerUserID, channelID int) (ListResponse[ChannelModel], error)
 	InsertChannelModel(ctx context.Context, channelID int, in ChannelModel) (ChannelModel, error)
 	UpdateChannelModelRecord(ctx context.Context, channelID, modelID int, upstreamModel string, enabled bool) (ChannelModel, bool, error)
 	DeleteChannelModel(ctx context.Context, channelID, modelID int) (bool, error)
 	// ChannelModelExists reports whether a model mapping exists on a channel.
-	ChannelModelExists(ctx context.Context, channelID int, modelName string) (bool, error)
+	ChannelModelExists(ctx context.Context, ownerUserID, channelID int, modelName string) (bool, error)
 
-	ListCatalogModels(ctx context.Context, enabledOnly bool) (ListResponse[CatalogModelDTO], error)
+	ListCatalogModels(ctx context.Context, ownerUserID int, enabledOnly bool) (ListResponse[CatalogModelDTO], error)
 
-	ListPricing(ctx context.Context) (ListResponse[PricingDTO], error)
+	ListPricing(ctx context.Context, ownerUserID int) (ListResponse[PricingDTO], error)
 	UpsertPricingRecord(ctx context.Context, in PricingRecord) (PricingDTO, error)
 	DeletePricing(ctx context.Context, in DeletePricingInput) error
 	GetPricing(ctx context.Context, channelID int, modelName string) (PricingDTO, error)
 
 	// RouteCandidates returns enabled mappings on enabled, non-open channels for
-	// a public model, ordered by priority desc, weight desc, channel id. The
-	// caller supplies the breaker cooldown in seconds.
-	RouteCandidates(ctx context.Context, modelName string, cooldownSeconds int) (ListResponse[RouteCandidate], error)
+	// a public model owned by ownerUserID, ordered by priority desc, weight desc,
+	// channel id. The caller supplies the breaker cooldown in seconds.
+	RouteCandidates(ctx context.Context, ownerUserID int, modelName string, cooldownSeconds int) (ListResponse[RouteCandidate], error)
 }
 
 // Tx is the transaction-scoped persistence surface for catalog writes. It
@@ -54,9 +54,9 @@ type Tx interface {
 	UpsertChannelBreakerConfig(channelID int, cfg ChannelBreakerConfig) error
 	DeleteChannelBreakerConfig(channelID int) error
 
-	LockChannel(channelID int) error
-	GetChannelBalanceText(channelID int) (string, error)
-	UpdateChannelBalance(channelID int, balance string) (bool, error)
+	LockChannel(ownerUserID, channelID int) error
+	GetChannelBalanceText(ownerUserID, channelID int) (string, error)
+	UpdateChannelBalance(ownerUserID, channelID int, balance string) (bool, error)
 }
 
 // TxManager runs fn inside a single database transaction.

@@ -90,6 +90,7 @@ SELECT
 FROM model_pricing p
 JOIN channels c ON c.id = p.channel_id
 LEFT JOIN channel_models cm ON cm.channel_id = p.channel_id AND cm.model_name = p.model_name
+WHERE c.owner_user_id = $1
 ORDER BY p.id
 `
 
@@ -105,8 +106,8 @@ type ListPricingRow struct {
 	Currency              string      `json:"currency"`
 }
 
-func (q *Queries) ListPricing(ctx context.Context) ([]ListPricingRow, error) {
-	rows, err := q.db.Query(ctx, listPricing)
+func (q *Queries) ListPricing(ctx context.Context, ownerUserID int64) ([]ListPricingRow, error) {
+	rows, err := q.db.Query(ctx, listPricing, ownerUserID)
 	if err != nil {
 		return nil, err
 	}

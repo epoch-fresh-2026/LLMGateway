@@ -24,7 +24,7 @@ import (
 // Models models returns the OpenAI-style model list visible to the key, filtered by
 // its permissions.
 func (a *Service) Models(ctx context.Context, auth *accounts.AuthContext) (ModelList, error) {
-	result, err := a.catalog.ListCatalogModels(ctx, true)
+	result, err := a.catalog.ListCatalogModels(ctx, auth.UserID, true)
 	if err != nil {
 		return ModelList{}, err
 	}
@@ -98,7 +98,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		}
 	}()
 
-	candidates, probes, err := a.orderedCandidates(ctx, req.Model, auth.KeyID)
+	candidates, probes, err := a.orderedCandidates(ctx, auth.UserID, req.Model, auth.KeyID)
 	defer a.releaseProbes(ctx, probes)
 	if err != nil {
 		if errors.Is(err, ErrNoHealthyChannel) {
@@ -153,7 +153,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 			}
 			return ChatResponse{}, err
 		}
-		secret, secretErr := a.catalog.GetChannelSecret(ctx, candidate.ChannelID)
+		secret, secretErr := a.catalog.GetChannelSecret(ctx, auth.UserID, candidate.ChannelID)
 		if secretErr != nil {
 			return ChatResponse{}, secretErr
 		}

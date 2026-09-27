@@ -16,6 +16,7 @@ type ChannelRecord struct {
 
 // ChannelInsert is the persistence input for creating a channel.
 type ChannelInsert struct {
+	OwnerUserID      int
 	Name             string
 	BaseURL          string
 	APIKeyCiphertext string

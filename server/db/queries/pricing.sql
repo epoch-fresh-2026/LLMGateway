@@ -12,6 +12,7 @@ SELECT
 FROM model_pricing p
 JOIN channels c ON c.id = p.channel_id
 LEFT JOIN channel_models cm ON cm.channel_id = p.channel_id AND cm.model_name = p.model_name
+WHERE c.owner_user_id = sqlc.arg(owner_user_id)
 ORDER BY p.id;
 
 -- name: GetPricing :one

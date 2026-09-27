@@ -64,14 +64,18 @@ func (q *Queries) DeleteChannelModel(ctx context.Context, arg DeleteChannelModel
 }
 
 const getChannelModel = `-- name: GetChannelModel :one
-SELECT id, model_name, upstream_model, enabled
-FROM channel_models
-WHERE channel_id = $1 AND model_name = $2
+SELECT cm.id, cm.model_name, cm.upstream_model, cm.enabled
+FROM channel_models cm
+JOIN channels c ON c.id = cm.channel_id
+WHERE cm.channel_id = $1
+  AND cm.model_name = $2
+  AND c.owner_user_id = $3
 `
 
 type GetChannelModelParams struct {
-	ChannelID int64  `json:"channel_id"`
-	ModelName string `json:"model_name"`
+	ChannelID   int64  `json:"channel_id"`
+	ModelName   string `json:"model_name"`
+	OwnerUserID int64  `json:"owner_user_id"`
 }
 
 type GetChannelModelRow struct {
@@ -82,7 +86,7 @@ type GetChannelModelRow struct {
 }
 
 func (q *Queries) GetChannelModel(ctx context.Context, arg GetChannelModelParams) (GetChannelModelRow, error) {
-	row := q.db.QueryRow(ctx, getChannelModel, arg.ChannelID, arg.ModelName)
+	row := q.db.QueryRow(ctx, getChannelModel, arg.ChannelID, arg.ModelName, arg.OwnerUserID)
 	var i GetChannelModelRow
 	err := row.Scan(
 		&i.ID,
@@ -102,9 +106,15 @@ SELECT
     cm.enabled
 FROM channel_models cm
 JOIN channels c ON c.id = cm.channel_id
-WHERE $1::boolean = false OR cm.enabled = true
+WHERE c.owner_user_id = $1
+  AND ($2::boolean = false OR cm.enabled = true)
 ORDER BY cm.model_name, c.priority DESC, c.weight DESC, c.id
 `
+
+type ListCatalogModelsParams struct {
+	OwnerUserID int64 `json:"owner_user_id"`
+	EnabledOnly bool  `json:"enabled_only"`
+}
 
 type ListCatalogModelsRow struct {
 	ModelName     string `json:"model_name"`
@@ -114,8 +124,8 @@ type ListCatalogModelsRow struct {
 	Enabled       bool   `json:"enabled"`
 }
 
-func (q *Queries) ListCatalogModels(ctx context.Context, enabledOnly bool) ([]ListCatalogModelsRow, error) {
-	rows, err := q.db.Query(ctx, listCatalogModels, enabledOnly)
+func (q *Queries) ListCatalogModels(ctx context.Context, arg ListCatalogModelsParams) ([]ListCatalogModelsRow, error) {
+	rows, err := q.db.Query(ctx, listCatalogModels, arg.OwnerUserID, arg.EnabledOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -141,11 +151,17 @@ func (q *Queries) ListCatalogModels(ctx context.Context, enabledOnly bool) ([]Li
 }
 
 const listChannelModels = `-- name: ListChannelModels :many
-SELECT id, model_name, upstream_model, enabled
-FROM channel_models
-WHERE channel_id = $1
-ORDER BY id
+SELECT cm.id, cm.model_name, cm.upstream_model, cm.enabled
+FROM channel_models cm
+JOIN channels c ON c.id = cm.channel_id
+WHERE cm.channel_id = $1 AND c.owner_user_id = $2
+ORDER BY cm.id
 `
+
+type ListChannelModelsParams struct {
+	ChannelID   int64 `json:"channel_id"`
+	OwnerUserID int64 `json:"owner_user_id"`
+}
 
 type ListChannelModelsRow struct {
 	ID            int64  `json:"id"`
@@ -154,8 +170,8 @@ type ListChannelModelsRow struct {
 	Enabled       bool   `json:"enabled"`
 }
 
-func (q *Queries) ListChannelModels(ctx context.Context, channelID int64) ([]ListChannelModelsRow, error) {
-	rows, err := q.db.Query(ctx, listChannelModels, channelID)
+func (q *Queries) ListChannelModels(ctx context.Context, arg ListChannelModelsParams) ([]ListChannelModelsRow, error) {
+	rows, err := q.db.Query(ctx, listChannelModels, arg.ChannelID, arg.OwnerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +208,7 @@ JOIN channels c ON c.id = cm.channel_id
 LEFT JOIN channel_health h ON h.channel_id = c.id
 LEFT JOIN channel_breaker_configs cbc ON cbc.channel_id = c.id
 WHERE cm.model_name = $1 AND cm.enabled = true AND c.status = 1
+  AND c.owner_user_id = $2
   -- Exclude open channels, but treat them as half-open (allowed) once the
   -- cooldown has elapsed; a missing health row means closed. The cooldown is
   -- the per-channel override when set, otherwise the global default.
@@ -199,7 +216,7 @@ WHERE cm.model_name = $1 AND cm.enabled = true AND c.status = 1
       COALESCE(h.state, 'closed') = 'open'
       AND (
           h.opened_at IS NULL
-          OR h.opened_at + (COALESCE(cbc.cooldown_seconds, $2::int) * interval '1 second') > now()
+          OR h.opened_at + (COALESCE(cbc.cooldown_seconds, $3::int) * interval '1 second') > now()
       )
   )
 ORDER BY c.priority DESC, c.weight DESC, c.id
@@ -207,6 +224,7 @@ ORDER BY c.priority DESC, c.weight DESC, c.id
 
 type ListRouteCandidatesParams struct {
 	ModelName              string `json:"model_name"`
+	OwnerUserID            int64  `json:"owner_user_id"`
 	DefaultCooldownSeconds int32  `json:"default_cooldown_seconds"`
 }
 
@@ -220,7 +238,7 @@ type ListRouteCandidatesRow struct {
 }
 
 func (q *Queries) ListRouteCandidates(ctx context.Context, arg ListRouteCandidatesParams) ([]ListRouteCandidatesRow, error) {
-	rows, err := q.db.Query(ctx, listRouteCandidates, arg.ModelName, arg.DefaultCooldownSeconds)
+	rows, err := q.db.Query(ctx, listRouteCandidates, arg.ModelName, arg.OwnerUserID, arg.DefaultCooldownSeconds)
 	if err != nil {
 		return nil, err
 	}

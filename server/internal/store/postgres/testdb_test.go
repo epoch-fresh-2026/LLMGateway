@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/migrate"
@@ -54,6 +55,18 @@ func testStore(t *testing.T) *Store {
 	}
 
 	return New(pool)
+}
+
+// testOwner creates a user so channel rows satisfy the owner_user_id foreign
+// key. It returns the created user id.
+func testOwner(t *testing.T, st *Store) int {
+	t.Helper()
+	acc := accounts.New(st, st.AccountsTx())
+	user, err := acc.CreateUser(context.Background(), accounts.UserInput{Nickname: "owner"})
+	if err != nil {
+		t.Fatalf("create owner user: %v", err)
+	}
+	return user.ID
 }
 
 func testCipher(t *testing.T) *crypto.Cipher {

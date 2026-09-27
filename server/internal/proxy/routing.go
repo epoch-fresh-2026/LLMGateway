@@ -13,8 +13,8 @@ import (
 // ordered by priority desc, weight desc, channel id; channels with a non-nil
 // balance below the configured reserve are excluded. Within the highest priority
 // group the choice is weighted-random using the injected source.
-func (a *Service) selectChannel(ctx context.Context, model string) (catalog.RouteCandidate, error) {
-	candidates, probes, err := a.orderedCandidates(ctx, model)
+func (a *Service) selectChannel(ctx context.Context, ownerUserID int, model string) (catalog.RouteCandidate, error) {
+	candidates, probes, err := a.orderedCandidates(ctx, ownerUserID, model)
 	if err != nil {
 		return catalog.RouteCandidate{}, err
 	}
@@ -40,8 +40,8 @@ func (a *Service) releaseProbes(ctx context.Context, probes map[int]string) {
 // orderedCandidates resolves the route order for a public model and, for each
 // half-open channel it admits, acquires a single-flight probe lease. The
 // returned leases are keyed by channel id; the caller owns releasing them.
-func (a *Service) orderedCandidates(ctx context.Context, model string, stickyKey ...int) ([]catalog.RouteCandidate, map[int]string, error) {
-	result, err := a.catalog.RouteCandidates(ctx, model)
+func (a *Service) orderedCandidates(ctx context.Context, ownerUserID int, model string, stickyKey ...int) ([]catalog.RouteCandidate, map[int]string, error) {
+	result, err := a.catalog.RouteCandidates(ctx, ownerUserID, model)
 	if err != nil {
 		return nil, nil, err
 	}

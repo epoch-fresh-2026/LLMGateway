@@ -40,12 +40,12 @@ type RateLimit interface {
 // Catalog is the catalog surface proxy orchestration needs. catalog.Server
 // implements it, so proxy depends on catalog rules rather than raw primitives.
 type Catalog interface {
-	ListCatalogModels(ctx context.Context, enabledOnly bool) (catalog.ListResponse[catalog.CatalogModelDTO], error)
-	RouteCandidates(ctx context.Context, modelName string) (catalog.ListResponse[catalog.RouteCandidate], error)
+	ListCatalogModels(ctx context.Context, ownerUserID int, enabledOnly bool) (catalog.ListResponse[catalog.CatalogModelDTO], error)
+	RouteCandidates(ctx context.Context, ownerUserID int, modelName string) (catalog.ListResponse[catalog.RouteCandidate], error)
 	GetChannelHealth(ctx context.Context, channelID int) (catalog.ChannelHealth, error)
 	AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (string, bool, error)
 	ReleaseChannelProbe(ctx context.Context, channelID int, leaseID string) (bool, error)
-	GetChannelSecret(ctx context.Context, channelID int) (*catalog.Channel, error)
+	GetChannelSecret(ctx context.Context, ownerUserID, channelID int) (*catalog.Channel, error)
 	RecordChannelAttempt(ctx context.Context, channelID int, success bool, reason catalog.FailureReason) (catalog.ChannelHealth, error)
 	GetPricing(ctx context.Context, channelID int, modelName string) (catalog.PricingDTO, error)
 }

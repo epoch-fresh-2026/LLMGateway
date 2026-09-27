@@ -45,12 +45,12 @@ func (a *Server) ResetChannelHealth(ctx context.Context, channelID int) error {
 	})
 }
 
-func (a *Server) ListChannelHealth(ctx context.Context) (ListResponse[ChannelHealthDTO], error) {
-	rows, err := a.health.ListChannelHealthRows(ctx)
+func (a *Server) ListChannelHealth(ctx context.Context, ownerUserID int) (ListResponse[ChannelHealthDTO], error) {
+	rows, err := a.health.ListChannelHealthRows(ctx, ownerUserID)
 	if err != nil {
 		return ListResponse[ChannelHealthDTO]{}, err
 	}
-	overrides, err := a.health.ListChannelBreakerConfigRows(ctx)
+	overrides, err := a.health.ListChannelBreakerConfigRows(ctx, ownerUserID)
 	if err != nil {
 		return ListResponse[ChannelHealthDTO]{}, err
 	}
@@ -85,8 +85,8 @@ func (a *Server) ReapChannelHealthBuckets(ctx context.Context, retention time.Du
 
 // GetChannelBreakerConfig returns the effective breaker config for a channel:
 // the global default overlaid with any per-channel override.
-func (a *Server) GetChannelBreakerConfig(ctx context.Context, channelID int) (ChannelBreakerConfigDTO, error) {
-	if _, err := a.store.GetChannelDTO(ctx, channelID); err != nil {
+func (a *Server) GetChannelBreakerConfig(ctx context.Context, ownerUserID, channelID int) (ChannelBreakerConfigDTO, error) {
+	if _, err := a.store.GetChannelDTO(ctx, ownerUserID, channelID); err != nil {
 		return ChannelBreakerConfigDTO{}, err
 	}
 	return breakerConfigDTO(channelID, a.breakerFor(ctx, channelID)), nil
@@ -94,8 +94,8 @@ func (a *Server) GetChannelBreakerConfig(ctx context.Context, channelID int) (Ch
 
 // UpdateChannelBreakerConfig stores a per-channel override and invalidates the
 // config cache so the next recorded attempt uses it.
-func (a *Server) UpdateChannelBreakerConfig(ctx context.Context, channelID int, in ChannelBreakerConfigInput) (ChannelBreakerConfigDTO, error) {
-	if _, err := a.store.GetChannelDTO(ctx, channelID); err != nil {
+func (a *Server) UpdateChannelBreakerConfig(ctx context.Context, ownerUserID, channelID int, in ChannelBreakerConfigInput) (ChannelBreakerConfigDTO, error) {
+	if _, err := a.store.GetChannelDTO(ctx, ownerUserID, channelID); err != nil {
 		return ChannelBreakerConfigDTO{}, err
 	}
 	cfg, err := validateBreakerConfig(in)
@@ -113,8 +113,8 @@ func (a *Server) UpdateChannelBreakerConfig(ctx context.Context, channelID int, 
 
 // DeleteChannelBreakerConfig removes the override so the channel inherits the
 // global defaults again.
-func (a *Server) DeleteChannelBreakerConfig(ctx context.Context, channelID int) error {
-	if _, err := a.store.GetChannelDTO(ctx, channelID); err != nil {
+func (a *Server) DeleteChannelBreakerConfig(ctx context.Context, ownerUserID, channelID int) error {
+	if _, err := a.store.GetChannelDTO(ctx, ownerUserID, channelID); err != nil {
 		return err
 	}
 	if err := a.tx.InTx(ctx, func(tx Tx) error {

@@ -9,6 +9,9 @@
 
 CREATE TABLE channels (
     id BIGSERIAL PRIMARY KEY,
+    -- Every channel is private to exactly one user; /v1 only routes to the
+    -- channels owned by the authenticated key's user.
+    owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     base_url TEXT NOT NULL,
     api_key_ciphertext TEXT NOT NULL,
@@ -20,6 +23,8 @@ CREATE TABLE channels (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX channels_owner_user_id_idx ON channels (owner_user_id);
 
 CREATE TABLE channel_models (
     id BIGSERIAL PRIMARY KEY,

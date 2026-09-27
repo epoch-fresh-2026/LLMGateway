@@ -8,20 +8,20 @@ import (
 	"LLMGateway/server/internal/money"
 )
 
-func (a *Server) ListPricing(ctx context.Context) (ListResponse[PricingDTO], error) {
-	return a.store.ListPricing(ctx)
+func (a *Server) ListPricing(ctx context.Context, ownerUserID int) (ListResponse[PricingDTO], error) {
+	return a.store.ListPricing(ctx, ownerUserID)
 }
 
 // UpsertPricing validates the target channel and model mapping, normalizes the
 // 8-decimal prices and persists the row.
-func (a *Server) UpsertPricing(ctx context.Context, in PricingInput) (PricingDTO, error) {
+func (a *Server) UpsertPricing(ctx context.Context, ownerUserID int, in PricingInput) (PricingDTO, error) {
 	if in.ChannelID <= 0 || strings.TrimSpace(in.ModelName) == "" {
 		return PricingDTO{}, fmt.Errorf("%w: channel_id and model_name are required", ErrInvalid)
 	}
-	if _, err := a.store.GetChannelDTO(ctx, in.ChannelID); err != nil {
+	if _, err := a.store.GetChannelDTO(ctx, ownerUserID, in.ChannelID); err != nil {
 		return PricingDTO{}, err
 	}
-	exists, err := a.store.ChannelModelExists(ctx, in.ChannelID, in.ModelName)
+	exists, err := a.store.ChannelModelExists(ctx, ownerUserID, in.ChannelID, in.ModelName)
 	if err != nil {
 		return PricingDTO{}, err
 	}
@@ -56,7 +56,10 @@ func (a *Server) UpsertPricing(ctx context.Context, in PricingInput) (PricingDTO
 	})
 }
 
-func (a *Server) DeletePricing(ctx context.Context, in DeletePricingInput) error {
+func (a *Server) DeletePricing(ctx context.Context, ownerUserID int, in DeletePricingInput) error {
+	if _, err := a.store.GetChannelDTO(ctx, ownerUserID, in.ChannelID); err != nil {
+		return err
+	}
 	return a.store.DeletePricing(ctx, in)
 }
 

@@ -10,14 +10,14 @@ import (
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
-func createHealthTestChannel(t *testing.T, cat *catalog.Server) int {
+func createHealthTestChannel(t *testing.T, owner int, cat *catalog.Server) int {
 	t.Helper()
-	created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	created, err := cat.CreateChannel(context.Background(), owner, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	channelID := created.ID
-	if _, err := cat.CreateChannelModel(context.Background(), channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(context.Background(), owner, channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	return channelID
@@ -25,9 +25,10 @@ func createHealthTestChannel(t *testing.T, cat *catalog.Server) int {
 
 func TestPGChannelHealthLifecycle(t *testing.T) {
 	st := testStore(t)
+	owner := testOwner(t, st)
 	cat := testCatalog(t, st)
 	ctx := context.Background()
-	channelID := createHealthTestChannel(t, cat)
+	channelID := createHealthTestChannel(t, owner, cat)
 
 	health, err := cat.GetChannelHealth(context.Background(), channelID)
 	if err != nil {
@@ -47,7 +48,7 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 		t.Fatalf("state = %s, want open with opened_at", health.State)
 	}
 
-	candidates, err := cat.RouteCandidates(context.Background(), "gpt")
+	candidates, err := cat.RouteCandidates(context.Background(), owner, "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 	if _, err := st.pool.Exec(ctx, "UPDATE channel_health SET opened_at = now() - interval '1 minute' WHERE channel_id = $1", channelID); err != nil {
 		t.Fatal(err)
 	}
-	candidates, err = cat.RouteCandidates(context.Background(), "gpt")
+	candidates, err = cat.RouteCandidates(context.Background(), owner, "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,9 +87,10 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 
 func TestPGChannelHealthHalfOpen(t *testing.T) {
 	st := testStore(t)
+	owner := testOwner(t, st)
 	cat := testCatalog(t, st)
 	ctx := context.Background()
-	channelID := createHealthTestChannel(t, cat)
+	channelID := createHealthTestChannel(t, owner, cat)
 
 	for i := 0; i < 5; i++ {
 		if _, err := cat.RecordChannelFailure(context.Background(), channelID, domain.FailureUpstream5xx); err != nil {
@@ -118,8 +120,9 @@ func TestPGChannelHealthHalfOpen(t *testing.T) {
 
 func TestPGChannelHealthConcurrentFailures(t *testing.T) {
 	st := testStore(t)
+	owner := testOwner(t, st)
 	cat := testCatalog(t, st)
-	channelID := createHealthTestChannel(t, cat)
+	channelID := createHealthTestChannel(t, owner, cat)
 
 	const workers = 20
 	var wg sync.WaitGroup
@@ -164,10 +167,10 @@ type healthSnapshot struct {
 	deterministicOpen string
 }
 
-func runHealthScenario(t *testing.T, cat *catalog.Server, clock *time.Time) healthSnapshot {
+func runHealthScenario(t *testing.T, owner int, cat *catalog.Server, clock *time.Time) healthSnapshot {
 	t.Helper()
 
-	created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	created, err := cat.CreateChannel(context.Background(), owner, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +200,7 @@ func runHealthScenario(t *testing.T, cat *catalog.Server, clock *time.Time) heal
 	snapshot.stateAfterCool = string(afterCool.State)
 
 	// Deterministic failure on a fresh channel opens immediately.
-	second, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "Other", BaseURL: "https://other.test", APIKey: "sk", Status: 1})
+	second, err := cat.CreateChannel(context.Background(), owner, domain.ChannelInput{Name: "Other", BaseURL: "https://other.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,9 +215,10 @@ func runHealthScenario(t *testing.T, cat *catalog.Server, clock *time.Time) heal
 
 func TestPGChannelHealthWindowAndConfig(t *testing.T) {
 	st := testStore(t)
+	owner := testOwner(t, st)
 	cat := testCatalog(t, st)
 	ctx := context.Background()
-	channelID := createHealthTestChannel(t, cat)
+	channelID := createHealthTestChannel(t, owner, cat)
 
 	override := catalog.ChannelBreakerConfig{Cooldown: 5 * time.Second, WindowSeconds: 60, MinimumSamples: 4, ErrorRatePercent: 50, TimeoutRatePercent: 50}
 	if err := st.CatalogTx().InTx(ctx, func(tx catalog.Tx) error {
@@ -257,8 +261,9 @@ func TestPGChannelHealthScenario(t *testing.T) {
 	pg := testStore(t)
 	pgClock := fixed
 	pg.now = func() time.Time { return pgClock }
+	owner := testOwner(t, pg)
 	cat := testCatalog(t, pg)
-	got := runHealthScenario(t, cat, &pgClock)
+	got := runHealthScenario(t, owner, cat, &pgClock)
 
 	want := healthSnapshot{
 		state: "open", consecutive: 5, successCount: 0, failureCount: 5,
