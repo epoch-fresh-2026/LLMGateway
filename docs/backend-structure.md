@@ -13,7 +13,7 @@ server/internal/ratelimit/          限流规则管理和运行时限流能力
 server/internal/quota/              UTC 日/月 token/费用业务配额策略与管理能力
 server/internal/httpapi/            顶层 HTTP 装配、响应 envelope 和业务入口委托
 server/internal/httpcommon/         共享 HTTP 请求解析、路径、分页、存储错误映射和删除响应 helper 的唯一归属
-server/internal/proxy/              下游代理业务：OpenAI 适配、路由、计费、限流、熔断、结算和上游调用
+server/internal/proxy/              下游代理业务：OpenAI 适配、路由、成本计算、限流、熔断、结算和上游调用
 server/internal/proxy/openai/       OpenAI 兼容 wire DTO 与协议适配；归属 proxy 业务模块
 server/internal/proxy/settlement/   结算事务 contract（proxy 拥有），供 Store 实现
 server/internal/errors/             跨模块通用错误
@@ -97,7 +97,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
   - `server/internal/ratelimit/`：限流规则和运行时限流业务模块（HTTP 入口由顶层装配）
   - `server/internal/httpapi/`：`handler.go`（顶层入口/分派/响应）、`openai.go`（/v1 分派与错误映射）
   - `server/internal/httpcommon/`：共享 HTTP 请求解析、路径解析、分页、存储错误映射和删除响应 helper；这些通用行为只在此处实现
-- `server/internal/proxy/`：`proxy.go`（编排依赖装配与代理错误）、`contracts.go`（协议中立请求/响应/usage contract）、`auth.go`（认证）、`routing.go`（选路）、`billing.go`（计费）、`ratelimit.go`（限流）、`orchestration.go`（代理编排）
+- `server/internal/proxy/`：`proxy.go`（编排依赖装配与代理错误）、`contracts.go`（协议中立请求/响应/usage contract）、`auth.go`（认证）、`routing.go`（选路）、`billing.go`（成本计算，用于近似渠道记账与 usage log）、`ratelimit.go`（限流）、`orchestration.go`（代理编排）
     - `server/internal/proxy/openai/`：`types.go`、`adapter.go`（OpenAI 兼容 wire DTO、请求解析和响应适配；proxy 业务模块的协议边界）
 - 进程装配边界可以组合业务 port，但禁止在 `internal/store` 恢复 aggregate `Store`。
 
@@ -131,7 +131,7 @@ var _ catalog.Port = (*postgres.Store)(nil)
 - 上游故障切换：一次请求只查询一次健康路由候选，proxy 在内存中按最高优先级组的权重选择首选，并以 `channel_id` 去重保留后备。仅传输错误、429、401/402/403 和 5xx 可切换；流式 2xx 后不再切换。`UPSTREAM_REQUEST_TIMEOUT` 控制请求总 deadline，`UPSTREAM_MAX_ATTEMPTS` 控制最大候选尝试数。
 - 运行时限流：请求预检按 global -> user -> api_key -> model 顺序检查 RPM/TPM/RPD/concurrency，路由后检查 channel；日 token 预算不再由限流承担（`tpd` 指标已废弃，改由配额模块支持）；Token 预留使用输入 Token 加 `max_tokens` 的保守估算，完成后按实际 usage 结算。限流 reservation 与计数器独立持久化，过期记录由 reaper 清理。
 - 周期配额：所有边界使用 UTC，日桶为 `[00:00, 次日 00:00)`，月桶为 `[当月 1 日, 下月 1 日)`。请求选定最终渠道后，使用内嵌 tokenizer 估算输入 token，并按 `max_completion_tokens > max_tokens > QUOTA_DEFAULT_MAX_TOKENS` 预留最大输出 token；费用按最终渠道价格预留。用户 policy 与 Key policy 必须全部满足。
-- 配额持久化：`quota_buckets` 原子维护 `used_*` 与 `reserved_*`，`quota_reservations`/`quota_reservation_items` 保存请求级占用。正常失败主动释放，申请新额度时小批回收相关过期占用，进程后台 reaper 使用 `FOR UPDATE SKIP LOCKED` 兜底。成功结算在同一 PostgreSQL 事务中将 reserved 转为实际 used，并同时完成余额、渠道余额和 usage log。
+- 配额持久化：`quota_buckets` 原子维护 `used_*` 与 `reserved_*`，`quota_reservations`/`quota_reservation_items` 保存请求级占用。正常失败主动释放，申请新额度时小批回收相关过期占用，进程后台 reaper 使用 `FOR UPDATE SKIP LOCKED` 兜底。成功结算在同一 PostgreSQL 事务中将 reserved 转为实际 used，并同时完成渠道近似余额扣减和 usage log。
 - 限流：`rpm` + `reject` 规则基于 `usage_logs` 统计最近 1 分钟请求次数。`global`/`user`/`api_key` 保持按当前用户/Key 计数；`model` 规则额外按 public model 精确过滤；`channel` 规则在路由选中最终渠道后、调用上游前评估，超限直接返回 429 且写入 `error_code=rate_limited` 的 error usage log，不自动改选其他渠道。
 - 熔断：每个渠道有 `channel_health` 状态（closed/open/half-open）。判定取并集：确定性失败（上游 401/402/403）或 half-open 探测失败立即 open；窗口错误率/超时率超阈值（默认窗口 60s、最小样本 10、错误率 50%、超时率 50%）时 open；低流量下回退到连续失败阈值（默认 5）。窗口统计使用固定 10s 分桶的 `channel_health_buckets`，每次尝试（成功或渠道可归因失败）在同一健康事务内 upsert 并聚合，bucket 由后台 reaper 按保留期清理。冷却（默认 30s）后惰性转为 half-open 允许探测，探测成功回 closed、失败回 open。half-open 探测通过 `channel_breaker_probes` 租约实现单飞：一次请求只放行一个探测，请求返回（或流关闭）时按 `lease_id` 条件释放，租约到期仅作崩溃/超时兜底。全局阈值由环境变量配置，`channel_breaker_configs` 提供每渠道覆盖（管理端 `/admin/channels/{id}/breaker`）。`ListRouteCandidates` 按每渠道 cooldown（未覆盖时用全局默认）排除 open 渠道；当无可用渠道（无映射或全部 open）时返回 `503 no_healthy_channel`（错误码由 `no_available_channel` 变更而来，同时覆盖这两种情况）。失败分类仅计入传输错误、上游 429/401/403/402 与 5xx，其余 4xx 透传且不计渠道失败。健康记录为 best-effort。
 - 已知限制（后续 issue 处理）：

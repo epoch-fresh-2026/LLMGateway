@@ -15,7 +15,7 @@
 - `server/internal/proxy/openai/` 只放 OpenAI 兼容 wire DTO、请求解析和响应适配。
 - `server/internal/httpapi/` 只放顶层 HTTP 入口、统一响应、错误映射、静态 Dashboard 托管和对业务模块的委托，不集中放具体业务实现。
 - `server/internal/httpcommon/` 放跨业务复用的 HTTP 路径、JSON、分页、存储错误映射和响应 helper。
-- 业务类型、规则和窄端口由业务模块拥有：`catalog` 管理渠道/定价/健康，`accounts` 管理用户/Key/认证，`usage` 管理用量 DTO/校验，`ratelimit` 管理规则/reservation，`quota` 管理策略/reservation，`proxy` 管理代理编排 contract、失败和结算类型。`internal/domain` 已删除。
+- 业务类型、规则和窄端口由业务模块拥有：`catalog` 管理渠道/定价/健康，`accounts` 管理自助账户/资料/Key/会话与认证，`usage` 管理用量 DTO/校验，`ratelimit` 管理规则/reservation，`quota` 管理策略/reservation，`proxy` 管理代理编排 contract、失败和结算类型。`internal/domain` 已删除。
 - `server/internal/store/` 不再定义业务端口或 aggregate `Store`，仅保留通用错误兼容别名；组合接口由 `httpapi`、`proxy` 或 cmd 装配边界定义。
 - `server/internal/store/postgres/` 放 PostgreSQL Store 实现，只提供持久化原语（CRUD/lock/query）与事务边界，不承担业务规则或跨表流程编排；业务模块不得直接导入该包。
 - `server/internal/store/postgres/` 是唯一生产 Store 实现；`server/internal/testutil/storefake/` 与 `server/internal/testutil/app/` 仅供不需要数据库的单元与 HTTP 契约测试使用，生产代码不得导入，运行时不得提供 memory fallback。
