@@ -821,20 +821,19 @@ Authorization: Bearer <gateway-key>
 
 核心行为要求：
 
-- 校验网关 Key 是否存在、启用、未过期。
-- 校验用户状态和余额。
+- 校验网关 Key 是否存在、启用、未过期；不再校验用户状态或余额。
+- 只使用该 Key 所属用户自己的渠道与限流规则。
 - 按模型映射选择可用渠道。
 - 按渠道 `priority`、`weight`、余额、状态进行路由；同一 API Key + public model 在健康候选未变化时保持同一首选渠道，首选渠道失败时仍允许本次请求故障切换。可用 `CHANNEL_MIN_ROUTE_BALANCE` 设置全局渠道余额预留，余额低于该值的计费渠道不参与路由，未设置余额的渠道不受影响。
 - 请求上游并透传 OpenAI 风格响应。
 - `stream=true` 返回 `text/event-stream`，按 SSE 事件持续 flush，并保持 OpenAI `data:` 与 `[DONE]` 语义。
 - 流式请求会强制向上游设置 `stream_options.include_usage=true`；首个合法 JSON `data:` 帧记录 `ttft_ms`。SSE 空帧、心跳和注释不会被计为首个 token；非流式请求保持 `ttft_ms=null`。
 - 上游可切换故障仅包括传输错误、429、401/402/403 和 5xx；400/404/409/422 等调用方错误保持透传。请求级配额预留只执行一次，只有最终成功候选结算；流式响应收到 2xx 后不再切换渠道。
-- RPM/TPM/RPD/concurrency 限流拒绝统一返回 OpenAI `rate_limit_exceeded` 错误；Token 预检失败采用输入 Token 加 `max_tokens` 的保守估算，无法解析请求 Token 时对 Token 规则稳定拒绝。Key override 仅覆盖 `api_key` 级对应规则，global/user/model/channel 规则仍照常检查。
+- RPM/TPM/RPD/concurrency 限流拒绝统一返回 OpenAI `rate_limit_exceeded` 错误；Token 预检失败采用输入 Token 加 `max_tokens` 的保守估算，无法解析请求 Token 时对 Token 规则稳定拒绝。只加载该 Key 所属用户的规则（`target_type` 为 `user`/`api_key`/`model`/`channel`，不含 `global`）；Key override 仅覆盖 `api_key` 级对应规则。
 - 流式成功必须同时收到 usage 与 `[DONE]`，随后按上游实际 usage 一次原子结算。中途断流、客户端取消或流协议错误时，网关仅对已成功写入下游的文本 delta 以本地 tokenizer 估算 completion token，并连同请求 prompt 估算结算；用量日志以 `partial_estimated_*` 标识。未写出文本、缺 usage 或估算失败时不扣费；客户端取消会及时取消上游请求。
 - 记录 `usage_logs`。
-- 按 `model_pricing` 计算费用。
-- 更新用户余额和渠道余额。
-- 执行限流规则。
+- 按 `model_pricing` 计算费用并近似扣减渠道余额（不向用户计费）。
+- 执行该用户的限流规则。
 - 在调用上游前执行用户与 API Key 的 UTC 日/月 token、费用配额预留；任一配额不足返回 `429 insufficient_quota`。
 
 ## 周期配额
