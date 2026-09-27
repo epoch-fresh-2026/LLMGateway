@@ -15,12 +15,8 @@ func TestQuotaPolicyRejectsForeignKeyScope(t *testing.T) {
 	q := newQuota(st, nil)
 	acc := newAccounts(st)
 	ctx := context.Background()
-	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "one"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "two"}); err != nil {
-		t.Fatal(err)
-	}
+	st.SeedUser("one", "hash")
+	st.SeedUser("two", "hash")
 	key2, err := acc.CreateKey(ctx, 2, domain.KeyInput{KeyName: "k2"})
 	if err != nil {
 		t.Fatal(err)
@@ -43,9 +39,7 @@ func TestQuotaReaperReleasesExpiredReservation(t *testing.T) {
 	st := NewWithClock(func() time.Time { return now })
 	q := newQuota(st, func() time.Time { return now })
 	acc := newAccounts(st)
-	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "quota"}); err != nil {
-		t.Fatal(err)
-	}
+	st.SeedUser("quota", "hash")
 	key, err := acc.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "quota"})
 	if err != nil {
 		t.Fatal(err)

@@ -21,15 +21,14 @@ const (
 )
 
 var (
-	ErrUnauthorized        = errors.New("unauthorized")
-	ErrForbidden           = errors.New("forbidden")
-	ErrInvalidRequest      = errors.New("invalid request")
-	ErrRateLimited         = errors.New("rate limit exceeded")
-	ErrInsufficientBalance = errors.New("insufficient balance")
-	ErrNoHealthyChannel    = errors.New("no healthy channel available")
-	ErrUpstream            = errors.New("upstream error")
-	ErrInvalidStream       = errors.New("invalid upstream stream")
-	ErrQuotaExceeded       = errors.New("period quota exceeded")
+	ErrUnauthorized     = errors.New("unauthorized")
+	ErrForbidden        = errors.New("forbidden")
+	ErrInvalidRequest   = errors.New("invalid request")
+	ErrRateLimited      = errors.New("rate limit exceeded")
+	ErrNoHealthyChannel = errors.New("no healthy channel available")
+	ErrUpstream         = errors.New("upstream error")
+	ErrInvalidStream    = errors.New("invalid upstream stream")
+	ErrQuotaExceeded    = errors.New("period quota exceeded")
 )
 
 type Service struct {

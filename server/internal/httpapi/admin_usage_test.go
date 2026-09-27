@@ -60,9 +60,7 @@ func TestUsageLogsAndStats(t *testing.T) {
 	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-2", UserID: intPtr(1), ChannelID: intPtr(1), Model: "gpt-4o", Status: "error", TotalTokens: 200, TotalCost: "0.002000"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := handler.accounts.CreateUser(context.Background(), domain.UserInput{Nickname: "usage-user"}); err != nil {
-		t.Fatal(err)
-	}
+	st.SeedUser("usage-user", "hash")
 	if _, err := handler.accounts.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "active"}); err != nil {
 		t.Fatal(err)
 	}

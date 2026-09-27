@@ -85,7 +85,7 @@ func (a *Server) UpdateKey(ctx context.Context, userID, keyID int, in KeyUpdateI
 	if err != nil {
 		return ClientKeyDTO{}, err
 	}
-	return ClientKeyDTO(updated), nil
+	return ClientKeyDTO{ID: updated.ID, KeyName: updated.KeyName, Prefix: updated.Prefix, IsActive: updated.IsActive, LastUsedAt: updated.LastUsedAt, ExpiresAt: updated.ExpiresAt}, nil
 }
 
 // DeleteKey releases the key's quota reservations and removes the key in one

@@ -2,41 +2,46 @@ package accounts
 
 import (
 	"net/http"
-	"strconv"
 
 	"LLMGateway/server/internal/httpcommon"
 )
 
 func (a *Server) keys(r *http.Request) httpcommon.AdminResult {
-	if r.Method != http.MethodGet {
-		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-	}
-	return a.listKeys(r)
-}
-
-func (a *Server) userKeys(r *http.Request) httpcommon.AdminResult {
-	userID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		return httpcommon.HTTPError(http.StatusBadRequest, "invalid user id")
+	userID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
 	}
 	switch r.Method {
 	case http.MethodGet:
-		return a.listUserKeys(r, userID)
+		page, pageSize := httpcommon.ParsePagination(r)
+		return httpcommon.Result(a.store.ListKeys(r.Context(), userID, page, pageSize))
 	case http.MethodPost:
-		return a.createKey(r, userID)
+		var req KeyInput
+		if err := httpcommon.ReadJSON(r, &req); err != nil {
+			return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
+		}
+		return httpcommon.Result(a.CreateKey(r.Context(), userID, req))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
-func (a *Server) userKey(r *http.Request) httpcommon.AdminResult {
-	userID, keyID, result := a.keyPathIDs(r)
+func (a *Server) key(r *http.Request) httpcommon.AdminResult {
+	userID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
+	keyID, result := parseKeyID(r)
 	if result.Status != 0 {
 		return result
 	}
 	switch r.Method {
 	case http.MethodPut:
-		return a.updateKey(r, userID, keyID)
+		var req KeyUpdateInput
+		if err := httpcommon.ReadJSON(r, &req); err != nil {
+			return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
+		}
+		return httpcommon.Result(a.UpdateKey(r.Context(), userID, keyID, req))
 	case http.MethodDelete:
 		return httpcommon.NoBody(a.DeleteKey(r.Context(), userID, keyID))
 	default:
@@ -44,51 +49,17 @@ func (a *Server) userKey(r *http.Request) httpcommon.AdminResult {
 	}
 }
 
-func (a *Server) userKeyReset(r *http.Request) httpcommon.AdminResult {
+func (a *Server) keyReset(r *http.Request) httpcommon.AdminResult {
 	if r.Method != http.MethodPost {
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
-	userID, keyID, result := a.keyPathIDs(r)
+	userID, result := httpcommon.RequireUserID(r)
+	if result.Status != 0 {
+		return result
+	}
+	keyID, result := parseKeyID(r)
 	if result.Status != 0 {
 		return result
 	}
 	return httpcommon.Result(a.ResetKey(r.Context(), userID, keyID))
-}
-
-func (a *Server) keyPathIDs(r *http.Request) (int, int, httpcommon.AdminResult) {
-	userID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		return 0, 0, httpcommon.HTTPError(http.StatusBadRequest, "invalid user id")
-	}
-	keyID, err := strconv.Atoi(r.PathValue("key_id"))
-	if err != nil {
-		return 0, 0, httpcommon.HTTPError(http.StatusBadRequest, "invalid key id")
-	}
-	return userID, keyID, httpcommon.AdminResult{}
-}
-
-func (a *Server) listKeys(r *http.Request) httpcommon.AdminResult {
-	page, pageSize := httpcommon.ParsePagination(r)
-	return httpcommon.Result(a.store.ListKeys(r.Context(), page, pageSize))
-}
-
-func (a *Server) listUserKeys(r *http.Request, userID int) httpcommon.AdminResult {
-	page, pageSize := httpcommon.ParsePagination(r)
-	return httpcommon.Result(a.store.ListUserKeys(r.Context(), userID, page, pageSize))
-}
-
-func (a *Server) createKey(r *http.Request, userID int) httpcommon.AdminResult {
-	var req KeyInput
-	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
-	}
-	return httpcommon.Result(a.CreateKey(r.Context(), userID, req))
-}
-
-func (a *Server) updateKey(r *http.Request, userID, keyID int) httpcommon.AdminResult {
-	var req KeyUpdateInput
-	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
-	}
-	return httpcommon.Result(a.UpdateKey(r.Context(), userID, keyID, req))
 }

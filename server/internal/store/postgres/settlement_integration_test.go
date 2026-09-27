@@ -6,73 +6,52 @@ import (
 	"testing"
 	"time"
 
-	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/proxy"
 	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/store"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
-func TestPGSettleChatCompletionRollsBackOnUsageInsertFailure(t *testing.T) {
+func TestPGSettleChannelRollsBackOnUsageInsertFailure(t *testing.T) {
 	st := testStore(t)
 	cat := testCatalog(t, st)
-	acc := accounts.New(st, st.AccountsTx())
-	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
-		t.Fatal(err)
-	}
+	owner := testOwner(t, st)
 	channelBalance := "5.000000"
-	channel, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Balance: &channelBalance})
+	channel, err := cat.CreateChannel(context.Background(), owner, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Balance: &channelBalance})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.InsertUsageLog(context.Background(), successUsageInput("dup-pg", 1, channel.ID)); err != nil {
+	if _, err := st.InsertUsageLog(context.Background(), successUsageInput("dup-pg", owner, channel.ID)); err != nil {
 		t.Fatal(err)
 	}
 
 	service := proxy.NewService(st, cat, testQuota(t, st), testRateLimit(t, st), nil, func(int) int { return 0 }, time.Now)
-	_, err = service.Settle(context.Background(), settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "1.000000", DebitChannel: true, Description: "chat", UsageLog: successUsageInput("dup-pg", 1, channel.ID)})
+	_, err = service.Settle(context.Background(), settlement.Input{UserID: owner, ChannelID: &channel.ID, Cost: "1.000000", DebitChannel: true, UsageLog: successUsageInput("dup-pg", owner, channel.ID)})
 	if !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("err = %v, want ErrInvalid", err)
 	}
-	balance, _ := st.GetUserBalance(context.Background(), 1)
-	if balance.AvailableBalance != "10.000000" {
-		t.Fatalf("user balance not rolled back: %s", balance.AvailableBalance)
-	}
-	secret, _ := cat.GetChannelSecret(context.Background(), 1, channel.ID)
+	secret, _ := cat.GetChannelSecret(context.Background(), owner, channel.ID)
 	if secret.Balance == nil || *secret.Balance != "5.000000" {
 		t.Fatalf("channel balance not rolled back: %v", secret.Balance)
 	}
-	txs, _ := st.ListBalanceTransactions(context.Background(), 1, 1, 20)
-	if txs.Total != 1 {
-		t.Fatalf("consume transaction was partially committed: %+v", txs)
-	}
 }
 
-func TestPGSettleChatCompletionPersistsTTFT(t *testing.T) {
+func TestPGSettlePersistsTTFT(t *testing.T) {
 	st := testStore(t)
 	cat := testCatalog(t, st)
-	acc := accounts.New(st, st.AccountsTx())
-	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
-		t.Fatal(err)
-	}
-	channel, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	owner := testOwner(t, st)
+	channel, err := cat.CreateChannel(context.Background(), owner, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ttft := 42
-	usage := successUsageInput("stream-ttft-pg", 1, channel.ID)
+	usage := successUsageInput("stream-ttft-pg", owner, channel.ID)
 	usage.TTFTMs = &ttft
 	service := proxy.NewService(st, cat, testQuota(t, st), testRateLimit(t, st), nil, func(int) int { return 0 }, time.Now)
-	if _, err := service.Settle(context.Background(), settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "0.000100", Description: "stream chat", UsageLog: usage}); err != nil {
+	if _, err := service.Settle(context.Background(), settlement.Input{UserID: owner, ChannelID: &channel.ID, Cost: "0.000100", UsageLog: usage}); err != nil {
 		t.Fatal(err)
 	}
-	logs, err := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 10})
+	logs, err := st.ListUsageLogs(context.Background(), owner, domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

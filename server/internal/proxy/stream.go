@@ -11,7 +11,6 @@ import (
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
-	apperrors "LLMGateway/server/internal/errors"
 	settlement "LLMGateway/server/internal/proxy/settlement"
 )
 
@@ -153,17 +152,11 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	_, err = s.service.Settle(s.ctx, settlement.Input{
 		ReservationID: s.reservationID,
 		UserID:        s.auth.UserID, APIKeyID: s.auth.KeyID, ChannelID: &s.candidate.ChannelID, Cost: cost,
-		DebitChannel: s.candidate.Balance != nil, Description: "chat completion " + s.requestID, UsageLog: usageLog,
+		DebitChannel: s.candidate.Balance != nil, UsageLog: usageLog,
 	})
 	if err != nil {
-		code := "settlement_failed"
-		message := "unable to settle completion"
-		if errors.Is(err, apperrors.ErrInvalid) {
-			code = "insufficient_balance"
-			message = "insufficient balance"
-		}
-		s.logError(usage, ttft, code)
-		s.emitError(emit, code, message)
+		s.logError(usage, ttft, "settlement_failed")
+		s.emitError(emit, "settlement_failed", "unable to settle completion")
 		return err
 	}
 	settled = true
@@ -223,7 +216,6 @@ func (s *completionStream) settlePartial(text string, ttft *int, code string) bo
 		ChannelID:     &s.candidate.ChannelID,
 		Cost:          cost,
 		DebitChannel:  s.candidate.Balance != nil,
-		Description:   "partial chat completion " + s.requestID,
 		UsageLog:      input,
 	}); err != nil {
 		// The atomic settlement did not create a usage log, so record the failed

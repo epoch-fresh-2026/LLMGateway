@@ -133,75 +133,36 @@ paths:
       operationId: deletePricing
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DeletePricingInput' } } } }
       responses: { '200': { $ref: '#/components/responses/Deleted' }, '400': { $ref: '#/components/responses/Error' } }
-  /admin/users:
+  /admin/profile:
     get:
-      operationId: listUsers
-      parameters: [$ref: '#/components/parameters/Page', $ref: '#/components/parameters/PageSize']
-      responses: { '200': { $ref: '#/components/responses/UserList' } }
-    post:
-      operationId: createUser
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UserCreateInput' } } } }
-      responses: { '200': { $ref: '#/components/responses/User' }, '400': { $ref: '#/components/responses/Error' } }
-  /admin/users/{id}:
-    parameters: [$ref: '#/components/parameters/Id']
+      operationId: getProfile
+      responses: { '200': { $ref: '#/components/responses/Account' }, '401': { $ref: '#/components/responses/Error' } }
     put:
-      operationId: updateUser
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UserUpdateInput' } } } }
-      responses: { '200': { $ref: '#/components/responses/User' }, '400': { $ref: '#/components/responses/Error' } }
-    delete:
-      operationId: deleteUser
-      responses: { '200': { $ref: '#/components/responses/Deleted' }, '404': { $ref: '#/components/responses/Error' } }
-  /admin/users/{id}/status:
-    parameters: [$ref: '#/components/parameters/Id']
-    put:
-      operationId: updateUserStatus
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [active, suspended] } } } } } }
-      responses: { '200': { $ref: '#/components/responses/User' }, '400': { $ref: '#/components/responses/Error' } }
-  /admin/users/{id}/recharge:
-    parameters: [$ref: '#/components/parameters/Id']
-    post:
-      operationId: rechargeUser
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RechargeInput' } } } }
-      responses: { '200': { $ref: '#/components/responses/BalanceAfter' }, '400': { $ref: '#/components/responses/Error' } }
-  /admin/users/{id}/balance:
-    parameters: [$ref: '#/components/parameters/Id']
-    get:
-      operationId: getUserBalance
-      responses: { '200': { $ref: '#/components/responses/Balance' } }
-  /admin/users/{id}/balance-transactions:
-    parameters: [$ref: '#/components/parameters/Id']
-    get:
-      operationId: listBalanceTransactions
-      parameters: [$ref: '#/components/parameters/Page', $ref: '#/components/parameters/PageSize']
-      responses: { '200': { $ref: '#/components/responses/BalanceTransactionList' } }
+      operationId: updateProfile
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProfileUpdateInput' } } } }
+      responses: { '200': { $ref: '#/components/responses/Account' }, '400': { $ref: '#/components/responses/Error' }, '401': { $ref: '#/components/responses/Error' } }
   /admin/keys:
     get:
       operationId: listKeys
       parameters: [$ref: '#/components/parameters/Page', $ref: '#/components/parameters/PageSize']
       responses: { '200': { $ref: '#/components/responses/KeyList' } }
-  /admin/users/{id}/keys:
-    parameters: [$ref: '#/components/parameters/Id']
-    get:
-      operationId: listUserKeys
-      parameters: [$ref: '#/components/parameters/Page', $ref: '#/components/parameters/PageSize']
-      responses: { '200': { $ref: '#/components/responses/KeyList' } }
     post:
-      operationId: createUserKey
+      operationId: createKey
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KeyCreateInput' } } } }
       responses: { '200': { $ref: '#/components/responses/KeySecret' }, '400': { $ref: '#/components/responses/Error' } }
-  /admin/users/{id}/keys/{keyId}:
-    parameters: [$ref: '#/components/parameters/Id', { $ref: '#/components/parameters/KeyId' }]
+  /admin/keys/{id}:
+    parameters: [$ref: '#/components/parameters/Id']
     put:
-      operationId: updateUserKey
+      operationId: updateKey
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KeyUpdateInput' } } } }
-      responses: { '200': { $ref: '#/components/responses/Key' }, '400': { $ref: '#/components/responses/Error' } }
+      responses: { '200': { $ref: '#/components/responses/Key' }, '400': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
     delete:
-      operationId: deleteUserKey
+      operationId: deleteKey
       responses: { '200': { $ref: '#/components/responses/Deleted' }, '404': { $ref: '#/components/responses/Error' } }
-  /admin/users/{id}/keys/{keyId}/reset:
-    parameters: [$ref: '#/components/parameters/Id', { $ref: '#/components/parameters/KeyId' }]
+  /admin/keys/{id}/reset:
+    parameters: [$ref: '#/components/parameters/Id']
     post:
-      operationId: resetUserKey
+      operationId: resetKey
       responses: { '200': { $ref: '#/components/responses/KeySecret' }, '404': { $ref: '#/components/responses/Error' } }
   /admin/usage-logs:
     get:
@@ -286,7 +247,6 @@ components:
   parameters:
     Id: { in: path, name: id, required: true, schema: { type: integer } }
     ModelId: { in: path, name: modelId, required: true, schema: { type: integer } }
-    KeyId: { in: path, name: keyId, required: true, schema: { type: integer } }
     Page: { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
     PageSize: { in: query, name: page_size, schema: { type: integer, minimum: 1, maximum: 1000, default: 20 } }
     StartTime: { in: query, name: start_time, schema: { type: string, format: date-time } }
@@ -298,8 +258,6 @@ components:
     Error: { description: Error, content: { application/json: { schema: { $ref: '#/components/schemas/AdminError' } } } }
     Account: { description: Account, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseAccount' } } } }
     Stats: { description: Stats, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseStats' } } } }
-    Balance: { description: Balance, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseBalance' } } } }
-    BalanceAfter: { description: Balance after, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseBalanceAfter' } } } }
     Deleted: { description: Deleted, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseDeleted' } } } }
     Channel: { description: Channel, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseChannel' } } } }
     ChannelList: { description: Channels, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseChannelList' } } } }
@@ -313,12 +271,9 @@ components:
     CatalogModelList: { description: Catalog models, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseCatalogModelList' } } } }
     Pricing: { description: Pricing, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponsePricing' } } } }
     PricingList: { description: Pricing list, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponsePricingList' } } } }
-    User: { description: User, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseUser' } } } }
-    UserList: { description: Users, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseUserList' } } } }
     Key: { description: Key, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseKey' } } } }
     KeyList: { description: Keys, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseKeyList' } } } }
     KeySecret: { description: Key secret, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseKeySecret' } } } }
-    BalanceTransactionList: { description: Transactions, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseBalanceTransactionList' } } } }
     UsageLog: { description: Usage log, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseUsageLog' } } } }
     UsageLogList: { description: Usage logs, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseUsageLogList' } } } }
     DailyStatsList: { description: Daily stats, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseDailyStatsList' } } } }
@@ -334,7 +289,6 @@ components:
     AdminResponse: { type: object, required: [code, message, data], properties: { code: { type: integer, const: 0 }, message: { type: string, const: ok }, data: {} } }
     List: { type: object, required: [list, total], properties: { list: { type: array, items: {} }, total: { type: integer } } }
     Money: { type: string, pattern: '^-?\\d+(\\.\\d+)?$' }
-    Balance: { type: object, required: [available_balance, frozen_balance], properties: { available_balance: { $ref: '#/components/schemas/Money' }, frozen_balance: { $ref: '#/components/schemas/Money' } } }
     Channel: { type: object, required: [id, name, base_url, auth_type, status, weight, priority, balance, model_count], properties: { id: { type: integer }, name: { type: string }, base_url: { type: string, format: uri }, auth_type: { type: string }, status: { type: integer }, weight: { type: integer }, priority: { type: integer }, balance: { anyOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }, model_count: { type: integer } } }
     ChannelCreateInput: { type: object, required: [name, base_url, api_key], properties: { name: { type: string }, base_url: { type: string, format: uri }, api_key: { type: string, writeOnly: true }, auth_type: { type: string }, status: { type: integer }, weight: { type: integer }, priority: { type: integer }, balance: { anyOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] } } }
     ChannelUpdateInput: { type: object, properties: { name: { type: string }, base_url: { type: string, format: uri }, api_key: { type: string, writeOnly: true }, auth_type: { type: string }, status: { type: integer }, weight: { type: integer }, priority: { type: integer }, balance: { anyOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] } } }
@@ -354,12 +308,8 @@ components:
     Account: { type: object, required: [id, username, nickname], properties: { id: { type: integer }, username: { type: string }, nickname: { type: string } } }
     AuthCredentialsInput: { type: object, required: [username, password], properties: { username: { type: string, minLength: 3, maxLength: 64 }, password: { type: string, minLength: 8, maxLength: 72, writeOnly: true } } }
     AdminResponseAccount: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Account' } } }
-    User: { type: object, required: [id, nickname, user_group, status, balance], properties: { id: { type: integer }, nickname: { type: string }, user_group: { type: string }, status: { type: string, enum: [active, suspended] }, balance: { $ref: '#/components/schemas/Balance' } } }
-    UserCreateInput: { type: object, required: [nickname], properties: { nickname: { type: string }, user_group: { type: string }, status: { type: string, enum: [active, suspended] }, password: { type: string, writeOnly: true } } }
-    UserUpdateInput: { type: object, properties: { nickname: { type: string }, user_group: { type: string }, password: { type: string, writeOnly: true } } }
-    RechargeInput: { type: object, required: [amount], properties: { amount: { $ref: '#/components/schemas/Money' }, related_order_id: { type: string }, description: { type: string } } }
-    BalanceTransaction: { type: object, required: [id, tx_type, amount, balance_after, created_at], properties: { id: { type: integer }, tx_type: { type: string }, amount: { $ref: '#/components/schemas/Money' }, balance_after: { $ref: '#/components/schemas/Money' }, created_at: { type: string, format: date-time } } }
-    Key: { type: object, required: [id, user_id, key_name, prefix, is_active, last_used_at, expires_at], properties: { id: { type: integer }, user_id: { type: integer }, key_name: { type: string }, prefix: { type: string }, is_active: { type: boolean }, last_used_at: { type: [string, 'null'], format: date-time }, expires_at: { type: [string, 'null'], format: date-time } } }
+    ProfileUpdateInput: { type: object, properties: { nickname: { type: string }, current_password: { type: string, writeOnly: true }, new_password: { type: string, minLength: 8, maxLength: 72, writeOnly: true } } }
+    Key: { type: object, required: [id, key_name, prefix, is_active, last_used_at, expires_at], properties: { id: { type: integer }, key_name: { type: string }, prefix: { type: string }, is_active: { type: boolean }, last_used_at: { type: [string, 'null'], format: date-time }, expires_at: { type: [string, 'null'], format: date-time } } }
     KeyCreateInput: { type: object, required: [key_name, prefix], properties: { key_name: { type: string }, prefix: { type: string }, permissions: { type: object, additionalProperties: true }, rate_limit_overrides: { type: object, additionalProperties: true }, expires_at: { type: string, format: date-time }, is_active: { type: boolean } } }
     KeyUpdateInput: { type: object, required: [is_active], properties: { is_active: { type: boolean } } }
     KeySecret: { type: object, required: [full_key], properties: { id: { type: integer }, full_key: { type: string, writeOnly: true } } }
@@ -379,8 +329,6 @@ components:
     ChannelTestItem: { type: object, required: [model_alias, upstream_model, http_status, latency_ms, ok, error], properties: { model_alias: { type: string }, upstream_model: { type: string }, http_status: { type: integer }, latency_ms: { type: integer }, ok: { type: boolean }, error: { type: string } } }
     Deleted: { type: object, required: [deleted], properties: { deleted: { const: true } } }
     AdminResponseStats: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Stats' } } }
-    AdminResponseBalance: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Balance' } } }
-    AdminResponseBalanceAfter: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { type: object, required: [balance_after], properties: { balance_after: { $ref: '#/components/schemas/Money' } } } } }
     AdminResponseDeleted: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Deleted' } } }
     AdminResponseChannel: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Channel' } } }
     AdminResponseChannelList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/Channel' } } } } } }
@@ -394,12 +342,9 @@ components:
     AdminResponseCatalogModelList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/CatalogModel' } } } } } }
     AdminResponsePricing: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Pricing' } } }
     AdminResponsePricingList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/Pricing' } } } } } }
-    AdminResponseUser: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/User' } } }
-    AdminResponseUserList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/User' } } } } } }
     AdminResponseKey: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Key' } } }
     AdminResponseKeyList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/Key' } } } } } }
     AdminResponseKeySecret: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/KeySecret' } } }
-    AdminResponseBalanceTransactionList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/BalanceTransaction' } } } } } }
     AdminResponseUsageLog: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/UsageLog' } } }
     AdminResponseUsageLogList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/UsageLog' } } } } } }
     AdminResponseDailyStatsList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/DailyStats' } } } } } }

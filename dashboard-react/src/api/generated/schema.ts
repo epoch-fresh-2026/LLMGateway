@@ -313,105 +313,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/users": {
+    "/admin/profile": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["listUsers"];
-        put?: never;
-        post: operations["createUser"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/users/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["updateUser"];
-        post?: never;
-        delete: operations["deleteUser"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/users/{id}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["updateUserStatus"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/users/{id}/recharge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["rechargeUser"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/users/{id}/balance": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["getUserBalance"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/users/{id}/balance-transactions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["listBalanceTransactions"];
-        put?: never;
+        get: operations["getProfile"];
+        put: operations["updateProfile"];
         post?: never;
         delete?: never;
         options?: never;
@@ -428,63 +338,43 @@ export interface paths {
         };
         get: operations["listKeys"];
         put?: never;
-        post?: never;
+        post: operations["createKey"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/admin/users/{id}/keys": {
+    "/admin/keys/{id}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["listUserKeys"];
-        put?: never;
-        post: operations["createUserKey"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/users/{id}/keys/{keyId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-                keyId: components["parameters"]["KeyId"];
             };
             cookie?: never;
         };
         get?: never;
-        put: operations["updateUserKey"];
+        put: operations["updateKey"];
         post?: never;
-        delete: operations["deleteUserKey"];
+        delete: operations["deleteKey"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/admin/users/{id}/keys/{keyId}/reset": {
+    "/admin/keys/{id}/reset": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: components["parameters"]["Id"];
-                keyId: components["parameters"]["KeyId"];
             };
             cookie?: never;
         };
         get?: never;
         put?: never;
-        post: operations["resetUserKey"];
+        post: operations["resetKey"];
         delete?: never;
         options?: never;
         head?: never;
@@ -710,10 +600,6 @@ export interface components {
             total: number;
         };
         Money: string;
-        Balance: {
-            available_balance: components["schemas"]["Money"];
-            frozen_balance: components["schemas"]["Money"];
-        };
         Channel: {
             id: number;
             name: string;
@@ -844,42 +730,13 @@ export interface components {
         AdminResponseAccount: {
             data?: components["schemas"]["Account"];
         } & components["schemas"]["AdminResponse"];
-        User: {
-            id: number;
-            nickname: string;
-            user_group: string;
-            /** @enum {string} */
-            status: "active" | "suspended";
-            balance: components["schemas"]["Balance"];
-        };
-        UserCreateInput: {
-            nickname: string;
-            user_group?: string;
-            /** @enum {string} */
-            status?: "active" | "suspended";
-            password?: string;
-        };
-        UserUpdateInput: {
+        ProfileUpdateInput: {
             nickname?: string;
-            user_group?: string;
-            password?: string;
-        };
-        RechargeInput: {
-            amount: components["schemas"]["Money"];
-            related_order_id?: string;
-            description?: string;
-        };
-        BalanceTransaction: {
-            id: number;
-            tx_type: string;
-            amount: components["schemas"]["Money"];
-            balance_after: components["schemas"]["Money"];
-            /** Format: date-time */
-            created_at: string;
+            current_password?: string;
+            new_password?: string;
         };
         Key: {
             id: number;
-            user_id: number;
             key_name: string;
             prefix: string;
             is_active: boolean;
@@ -1092,14 +949,6 @@ export interface components {
         AdminResponseStats: {
             data?: components["schemas"]["Stats"];
         } & components["schemas"]["AdminResponse"];
-        AdminResponseBalance: {
-            data?: components["schemas"]["Balance"];
-        } & components["schemas"]["AdminResponse"];
-        AdminResponseBalanceAfter: {
-            data?: {
-                balance_after: components["schemas"]["Money"];
-            };
-        } & components["schemas"]["AdminResponse"];
         AdminResponseDeleted: {
             data?: components["schemas"]["Deleted"];
         } & components["schemas"]["AdminResponse"];
@@ -1155,14 +1004,6 @@ export interface components {
                 list?: components["schemas"]["Pricing"][];
             } & components["schemas"]["List"];
         } & components["schemas"]["AdminResponse"];
-        AdminResponseUser: {
-            data?: components["schemas"]["User"];
-        } & components["schemas"]["AdminResponse"];
-        AdminResponseUserList: {
-            data?: {
-                list?: components["schemas"]["User"][];
-            } & components["schemas"]["List"];
-        } & components["schemas"]["AdminResponse"];
         AdminResponseKey: {
             data?: components["schemas"]["Key"];
         } & components["schemas"]["AdminResponse"];
@@ -1173,11 +1014,6 @@ export interface components {
         } & components["schemas"]["AdminResponse"];
         AdminResponseKeySecret: {
             data?: components["schemas"]["KeySecret"];
-        } & components["schemas"]["AdminResponse"];
-        AdminResponseBalanceTransactionList: {
-            data?: {
-                list?: components["schemas"]["BalanceTransaction"][];
-            } & components["schemas"]["List"];
         } & components["schemas"]["AdminResponse"];
         AdminResponseUsageLog: {
             data?: components["schemas"]["UsageLog"];
@@ -1250,24 +1086,6 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["AdminResponseStats"];
-            };
-        };
-        /** @description Balance */
-        Balance: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["AdminResponseBalance"];
-            };
-        };
-        /** @description Balance after */
-        BalanceAfter: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["AdminResponseBalanceAfter"];
             };
         };
         /** @description Deleted */
@@ -1387,24 +1205,6 @@ export interface components {
                 "application/json": components["schemas"]["AdminResponsePricingList"];
             };
         };
-        /** @description User */
-        User: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["AdminResponseUser"];
-            };
-        };
-        /** @description Users */
-        UserList: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["AdminResponseUserList"];
-            };
-        };
         /** @description Key */
         Key: {
             headers: {
@@ -1430,15 +1230,6 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["AdminResponseKeySecret"];
-            };
-        };
-        /** @description Transactions */
-        BalanceTransactionList: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["AdminResponseBalanceTransactionList"];
             };
         };
         /** @description Usage log */
@@ -1535,7 +1326,6 @@ export interface components {
     parameters: {
         Id: number;
         ModelId: number;
-        KeyId: number;
         Page: number;
         PageSize: number;
         StartTime: string;
@@ -1984,142 +1774,35 @@ export interface operations {
             400: components["responses"]["Error"];
         };
     };
-    listUsers: {
-        parameters: {
-            query?: {
-                page?: components["parameters"]["Page"];
-                page_size?: components["parameters"]["PageSize"];
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: components["responses"]["UserList"];
-        };
-    };
-    createUser: {
+    getProfile: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserCreateInput"];
-            };
-        };
-        responses: {
-            200: components["responses"]["User"];
-            400: components["responses"]["Error"];
-        };
-    };
-    updateUser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserUpdateInput"];
-            };
-        };
-        responses: {
-            200: components["responses"]["User"];
-            400: components["responses"]["Error"];
-        };
-    };
-    deleteUser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
         requestBody?: never;
         responses: {
-            200: components["responses"]["Deleted"];
-            404: components["responses"]["Error"];
+            200: components["responses"]["Account"];
+            401: components["responses"]["Error"];
         };
     };
-    updateUserStatus: {
+    updateProfile: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": {
-                    /** @enum {string} */
-                    status: "active" | "suspended";
-                };
+                "application/json": components["schemas"]["ProfileUpdateInput"];
             };
         };
         responses: {
-            200: components["responses"]["User"];
+            200: components["responses"]["Account"];
             400: components["responses"]["Error"];
-        };
-    };
-    rechargeUser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RechargeInput"];
-            };
-        };
-        responses: {
-            200: components["responses"]["BalanceAfter"];
-            400: components["responses"]["Error"];
-        };
-    };
-    getUserBalance: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: components["responses"]["Balance"];
-        };
-    };
-    listBalanceTransactions: {
-        parameters: {
-            query?: {
-                page?: components["parameters"]["Page"];
-                page_size?: components["parameters"]["PageSize"];
-            };
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: components["responses"]["BalanceTransactionList"];
+            401: components["responses"]["Error"];
         };
     };
     listKeys: {
@@ -2137,30 +1820,11 @@ export interface operations {
             200: components["responses"]["KeyList"];
         };
     };
-    listUserKeys: {
-        parameters: {
-            query?: {
-                page?: components["parameters"]["Page"];
-                page_size?: components["parameters"]["PageSize"];
-            };
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: components["responses"]["KeyList"];
-        };
-    };
-    createUserKey: {
+    createKey: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody: {
@@ -2173,13 +1837,12 @@ export interface operations {
             400: components["responses"]["Error"];
         };
     };
-    updateUserKey: {
+    updateKey: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: components["parameters"]["Id"];
-                keyId: components["parameters"]["KeyId"];
             };
             cookie?: never;
         };
@@ -2191,15 +1854,15 @@ export interface operations {
         responses: {
             200: components["responses"]["Key"];
             400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
-    deleteUserKey: {
+    deleteKey: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: components["parameters"]["Id"];
-                keyId: components["parameters"]["KeyId"];
             };
             cookie?: never;
         };
@@ -2209,13 +1872,12 @@ export interface operations {
             404: components["responses"]["Error"];
         };
     };
-    resetUserKey: {
+    resetKey: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: components["parameters"]["Id"];
-                keyId: components["parameters"]["KeyId"];
             };
             cookie?: never;
         };

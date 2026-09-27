@@ -12,15 +12,28 @@ import (
 // --- Store reads ---
 
 func (s *Store) GetUserCredentialsByUsername(ctx context.Context, username string) (domain.Credentials, error) {
-	row, err := s.queries.GetUserCredentialsByUsername(ctx, pgtype.Text{String: username, Valid: true})
+	row, err := s.queries.GetUserCredentialsByUsername(ctx, username)
 	if err != nil {
 		return domain.Credentials{}, mapError(err)
 	}
 	return domain.Credentials{
 		UserID:       int(row.ID),
-		Username:     textOrEmpty(row.Username),
+		Username:     row.Username,
 		Nickname:     row.Nickname,
-		PasswordHash: textOrEmpty(row.PasswordHash),
+		PasswordHash: row.PasswordHash,
+	}, nil
+}
+
+func (s *Store) GetUserCredentialsByID(ctx context.Context, id int) (domain.Credentials, error) {
+	row, err := s.queries.GetUserCredentialsByID(ctx, int64(id))
+	if err != nil {
+		return domain.Credentials{}, mapError(err)
+	}
+	return domain.Credentials{
+		UserID:       int(row.ID),
+		Username:     row.Username,
+		Nickname:     row.Nickname,
+		PasswordHash: row.PasswordHash,
 	}, nil
 }
 
@@ -29,7 +42,7 @@ func (s *Store) GetAccountByID(ctx context.Context, id int) (domain.Account, err
 	if err != nil {
 		return domain.Account{}, mapError(err)
 	}
-	return domain.Account{ID: int(row.ID), Username: textOrEmpty(row.Username), Nickname: row.Nickname}, nil
+	return domain.Account{ID: int(row.ID), Username: row.Username, Nickname: row.Nickname}, nil
 }
 
 func (s *Store) GetSessionByTokenHash(ctx context.Context, tokenHash string) (domain.Session, error) {
@@ -63,9 +76,9 @@ func (s *Store) DeleteExpiredSessions(ctx context.Context, limit int) (int, erro
 
 func (t *Tx) InsertUserWithCredentials(in domain.CredentialsInput) (domain.Account, error) {
 	id, err := t.queries.CreateUserWithCredentials(t.ctx, sqlc.CreateUserWithCredentialsParams{
-		Username:     pgtype.Text{String: in.Username, Valid: in.Username != ""},
+		Username:     in.Username,
 		Nickname:     in.Nickname,
-		PasswordHash: pgtype.Text{String: in.PasswordHash, Valid: in.PasswordHash != ""},
+		PasswordHash: in.PasswordHash,
 	})
 	if err != nil {
 		return domain.Account{}, mapError(err)

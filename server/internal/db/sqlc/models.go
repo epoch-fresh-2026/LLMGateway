@@ -8,17 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type BalanceTransaction struct {
-	ID             int64              `json:"id"`
-	UserID         int64              `json:"user_id"`
-	TxType         string             `json:"tx_type"`
-	Amount         pgtype.Numeric     `json:"amount"`
-	BalanceAfter   pgtype.Numeric     `json:"balance_after"`
-	RelatedOrderID pgtype.Text        `json:"related_order_id"`
-	Description    string             `json:"description"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
 type Channel struct {
 	ID               int64              `json:"id"`
 	OwnerUserID      int64              `json:"owner_user_id"`
@@ -232,18 +221,9 @@ type UsageLog struct {
 
 type User struct {
 	ID           int64              `json:"id"`
-	Username     pgtype.Text        `json:"username"`
+	Username     string             `json:"username"`
 	Nickname     string             `json:"nickname"`
-	UserGroup    string             `json:"user_group"`
-	Status       string             `json:"status"`
-	PasswordHash pgtype.Text        `json:"password_hash"`
+	PasswordHash string             `json:"password_hash"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-}
-
-type UserBalance struct {
-	UserID           int64              `json:"user_id"`
-	AvailableBalance pgtype.Numeric     `json:"available_balance"`
-	FrozenBalance    pgtype.Numeric     `json:"frozen_balance"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }

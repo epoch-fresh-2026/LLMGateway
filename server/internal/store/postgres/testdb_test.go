@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -57,16 +58,30 @@ func testStore(t *testing.T) *Store {
 	return New(pool)
 }
 
-// testOwner creates a user so channel rows satisfy the owner_user_id foreign
-// key. It returns the created user id.
+// testOwner inserts a credential user so owner-scoped rows satisfy their
+// foreign key. It bypasses bcrypt and returns the created user id.
 func testOwner(t *testing.T, st *Store) int {
 	t.Helper()
-	acc := accounts.New(st, st.AccountsTx())
-	user, err := acc.CreateUser(context.Background(), accounts.UserInput{Nickname: "owner"})
+	var id int
+	err := st.AccountsTx().InTx(context.Background(), func(tx accounts.Tx) error {
+		account, err := tx.InsertUserWithCredentials(accounts.CredentialsInput{Username: uniqueUsername(), Nickname: "owner", PasswordHash: "x"})
+		if err != nil {
+			return err
+		}
+		id = account.ID
+		return nil
+	})
 	if err != nil {
 		t.Fatalf("create owner user: %v", err)
 	}
-	return user.ID
+	return id
+}
+
+var ownerSeq int
+
+func uniqueUsername() string {
+	ownerSeq++
+	return "owner" + strconv.Itoa(ownerSeq)
 }
 
 func testCipher(t *testing.T) *crypto.Cipher {

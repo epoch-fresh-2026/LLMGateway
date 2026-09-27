@@ -18,13 +18,8 @@ func newProtocolSeamService(t *testing.T, transport http.RoundTripper, adapter P
 	t.Helper()
 	st := storefake.New()
 	cat := newTestCatalog(st)
+	st.SeedUser("seam-user", "hash")
 	acc := accounts.New(st, st.AccountsTx())
-	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "seam-user"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
-		t.Fatal(err)
-	}
 	createdKey, err := acc.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "seam-key", Prefix: "sk-"})
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +40,7 @@ func newProtocolSeamService(t *testing.T, transport http.RoundTripper, adapter P
 	}
 
 	service := NewService(st, cat, newTestQuota(st, nil), newTestRateLimit(st, nil), &http.Client{Transport: transport}, func(int) int { return 0 }, time.Now, adapter)
-	auth := &domain.AuthContext{KeyID: createdKey.ID, UserID: 1, KeyActive: true, UserStatus: "active", AvailableBalance: "10.000000"}
+	auth := &domain.AuthContext{KeyID: createdKey.ID, UserID: 1, KeyActive: true}
 	return service, st, auth
 }
 

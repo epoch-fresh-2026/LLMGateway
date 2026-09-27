@@ -20,8 +20,8 @@ func TestChatCompletionSettlementStaysInProxy(t *testing.T) {
 	if !strings.Contains(source, "a.Settle(ctx, ") {
 		t.Fatal("chat completion success path must call proxy settlement")
 	}
-	if strings.Contains(source, "DebitUserBalance") || strings.Contains(source, "UpdateChannelBalance") {
-		t.Fatal("chat completion success path must not sequence debit/channel balance calls directly")
+	if strings.Contains(source, "UpdateChannelBalance") {
+		t.Fatal("chat completion success path must not sequence channel balance calls directly")
 	}
 
 	settleSource, err := os.ReadFile(filepath.Join("..", "proxy", "settlement.go"))
@@ -29,7 +29,7 @@ func TestChatCompletionSettlementStaysInProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	settlement := string(settleSource)
-	for _, primitive := range []string{"settlement.Tx", "SettleQuotaReservation", "LockUserBalance", "UpdateChannelBalance", "InsertUsageLog"} {
+	for _, primitive := range []string{"settlement.Tx", "SettleQuotaReservation", "UpdateChannelBalance", "InsertUsageLog"} {
 		if !strings.Contains(settlement, primitive) {
 			t.Fatalf("proxy settlement must use transaction primitive %q", primitive)
 		}

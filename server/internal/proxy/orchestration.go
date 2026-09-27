@@ -14,8 +14,6 @@ import (
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
-	apperrors "LLMGateway/server/internal/errors"
-	"LLMGateway/server/internal/money"
 	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/ratelimit"
 	usagecontracts "LLMGateway/server/internal/usage"
@@ -59,13 +57,6 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	}
 	if !allowModel(auth, req.Model) {
 		return ChatResponse{}, ErrForbidden
-	}
-	balance, err := money.Parse6(auth.AvailableBalance)
-	if err != nil {
-		return ChatResponse{}, fmt.Errorf("%w: invalid balance", apperrors.ErrInvalid)
-	}
-	if balance.Cmp(0) <= 0 {
-		return ChatResponse{}, ErrInsufficientBalance
 	}
 
 	requestID := newRequestID()
@@ -285,14 +276,9 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		ChannelID:     &candidate.ChannelID,
 		Cost:          cost,
 		DebitChannel:  candidate.Balance != nil,
-		Description:   "chat completion " + requestID,
 		UsageLog:      usageLog,
 	})
 	if err != nil {
-		if errors.Is(err, apperrors.ErrInvalid) {
-			a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, "0.000000", inputPrice, outputPrice, durationMs, clientIP, "error", "insufficient_balance")
-			return ChatResponse{}, ErrInsufficientBalance
-		}
 		return ChatResponse{}, err
 	}
 	releaseReservation = false

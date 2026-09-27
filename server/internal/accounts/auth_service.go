@@ -148,9 +148,7 @@ func (a *Server) newSessionToken() (string, time.Time, error) {
 	return token, a.now().Add(a.auth.SessionTTL), nil
 }
 
-// validateCredentials enforces the username/password shape. The password upper
-// bound is bcrypt's 72-byte input limit, which would otherwise be silently
-// truncated.
+// validateCredentials enforces the username/password shape.
 func validateCredentials(username, password string) error {
 	if len(username) < 3 || len(username) > 64 {
 		return fmt.Errorf("%w: username must be 3-64 characters", apperrors.ErrInvalid)
@@ -158,6 +156,12 @@ func validateCredentials(username, password string) error {
 	if strings.ContainsAny(username, " \t\r\n") {
 		return fmt.Errorf("%w: username must not contain whitespace", apperrors.ErrInvalid)
 	}
+	return validatePassword(password)
+}
+
+// validatePassword bounds the password to bcrypt's 72-byte input limit, which
+// would otherwise be silently truncated.
+func validatePassword(password string) error {
 	if len(password) < 8 || len(password) > 72 {
 		return fmt.Errorf("%w: password must be 8-72 bytes", apperrors.ErrInvalid)
 	}

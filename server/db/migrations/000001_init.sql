@@ -7,23 +7,16 @@
 -- must be recreated, e.g. `docker compose -f deployments/docker-compose.yml
 -- down -v`.
 
+-- Users are self-registered credentials only: no platform billing, status or
+-- group. Every user owns their own channels, keys, rules and quota policies.
 CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
-    -- username/password_hash back self-service login. They stay nullable until
-    -- the admin-only user CRUD path is removed; only rows created through the
-    -- auth flow carry credentials. The partial unique index enforces uniqueness
-    -- for credential rows without blocking legacy rows.
-    username TEXT,
+    username TEXT NOT NULL UNIQUE,
     nickname TEXT NOT NULL DEFAULT '',
-    user_group TEXT NOT NULL DEFAULT 'default',
-    status TEXT NOT NULL DEFAULT 'active',
-    password_hash TEXT,
+    password_hash TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (status IN ('active', 'suspended'))
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-CREATE UNIQUE INDEX users_username_unique ON users (username) WHERE username IS NOT NULL;
 
 -- Server-side browser sessions. Only the SHA-256 hash of the session token is
 -- stored, never the plaintext delivered as an HttpOnly cookie.
@@ -79,30 +72,6 @@ CREATE TABLE model_pricing (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (channel_id, model_name)
 );
-
-CREATE TABLE user_balances (
-    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    available_balance NUMERIC(20, 6) NOT NULL DEFAULT 0,
-    frozen_balance NUMERIC(20, 6) NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE balance_transactions (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tx_type TEXT NOT NULL,
-    amount NUMERIC(20, 6) NOT NULL,
-    balance_after NUMERIC(20, 6) NOT NULL,
-    related_order_id TEXT,
-    description TEXT NOT NULL DEFAULT '',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Recharge idempotency is scoped per user: the same related_order_id may be
--- reused by different users, but must be unique within a user.
-CREATE UNIQUE INDEX balance_transactions_user_order_idx
-    ON balance_transactions (user_id, related_order_id)
-    WHERE related_order_id IS NOT NULL AND related_order_id <> '';
 
 CREATE TABLE client_api_keys (
     id BIGSERIAL PRIMARY KEY,

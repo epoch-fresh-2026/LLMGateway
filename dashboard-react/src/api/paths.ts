@@ -1,7 +1,7 @@
 import type { paths } from './generated/schema'
 
 type AdminPath = Extract<keyof paths, `/admin/${string}`>
-type DynamicPath = `/admin/channels/${number}` | `/admin/channels/${number}/status` | `/admin/channels/${number}/balance` | `/admin/channels/${number}/health` | `/admin/channels/${number}/breaker` | `/admin/channels/${number}/models` | `/admin/channels/${number}/models/${number}` | `/admin/channels/${number}/remote-models` | `/admin/channels/${number}/test` | `/admin/channels/${number}/health/reset` | `/admin/users/${number}` | `/admin/users/${number}/status` | `/admin/users/${number}/balance` | `/admin/users/${number}/recharge` | `/admin/users/${number}/balance-transactions` | `/admin/users/${number}/keys` | `/admin/users/${number}/keys/${number}` | `/admin/users/${number}/keys/${number}/reset` | `/admin/usage-logs/${number}` | `/admin/rate-limits/${number}` | `/admin/quota-policies/${number}`
+type DynamicPath = `/admin/channels/${number}` | `/admin/channels/${number}/status` | `/admin/channels/${number}/balance` | `/admin/channels/${number}/health` | `/admin/channels/${number}/breaker` | `/admin/channels/${number}/models` | `/admin/channels/${number}/models/${number}` | `/admin/channels/${number}/remote-models` | `/admin/channels/${number}/test` | `/admin/channels/${number}/health/reset` | `/admin/keys/${number}` | `/admin/keys/${number}/reset` | `/admin/usage-logs/${number}` | `/admin/rate-limits/${number}` | `/admin/quota-policies/${number}`
 const admin = <P extends AdminPath | DynamicPath>(path: P) => path
 
 export const apiPaths = {
@@ -19,16 +19,10 @@ export const apiPaths = {
   channelHealthReset: (id: number) => admin(`/admin/channels/${id}/health/reset` as `/admin/channels/${number}/health/reset`),
   models: () => admin('/admin/models'),
   pricing: () => admin('/admin/pricing'),
-  users: () => admin('/admin/users'),
-  user: (id: number) => admin(`/admin/users/${id}` as `/admin/users/${number}`),
-  userStatus: (id: number) => admin(`/admin/users/${id}/status` as `/admin/users/${number}/status`),
-  userBalance: (id: number) => admin(`/admin/users/${id}/balance` as `/admin/users/${number}/balance`),
-  userRecharge: (id: number) => admin(`/admin/users/${id}/recharge` as `/admin/users/${number}/recharge`),
-  userTransactions: (id: number) => admin(`/admin/users/${id}/balance-transactions` as `/admin/users/${number}/balance-transactions`),
-  userKeys: (id: number) => admin(`/admin/users/${id}/keys` as `/admin/users/${number}/keys`),
-  userKey: (userId: number, keyId: number) => admin(`/admin/users/${userId}/keys/${keyId}` as `/admin/users/${number}/keys/${number}`),
-  userKeyReset: (userId: number, keyId: number) => admin(`/admin/users/${userId}/keys/${keyId}/reset` as `/admin/users/${number}/keys/${number}/reset`),
-  allKeys: () => admin('/admin/keys'),
+  profile: () => admin('/admin/profile'),
+  keys: () => admin('/admin/keys'),
+  key: (id: number) => admin(`/admin/keys/${id}` as `/admin/keys/${number}`),
+  keyReset: (id: number) => admin(`/admin/keys/${id}/reset` as `/admin/keys/${number}/reset`),
   usageOverview: () => admin('/admin/stats/overview'),
   usageDaily: () => admin('/admin/stats/daily'),
   usageChannels: () => admin('/admin/stats/channels'),

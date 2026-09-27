@@ -11,28 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countBalanceTransactions = `-- name: CountBalanceTransactions :one
-SELECT count(*)::int FROM balance_transactions WHERE user_id = $1
-`
-
-func (q *Queries) CountBalanceTransactions(ctx context.Context, userID int64) (int32, error) {
-	row := q.db.QueryRow(ctx, countBalanceTransactions, userID)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
-const countKeys = `-- name: CountKeys :one
-SELECT count(*)::int FROM client_api_keys
-`
-
-func (q *Queries) CountKeys(ctx context.Context) (int32, error) {
-	row := q.db.QueryRow(ctx, countKeys)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const countUserKeys = `-- name: CountUserKeys :one
 SELECT count(*)::int FROM client_api_keys WHERE user_id = $1
 `
@@ -42,53 +20,6 @@ func (q *Queries) CountUserKeys(ctx context.Context, userID int64) (int32, error
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
-}
-
-const countUsers = `-- name: CountUsers :one
-SELECT count(*)::int FROM users
-`
-
-func (q *Queries) CountUsers(ctx context.Context) (int32, error) {
-	row := q.db.QueryRow(ctx, countUsers)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
-const createBalanceTransaction = `-- name: CreateBalanceTransaction :one
-INSERT INTO balance_transactions (user_id, tx_type, amount, balance_after, related_order_id, description)
-VALUES (
-    $1,
-    $2,
-    NULLIF($3, '')::numeric,
-    NULLIF($4, '')::numeric,
-    NULLIF($5, ''),
-    $6
-)
-RETURNING id
-`
-
-type CreateBalanceTransactionParams struct {
-	UserID         int64       `json:"user_id"`
-	TxType         string      `json:"tx_type"`
-	Amount         interface{} `json:"amount"`
-	BalanceAfter   interface{} `json:"balance_after"`
-	RelatedOrderID interface{} `json:"related_order_id"`
-	Description    string      `json:"description"`
-}
-
-func (q *Queries) CreateBalanceTransaction(ctx context.Context, arg CreateBalanceTransactionParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createBalanceTransaction,
-		arg.UserID,
-		arg.TxType,
-		arg.Amount,
-		arg.BalanceAfter,
-		arg.RelatedOrderID,
-		arg.Description,
-	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
 }
 
 const createKey = `-- name: CreateKey :one
@@ -152,36 +83,6 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (i
 	return id, err
 }
 
-const createUser = `-- name: CreateUser :one
-INSERT INTO users (nickname, user_group, status)
-VALUES ($1, $2, $3)
-RETURNING id
-`
-
-type CreateUserParams struct {
-	Nickname  string `json:"nickname"`
-	UserGroup string `json:"user_group"`
-	Status    string `json:"status"`
-}
-
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Nickname, arg.UserGroup, arg.Status)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
-const createUserBalance = `-- name: CreateUserBalance :exec
-INSERT INTO user_balances (user_id, available_balance, frozen_balance)
-VALUES ($1, 0, 0)
-ON CONFLICT (user_id) DO NOTHING
-`
-
-func (q *Queries) CreateUserBalance(ctx context.Context, userID int64) error {
-	_, err := q.db.Exec(ctx, createUserBalance, userID)
-	return err
-}
-
 const createUserWithCredentials = `-- name: CreateUserWithCredentials :one
 INSERT INTO users (username, nickname, password_hash)
 VALUES ($1, $2, $3)
@@ -189,9 +90,9 @@ RETURNING id
 `
 
 type CreateUserWithCredentialsParams struct {
-	Username     pgtype.Text `json:"username"`
-	Nickname     string      `json:"nickname"`
-	PasswordHash pgtype.Text `json:"password_hash"`
+	Username     string `json:"username"`
+	Nickname     string `json:"nickname"`
+	PasswordHash string `json:"password_hash"`
 }
 
 func (q *Queries) CreateUserWithCredentials(ctx context.Context, arg CreateUserWithCredentialsParams) (int64, error) {
@@ -245,18 +146,6 @@ func (q *Queries) DeleteSessionByTokenHash(ctx context.Context, tokenHash string
 	return result.RowsAffected(), nil
 }
 
-const deleteUser = `-- name: DeleteUser :execrows
-DELETE FROM users WHERE id = $1
-`
-
-func (q *Queries) DeleteUser(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteUser, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const getAccountByID = `-- name: GetAccountByID :one
 SELECT id, username, nickname
 FROM users
@@ -264,9 +153,9 @@ WHERE id = $1
 `
 
 type GetAccountByIDRow struct {
-	ID       int64       `json:"id"`
-	Username pgtype.Text `json:"username"`
-	Nickname string      `json:"nickname"`
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	Nickname string `json:"nickname"`
 }
 
 func (q *Queries) GetAccountByID(ctx context.Context, id int64) (GetAccountByIDRow, error) {
@@ -284,13 +173,8 @@ SELECT
     k.is_active AS key_active,
     k.expires_at,
     k.permissions,
-    k.rate_limit_overrides,
-    u.status AS user_status,
-    COALESCE(b.available_balance::text, '0.000000') AS available_balance,
-    COALESCE(b.frozen_balance::text, '0.000000') AS frozen_balance
+    k.rate_limit_overrides
 FROM client_api_keys k
-JOIN users u ON u.id = k.user_id
-LEFT JOIN user_balances b ON b.user_id = k.user_id
 WHERE k.key_hash = $1
 `
 
@@ -302,9 +186,6 @@ type GetAuthContextByKeyHashRow struct {
 	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
 	Permissions        []byte             `json:"permissions"`
 	RateLimitOverrides []byte             `json:"rate_limit_overrides"`
-	UserStatus         string             `json:"user_status"`
-	AvailableBalance   interface{}        `json:"available_balance"`
-	FrozenBalance      interface{}        `json:"frozen_balance"`
 }
 
 func (q *Queries) GetAuthContextByKeyHash(ctx context.Context, keyHash string) (GetAuthContextByKeyHashRow, error) {
@@ -318,55 +199,6 @@ func (q *Queries) GetAuthContextByKeyHash(ctx context.Context, keyHash string) (
 		&i.ExpiresAt,
 		&i.Permissions,
 		&i.RateLimitOverrides,
-		&i.UserStatus,
-		&i.AvailableBalance,
-		&i.FrozenBalance,
-	)
-	return i, err
-}
-
-const getBalanceTransactionByOrder = `-- name: GetBalanceTransactionByOrder :one
-SELECT
-    id,
-    user_id,
-    tx_type,
-    amount::text AS amount,
-    balance_after::text AS balance_after,
-    related_order_id,
-    description,
-    created_at
-FROM balance_transactions
-WHERE user_id = $1 AND related_order_id = $2
-`
-
-type GetBalanceTransactionByOrderParams struct {
-	UserID         int64       `json:"user_id"`
-	RelatedOrderID pgtype.Text `json:"related_order_id"`
-}
-
-type GetBalanceTransactionByOrderRow struct {
-	ID             int64              `json:"id"`
-	UserID         int64              `json:"user_id"`
-	TxType         string             `json:"tx_type"`
-	Amount         string             `json:"amount"`
-	BalanceAfter   string             `json:"balance_after"`
-	RelatedOrderID pgtype.Text        `json:"related_order_id"`
-	Description    string             `json:"description"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetBalanceTransactionByOrder(ctx context.Context, arg GetBalanceTransactionByOrderParams) (GetBalanceTransactionByOrderRow, error) {
-	row := q.db.QueryRow(ctx, getBalanceTransactionByOrder, arg.UserID, arg.RelatedOrderID)
-	var i GetBalanceTransactionByOrderRow
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.TxType,
-		&i.Amount,
-		&i.BalanceAfter,
-		&i.RelatedOrderID,
-		&i.Description,
-		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -435,47 +267,46 @@ func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, nickname, user_group, status
+SELECT id, username, nickname
 FROM users
 WHERE id = $1
 `
 
 type GetUserRow struct {
-	ID        int64  `json:"id"`
-	Nickname  string `json:"nickname"`
-	UserGroup string `json:"user_group"`
-	Status    string `json:"status"`
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	Nickname string `json:"nickname"`
 }
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (GetUserRow, error) {
 	row := q.db.QueryRow(ctx, getUser, id)
 	var i GetUserRow
-	err := row.Scan(
-		&i.ID,
-		&i.Nickname,
-		&i.UserGroup,
-		&i.Status,
-	)
+	err := row.Scan(&i.ID, &i.Username, &i.Nickname)
 	return i, err
 }
 
-const getUserBalanceText = `-- name: GetUserBalanceText :one
-SELECT
-    COALESCE(available_balance::text, '0.000000') AS available_balance,
-    COALESCE(frozen_balance::text, '0.000000') AS frozen_balance
-FROM user_balances
-WHERE user_id = $1
+const getUserCredentialsByID = `-- name: GetUserCredentialsByID :one
+SELECT id, username, nickname, password_hash
+FROM users
+WHERE id = $1
 `
 
-type GetUserBalanceTextRow struct {
-	AvailableBalance interface{} `json:"available_balance"`
-	FrozenBalance    interface{} `json:"frozen_balance"`
+type GetUserCredentialsByIDRow struct {
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	Nickname     string `json:"nickname"`
+	PasswordHash string `json:"password_hash"`
 }
 
-func (q *Queries) GetUserBalanceText(ctx context.Context, userID int64) (GetUserBalanceTextRow, error) {
-	row := q.db.QueryRow(ctx, getUserBalanceText, userID)
-	var i GetUserBalanceTextRow
-	err := row.Scan(&i.AvailableBalance, &i.FrozenBalance)
+func (q *Queries) GetUserCredentialsByID(ctx context.Context, id int64) (GetUserCredentialsByIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserCredentialsByID, id)
+	var i GetUserCredentialsByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Nickname,
+		&i.PasswordHash,
+	)
 	return i, err
 }
 
@@ -486,13 +317,13 @@ WHERE username = $1
 `
 
 type GetUserCredentialsByUsernameRow struct {
-	ID           int64       `json:"id"`
-	Username     pgtype.Text `json:"username"`
-	Nickname     string      `json:"nickname"`
-	PasswordHash pgtype.Text `json:"password_hash"`
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	Nickname     string `json:"nickname"`
+	PasswordHash string `json:"password_hash"`
 }
 
-func (q *Queries) GetUserCredentialsByUsername(ctx context.Context, username pgtype.Text) (GetUserCredentialsByUsernameRow, error) {
+func (q *Queries) GetUserCredentialsByUsername(ctx context.Context, username string) (GetUserCredentialsByUsernameRow, error) {
 	row := q.db.QueryRow(ctx, getUserCredentialsByUsername, username)
 	var i GetUserCredentialsByUsernameRow
 	err := row.Scan(
@@ -502,118 +333,6 @@ func (q *Queries) GetUserCredentialsByUsername(ctx context.Context, username pgt
 		&i.PasswordHash,
 	)
 	return i, err
-}
-
-const listBalanceTransactions = `-- name: ListBalanceTransactions :many
-SELECT
-    id,
-    user_id,
-    tx_type,
-    amount::text AS amount,
-    balance_after::text AS balance_after,
-    related_order_id,
-    description,
-    created_at
-FROM balance_transactions
-WHERE user_id = $1
-ORDER BY id DESC
-LIMIT $2 OFFSET $3
-`
-
-type ListBalanceTransactionsParams struct {
-	UserID int64 `json:"user_id"`
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
-}
-
-type ListBalanceTransactionsRow struct {
-	ID             int64              `json:"id"`
-	UserID         int64              `json:"user_id"`
-	TxType         string             `json:"tx_type"`
-	Amount         string             `json:"amount"`
-	BalanceAfter   string             `json:"balance_after"`
-	RelatedOrderID pgtype.Text        `json:"related_order_id"`
-	Description    string             `json:"description"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListBalanceTransactions(ctx context.Context, arg ListBalanceTransactionsParams) ([]ListBalanceTransactionsRow, error) {
-	rows, err := q.db.Query(ctx, listBalanceTransactions, arg.UserID, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListBalanceTransactionsRow{}
-	for rows.Next() {
-		var i ListBalanceTransactionsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.TxType,
-			&i.Amount,
-			&i.BalanceAfter,
-			&i.RelatedOrderID,
-			&i.Description,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listKeys = `-- name: ListKeys :many
-SELECT id, user_id, key_name, prefix, is_active, last_used_at, expires_at
-FROM client_api_keys
-ORDER BY id
-LIMIT $1 OFFSET $2
-`
-
-type ListKeysParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
-}
-
-type ListKeysRow struct {
-	ID         int64              `json:"id"`
-	UserID     int64              `json:"user_id"`
-	KeyName    string             `json:"key_name"`
-	Prefix     string             `json:"prefix"`
-	IsActive   bool               `json:"is_active"`
-	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
-}
-
-func (q *Queries) ListKeys(ctx context.Context, arg ListKeysParams) ([]ListKeysRow, error) {
-	rows, err := q.db.Query(ctx, listKeys, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListKeysRow{}
-	for rows.Next() {
-		var i ListKeysRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.KeyName,
-			&i.Prefix,
-			&i.IsActive,
-			&i.LastUsedAt,
-			&i.ExpiresAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listUserKeys = `-- name: ListUserKeys :many
@@ -666,72 +385,6 @@ func (q *Queries) ListUserKeys(ctx context.Context, arg ListUserKeysParams) ([]L
 		return nil, err
 	}
 	return items, nil
-}
-
-const listUsers = `-- name: ListUsers :many
-SELECT
-    u.id,
-    u.nickname,
-    u.user_group,
-    u.status,
-    COALESCE(b.available_balance::text, '0.000000') AS available_balance,
-    COALESCE(b.frozen_balance::text, '0.000000') AS frozen_balance
-FROM users u
-LEFT JOIN user_balances b ON b.user_id = u.id
-ORDER BY u.id
-LIMIT $1 OFFSET $2
-`
-
-type ListUsersParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
-}
-
-type ListUsersRow struct {
-	ID               int64       `json:"id"`
-	Nickname         string      `json:"nickname"`
-	UserGroup        string      `json:"user_group"`
-	Status           string      `json:"status"`
-	AvailableBalance interface{} `json:"available_balance"`
-	FrozenBalance    interface{} `json:"frozen_balance"`
-}
-
-func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
-	rows, err := q.db.Query(ctx, listUsers, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListUsersRow{}
-	for rows.Next() {
-		var i ListUsersRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Nickname,
-			&i.UserGroup,
-			&i.Status,
-			&i.AvailableBalance,
-			&i.FrozenBalance,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const lockUserBalance = `-- name: LockUserBalance :one
-SELECT user_id FROM user_balances WHERE user_id = $1 FOR UPDATE
-`
-
-func (q *Queries) LockUserBalance(ctx context.Context, userID int64) (int64, error) {
-	row := q.db.QueryRow(ctx, lockUserBalance, userID)
-	var user_id int64
-	err := row.Scan(&user_id)
-	return user_id, err
 }
 
 const updateKeyActive = `-- name: UpdateKeyActive :execrows
@@ -794,58 +447,38 @@ func (q *Queries) UpdateKeySecret(ctx context.Context, arg UpdateKeySecretParams
 	return result.RowsAffected(), nil
 }
 
-const updateUser = `-- name: UpdateUser :execrows
+const updateUserPassword = `-- name: UpdateUserPassword :execrows
 UPDATE users
-SET nickname = $1, user_group = $2, updated_at = now()
-WHERE id = $3
-`
-
-type UpdateUserParams struct {
-	Nickname  string `json:"nickname"`
-	UserGroup string `json:"user_group"`
-	ID        int64  `json:"id"`
-}
-
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateUser, arg.Nickname, arg.UserGroup, arg.ID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const updateUserBalance = `-- name: UpdateUserBalance :execrows
-UPDATE user_balances
-SET available_balance = NULLIF($1, '')::numeric, updated_at = now()
-WHERE user_id = $2
-`
-
-type UpdateUserBalanceParams struct {
-	AvailableBalance interface{} `json:"available_balance"`
-	UserID           int64       `json:"user_id"`
-}
-
-func (q *Queries) UpdateUserBalance(ctx context.Context, arg UpdateUserBalanceParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateUserBalance, arg.AvailableBalance, arg.UserID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const updateUserStatus = `-- name: UpdateUserStatus :execrows
-UPDATE users
-SET status = $1, updated_at = now()
+SET password_hash = $1, updated_at = now()
 WHERE id = $2
 `
 
-type UpdateUserStatusParams struct {
-	Status string `json:"status"`
-	ID     int64  `json:"id"`
+type UpdateUserPasswordParams struct {
+	PasswordHash string `json:"password_hash"`
+	ID           int64  `json:"id"`
 }
 
-func (q *Queries) UpdateUserStatus(ctx context.Context, arg UpdateUserStatusParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateUserStatus, arg.Status, arg.ID)
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateUserPassword, arg.PasswordHash, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :execrows
+UPDATE users
+SET nickname = $1, updated_at = now()
+WHERE id = $2
+`
+
+type UpdateUserProfileParams struct {
+	Nickname string `json:"nickname"`
+	ID       int64  `json:"id"`
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateUserProfile, arg.Nickname, arg.ID)
 	if err != nil {
 		return 0, err
 	}

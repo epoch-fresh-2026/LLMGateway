@@ -28,13 +28,10 @@ type Store struct {
 
 	nextUserID    int
 	nextKeyID     int
-	nextTxID      int
 	nextSessionID int
 	users         map[int]*accounts.User
 	credentials   map[int]accounts.Credentials
-	transactions  map[int][]balanceTransaction
 	keys          map[int]*memoryKey
-	orders        map[string]balanceTransaction
 	sessions      map[string]accounts.Session
 
 	nextRateLimitID int
@@ -63,18 +60,6 @@ type Store struct {
 type fakeProbeLease struct {
 	id    string
 	until time.Time
-}
-
-// balanceTransaction is the fake store's private ledger record. The accounts
-// package exposes only the management response DTO; persistence-only state
-// belongs to the store implementation.
-type balanceTransaction struct {
-	ID           int
-	TxType       string
-	Amount       string
-	BalanceAfter string
-	Description  string
-	CreatedAt    string
 }
 
 // fakeHealthBucket is one fixed-width channel attempt bucket, keyed by its
@@ -133,13 +118,10 @@ func New() *Store {
 		pricing:                    map[string]*catalog.Pricing{},
 		nextUserID:                 1,
 		nextKeyID:                  1,
-		nextTxID:                   1,
 		nextSessionID:              1,
 		users:                      map[int]*accounts.User{},
 		credentials:                map[int]accounts.Credentials{},
-		transactions:               map[int][]balanceTransaction{},
 		keys:                       map[int]*memoryKey{},
-		orders:                     map[string]balanceTransaction{},
 		sessions:                   map[string]accounts.Session{},
 		nextRateLimitID:            1,
 		rateLimits:                 map[int]*ratelimit.RateLimitRule{},

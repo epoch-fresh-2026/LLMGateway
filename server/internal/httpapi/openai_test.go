@@ -70,12 +70,13 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts
 
 	handler := NewServer(st, append([]Option{WithCipher(testCipher())}, opts...)...)
 	acc := handler.accounts
-	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
-		t.Fatal(err)
+	seeder, ok := st.(interface {
+		SeedUser(username, passwordHash string) int
+	})
+	if !ok {
+		t.Fatal("test store does not support SeedUser")
 	}
-	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
-		t.Fatal(err)
-	}
+	seeder.SeedUser("alice", "hash")
 	created, err := acc.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
 	if err != nil {
 		t.Fatal(err)
@@ -169,14 +170,6 @@ func TestChatCompletionsSuccess(t *testing.T) {
 		t.Fatalf("response leaked upstream key: %s", res.Body.String())
 	}
 
-	balance, err := f.store.GetUserBalance(context.Background(), 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if balance.AvailableBalance != "9.999550" {
-		t.Fatalf("user balance = %v, want 9.999550", balance.AvailableBalance)
-	}
-
 	channelBalance, err := f.catalog.GetChannelSecret(context.Background(), 1, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +199,7 @@ func TestChatCompletionsSuccess(t *testing.T) {
 		t.Fatalf("usage log unit prices missing: %+v", entry)
 	}
 
-	keys, err := f.store.ListUserKeys(context.Background(), 1, 1, 20)
+	keys, err := f.store.ListKeys(context.Background(), 1, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,9 +225,9 @@ func TestChatCompletionsCachedTokensBilling(t *testing.T) {
 	}
 
 	// (1000-200)*0.15/1e6 + 200*0.075/1e6 + 500*0.6/1e6 = 0.000435
-	balance, _ := f.store.GetUserBalance(context.Background(), 1)
-	if balance.AvailableBalance != "9.999565" {
-		t.Fatalf("balance = %v, want 9.999565", balance.AvailableBalance)
+	secret, _ := f.catalog.GetChannelSecret(context.Background(), 1, 1)
+	if secret.Balance == nil || *secret.Balance != "9.999565" {
+		t.Fatalf("channel balance = %v, want 9.999565", secret.Balance)
 	}
 	logs, _ := f.store.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 20})
 	entry := logs.List[0]
@@ -278,18 +271,10 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 	if res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", expired.FullKey, body); res.Code != http.StatusUnauthorized {
 		t.Fatalf("expired key status = %d, want 401", res.Code)
 	}
-
-	// Suspended user.
-	if _, err := f.accounts.UpdateUserStatus(context.Background(), 1, "suspended"); err != nil {
-		t.Fatal(err)
-	}
-	if res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body); res.Code != http.StatusForbidden {
-		t.Fatalf("suspended user status = %d, want 403", res.Code)
-	}
 }
 
 func TestChatCompletionsStreamingSuccess(t *testing.T) {
-	st := &countingSettlementStore{Port: storefake.New()}
+	st := &countingSettlementStore{Store: storefake.New()}
 	f := newProxyFixtureWithStore(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -317,9 +302,9 @@ func TestChatCompletionsStreamingSuccess(t *testing.T) {
 	if !strings.HasSuffix(res.Body.String(), "data: [DONE]\n\n") {
 		t.Fatalf("stream missing terminal DONE: %s", res.Body.String())
 	}
-	balance, _ := f.store.GetUserBalance(context.Background(), 1)
-	if balance.AvailableBalance != "9.999550" {
-		t.Fatalf("balance = %s, want 9.999550", balance.AvailableBalance)
+	secret, _ := f.catalog.GetChannelSecret(context.Background(), 1, 1)
+	if secret.Balance == nil || *secret.Balance != "9.999550" {
+		t.Fatalf("channel balance = %v, want 9.999550", secret.Balance)
 	}
 	logs, _ := f.store.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if logs.Total != 1 || logs.List[0].Status != "success" || logs.List[0].TTFTMs == nil {
@@ -340,9 +325,9 @@ func TestChatCompletionsStreamingWithoutUsageDoesNotCharge(t *testing.T) {
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "upstream_usage_missing") {
 		t.Fatalf("status/body = %d %s, want SSE usage error", res.Code, res.Body.String())
 	}
-	balance, _ := f.store.GetUserBalance(context.Background(), 1)
-	if balance.AvailableBalance != "10.000000" {
-		t.Fatalf("balance changed without usage: %s", balance.AvailableBalance)
+	secret, _ := f.catalog.GetChannelSecret(context.Background(), 1, 1)
+	if secret.Balance == nil || *secret.Balance != "10.000000" {
+		t.Fatalf("channel balance changed without usage: %v", secret.Balance)
 	}
 	logs, _ := f.store.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if logs.Total != 1 || logs.List[0].Status != "error" || logs.List[0].ErrorCode != "upstream_usage_missing" {
@@ -366,9 +351,9 @@ func TestChatCompletionsStreamingWithoutDoneFailsAndTripsBreaker(t *testing.T) {
 	if health.ConsecutiveFailures != 1 {
 		t.Fatalf("consecutive failures = %d, want 1", health.ConsecutiveFailures)
 	}
-	balance, _ := f.store.GetUserBalance(context.Background(), 1)
-	if balance.AvailableBalance != "10.000000" {
-		t.Fatalf("balance changed after interrupted stream: %s", balance.AvailableBalance)
+	secret, _ := f.catalog.GetChannelSecret(context.Background(), 1, 1)
+	if secret.Balance == nil || *secret.Balance != "10.000000" {
+		t.Fatalf("channel balance changed after interrupted stream: %v", secret.Balance)
 	}
 	logs, _ := f.store.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if logs.Total != 1 || logs.List[0].TTFTMs == nil {
@@ -392,12 +377,12 @@ func TestChatCompletionsInterruptedStreamChargesForwardedTextEstimate(t *testing
 	if logs.Total != 1 || logs.List[0].ErrorCode != "partial_estimated_upstream_stream_interrupted" || logs.List[0].TotalTokens <= 0 || logs.List[0].TotalCost == "0.000000" {
 		t.Fatalf("partial usage log = %+v", logs)
 	}
-	balance, err := f.store.GetUserBalance(context.Background(), 1)
+	secret, err := f.catalog.GetChannelSecret(context.Background(), 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if balance.AvailableBalance == "10.000000" {
-		t.Fatalf("balance was not charged for forwarded text")
+	if secret.Balance == nil || *secret.Balance == "10.000000" {
+		t.Fatal("channel balance was not charged for forwarded text")
 	}
 }
 
@@ -494,18 +479,6 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 	}
 }
 
-func TestChatCompletionsInsufficientBalance(t *testing.T) {
-	f := newProxyFixture(t, upstreamSuccess())
-	// Drain the user balance via a debit.
-	if _, err := f.accounts.DebitUserBalance(context.Background(), 1, "10.000000", "drain"); err != nil {
-		t.Fatal(err)
-	}
-	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
-	if res.Code != http.StatusPaymentRequired {
-		t.Fatalf("status = %d, want 402; body=%s", res.Code, res.Body.String())
-	}
-}
-
 func TestChatCompletionsTokenRateLimitRejectsConservatively(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	metric, target, action := "tpm", "user", "reject"
@@ -537,9 +510,9 @@ func TestChatCompletionsUpstreamFailureDoesNotCharge(t *testing.T) {
 		t.Fatalf("status = %d, want upstream 500 passthrough", res.Code)
 	}
 
-	balance, _ := f.store.GetUserBalance(context.Background(), 1)
-	if balance.AvailableBalance != "10.000000" {
-		t.Fatalf("balance changed on upstream failure: %v", balance.AvailableBalance)
+	secret, _ := f.catalog.GetChannelSecret(context.Background(), 1, 1)
+	if secret.Balance == nil || *secret.Balance != "10.000000" {
+		t.Fatalf("channel balance changed on upstream failure: %v", secret.Balance)
 	}
 	logs, _ := f.store.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if logs.Total != 1 {
@@ -779,7 +752,7 @@ func TestChatCompletionsHalfOpenRecovers(t *testing.T) {
 }
 
 func TestChatCompletionsHealthRecordFailureDoesNotBreakSuccess(t *testing.T) {
-	f := newProxyFixtureWithStore(t, upstreamSuccess(), failingHealthStore{Port: storefake.New()})
+	f := newProxyFixtureWithStore(t, upstreamSuccess(), failingHealthStore{Store: storefake.New()})
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 even when health recording fails; body=%s", res.Code, res.Body.String())
@@ -789,7 +762,7 @@ func TestChatCompletionsHealthRecordFailureDoesNotBreakSuccess(t *testing.T) {
 // failingHealthStore makes catalog transactions fail so tests can prove health
 // recording is best-effort and cannot turn a successful request into an error.
 type failingHealthStore struct {
-	Port
+	*storefake.Store
 }
 
 func (f failingHealthStore) CatalogTx() catalog.TxManager {
@@ -803,12 +776,12 @@ func (failingCatalogTx) InTx(context.Context, func(catalog.Tx) error) error {
 }
 
 type countingSettlementStore struct {
-	Port
+	*storefake.Store
 	settlementCalls atomic.Int32
 }
 
 func (s *countingSettlementStore) SettlementTx() settlement.TxManager {
-	return countingSettlementTx{inner: s.Port.SettlementTx(), calls: &s.settlementCalls}
+	return countingSettlementTx{inner: s.Store.SettlementTx(), calls: &s.settlementCalls}
 }
 
 type countingSettlementTx struct {

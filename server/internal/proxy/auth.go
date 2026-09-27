@@ -39,9 +39,6 @@ func (a *Service) Authenticate(ctx context.Context, authorization string) (*acco
 			return nil, ErrUnauthorized
 		}
 	}
-	if auth.UserStatus != "active" {
-		return nil, ErrForbidden
-	}
 	return auth, nil
 }
 
