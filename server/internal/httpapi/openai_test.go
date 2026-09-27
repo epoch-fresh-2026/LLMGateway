@@ -82,15 +82,15 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts
 	}
 
 	balance := "10.000000"
-	channel, err := handler.catalog.CreateChannel(context.Background(), domain.ChannelInput{Name: "upstream", BaseURL: server.URL, APIKey: upstreamKey, Status: 1, Priority: 10, Weight: 100, Balance: &balance})
+	channel, err := handler.catalog.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "upstream", BaseURL: server.URL, APIKey: upstreamKey, Status: 1, Priority: 10, Weight: 100, Balance: &balance})
 	if err != nil {
 		t.Fatal(err)
 	}
 	channelID := channel.ID
-	if _, err := handler.catalog.CreateChannelModel(context.Background(), channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+	if _, err := handler.catalog.CreateChannelModel(context.Background(), 1, channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := handler.catalog.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: channelID, ModelName: "gpt", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"}); err != nil {
+	if _, err := handler.catalog.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: channelID, ModelName: "gpt", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -177,7 +177,7 @@ func TestChatCompletionsSuccess(t *testing.T) {
 		t.Fatalf("user balance = %v, want 9.999550", balance.AvailableBalance)
 	}
 
-	channelBalance, err := f.catalog.GetChannelSecret(context.Background(), 1)
+	channelBalance, err := f.catalog.GetChannelSecret(context.Background(), 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -640,10 +640,10 @@ func TestChatCompletionsModelRateLimitCountsOnlySameModel(t *testing.T) {
 	current := time.Now().UTC()
 	st := storefake.NewWithClock(func() time.Time { return current })
 	f := newProxyFixtureWithStore(t, upstreamSuccess(), st, WithClock(func() time.Time { return current }))
-	if _, err := f.catalog.CreateChannelModel(context.Background(), 1, domain.ChannelModel{ModelName: "gpt-other", UpstreamModel: "up-other", Enabled: true}); err != nil {
+	if _, err := f.catalog.CreateChannelModel(context.Background(), 1, 1, domain.ChannelModel{ModelName: "gpt-other", UpstreamModel: "up-other", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.catalog.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: 1, ModelName: "gpt-other", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := f.catalog.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: 1, ModelName: "gpt-other", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.store.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "prior-other", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt-other", Status: "success"}); err != nil {

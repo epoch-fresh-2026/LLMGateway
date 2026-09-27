@@ -23,7 +23,7 @@ func TestRemoteModelsCancellationReachesUpstream(t *testing.T) {
 		<-r.Context().Done()
 		return nil, r.Context().Err()
 	})})
-	channel, err := server.CreateChannel(context.Background(), domain.ChannelInput{Name: "remote", BaseURL: "https://upstream.test", APIKey: "sk-secret", AuthType: "bearer", Status: 1})
+	channel, err := server.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "remote", BaseURL: "https://upstream.test", APIKey: "sk-secret", AuthType: "bearer", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestRemoteModelsCancellationReachesUpstream(t *testing.T) {
 	server.RegisterAdminRoutes(mux)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest(http.MethodPost, "/admin/channels/"+strconv.Itoa(channel.ID)+"/remote-models", nil).WithContext(ctx)
+	req := withOwner(httptest.NewRequest(http.MethodPost, "/admin/channels/"+strconv.Itoa(channel.ID)+"/remote-models", nil).WithContext(ctx), 1)
 	rec := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {

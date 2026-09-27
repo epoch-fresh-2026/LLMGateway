@@ -16,7 +16,7 @@ func TestServiceChannelLifecycle(t *testing.T) {
 	cat := deps.Catalog
 
 	balance := "10.5"
-	created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1, Balance: &balance})
+	created, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1, Balance: &balance})
 	if err != nil {
 		t.Fatalf("CreateChannel: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestServiceChannelLifecycle(t *testing.T) {
 		t.Fatalf("balance not normalized: %+v", created.Balance)
 	}
 
-	secret, err := cat.GetChannelSecret(context.Background(), created.ID)
+	secret, err := cat.GetChannelSecret(context.Background(), 1, created.ID)
 	if err != nil {
 		t.Fatalf("GetChannelSecret: %v", err)
 	}
@@ -35,24 +35,24 @@ func TestServiceChannelLifecycle(t *testing.T) {
 		t.Fatalf("api_key = %q, want sk-secret", secret.APIKey)
 	}
 
-	adjusted, err := cat.UpdateChannelBalance(context.Background(), created.ID, "", "2.5")
+	adjusted, err := cat.UpdateChannelBalance(context.Background(), 1, created.ID, "", "2.5")
 	if err != nil {
 		t.Fatalf("UpdateChannelBalance: %v", err)
 	}
 	if adjusted.Balance == nil || *adjusted.Balance != "13.000000" {
 		t.Fatalf("balance after delta = %+v, want 13.000000", adjusted.Balance)
 	}
-	if _, err := cat.UpdateChannelBalance(context.Background(), created.ID, "", "abc"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpdateChannelBalance(context.Background(), 1, created.ID, "", "abc"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid delta err = %v, want ErrInvalid", err)
 	}
-	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "no-key", BaseURL: "https://x.test"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "no-key", BaseURL: "https://x.test"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("missing api_key err = %v, want ErrInvalid", err)
 	}
 
-	if err := cat.DeleteChannel(context.Background(), created.ID); err != nil {
+	if err := cat.DeleteChannel(context.Background(), 1, created.ID); err != nil {
 		t.Fatalf("DeleteChannel: %v", err)
 	}
-	if err := cat.DeleteChannel(context.Background(), created.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := cat.DeleteChannel(context.Background(), 1, created.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("second DeleteChannel err = %v, want ErrNotFound", err)
 	}
 }
@@ -61,7 +61,7 @@ func TestServiceHealthStateMachine(t *testing.T) {
 	deps := app.New()
 	cat := deps.Catalog
 
-	channel, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	channel, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

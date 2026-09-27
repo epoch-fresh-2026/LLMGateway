@@ -72,16 +72,17 @@ func (t *settlementTx) InsertBalanceTransaction(in accounts.BalanceTransactionIn
 	return nil
 }
 
-func (t *settlementTx) LockChannel(channelID int) error {
-	if _, ok := t.s.channels[channelID]; !ok {
+func (t *settlementTx) LockChannel(userID, channelID int) error {
+	channel, ok := t.s.channels[channelID]
+	if !ok || channel.OwnerUserID != userID {
 		return store.ErrNotFound
 	}
 	return nil
 }
 
-func (t *settlementTx) GetChannelBalanceText(channelID int) (string, error) {
+func (t *settlementTx) GetChannelBalanceText(userID, channelID int) (string, error) {
 	channel, ok := t.s.channels[channelID]
-	if !ok {
+	if !ok || channel.OwnerUserID != userID {
 		return "", store.ErrNotFound
 	}
 	if channel.Balance == nil {
@@ -90,9 +91,9 @@ func (t *settlementTx) GetChannelBalanceText(channelID int) (string, error) {
 	return *channel.Balance, nil
 }
 
-func (t *settlementTx) UpdateChannelBalance(channelID int, balance string) (bool, error) {
+func (t *settlementTx) UpdateChannelBalance(userID, channelID int, balance string) (bool, error) {
 	channel, ok := t.s.channels[channelID]
-	if !ok {
+	if !ok || channel.OwnerUserID != userID {
 		return false, nil
 	}
 	value := balance

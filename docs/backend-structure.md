@@ -67,6 +67,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - 网关 Key 仅保存 `server/internal/crypto.HashKey` 的哈希，明文 `full_key` 只在创建/重置时返回一次。
 - 自助账户使用 `users.username`（可空 + 部分唯一，认证流程写入）与 `password_hash`（bcrypt）；浏览器登录通过 `sessions` 表保存服务端会话，只存 `crypto.HashSessionToken` 的 SHA-256 哈希，`expires_at` 建有索引。认证入口 `/admin/auth/{register,login,logout,me}` 由 `accounts` 拥有，会话 Cookie 名为 `llmgateway_session`。
 - `server/internal/httpapi/session.go` 的 `requireSession` 对 `/admin`（除 `/admin/auth/*`）强制校验会话，成功后用 `httpcommon.Identity` 注入用户 id 供业务模块按归属过滤。部署为同源（nginx/Vite 代理），网关不再反射任意 Origin，也不返回 CORS 头。
+- `channels.owner_user_id` 标识渠道归属：管理员渠道、模型映射、定价、健康、熔断与连通性测试接口按会话用户过滤，创建写入 owner；`/v1` 选路通过 `RouteCandidates(ownerUserID, ...)` 只使用该 Key 所属用户的渠道。`ChannelDTO` 不暴露 owner。
 - 基线仍在 `server/db/migrations/000001_init.sql` 内迭代（项目未上线，无升级路径）；本地已有开发库必须 `docker compose -f deployments/docker-compose.yml down -v` 后重建。
 - PostgreSQL 以 `api_key_ciphertext` 保存渠道密钥；测试 fake 仅存在于 `internal/testutil`，不得作为生产持久化实现。
 - 共享 HTTP parsing/response glue 由 `server/internal/httpcommon` 统一持有；业务模块只保留领域相关的请求分派，顶层 HTTP 路由仍由 `server/cmd/llmgateway/router.go` 统一装配。

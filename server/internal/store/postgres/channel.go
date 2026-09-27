@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) ListChannels(ctx context.Context) (domain.ListResponse[domain.ChannelDTO], error) {
-	rows, err := s.queries.ListChannels(ctx)
+func (s *Store) ListChannels(ctx context.Context, ownerUserID int) (domain.ListResponse[domain.ChannelDTO], error) {
+	rows, err := s.queries.ListChannels(ctx, int64(ownerUserID))
 	if err != nil {
 		return domain.ListResponse[domain.ChannelDTO]{}, mapError(err)
 	}
@@ -22,16 +22,16 @@ func (s *Store) ListChannels(ctx context.Context) (domain.ListResponse[domain.Ch
 	return domain.ListResponse[domain.ChannelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) GetChannelDTO(ctx context.Context, id int) (domain.ChannelDTO, error) {
-	row, err := s.queries.GetChannel(ctx, int64(id))
+func (s *Store) GetChannelDTO(ctx context.Context, ownerUserID, id int) (domain.ChannelDTO, error) {
+	row, err := s.queries.GetChannel(ctx, sqlc.GetChannelParams{ID: int64(id), OwnerUserID: int64(ownerUserID)})
 	if err != nil {
 		return domain.ChannelDTO{}, mapError(err)
 	}
 	return channelDTO(row.ID, row.Name, row.BaseUrl, row.AuthType, row.Status, row.Weight, row.Priority, textValue(row.Balance), row.ModelCount), nil
 }
 
-func (s *Store) GetChannelRecord(ctx context.Context, id int) (domain.ChannelRecord, error) {
-	row, err := s.queries.GetChannelSecret(ctx, int64(id))
+func (s *Store) GetChannelRecord(ctx context.Context, ownerUserID, id int) (domain.ChannelRecord, error) {
+	row, err := s.queries.GetChannelSecret(ctx, sqlc.GetChannelSecretParams{ID: int64(id), OwnerUserID: int64(ownerUserID)})
 	if err != nil {
 		return domain.ChannelRecord{}, mapError(err)
 	}
@@ -54,6 +54,7 @@ func (s *Store) InsertChannel(ctx context.Context, in domain.ChannelInsert) (int
 		balance = *in.Balance
 	}
 	id, err := s.queries.CreateChannel(ctx, sqlc.CreateChannelParams{
+		OwnerUserID:      int64(in.OwnerUserID),
 		Name:             in.Name,
 		BaseUrl:          in.BaseURL,
 		ApiKeyCiphertext: in.APIKeyCiphertext,
@@ -69,7 +70,7 @@ func (s *Store) InsertChannel(ctx context.Context, in domain.ChannelInsert) (int
 	return int(id), nil
 }
 
-func (s *Store) UpdateChannelRecord(ctx context.Context, id int, in domain.ChannelUpdate) (bool, error) {
+func (s *Store) UpdateChannelRecord(ctx context.Context, ownerUserID, id int, in domain.ChannelUpdate) (bool, error) {
 	var balance any
 	if in.Balance != nil {
 		balance = *in.Balance
@@ -84,6 +85,7 @@ func (s *Store) UpdateChannelRecord(ctx context.Context, id int, in domain.Chann
 		Balance:          balance,
 		ApiKeyCiphertext: in.APIKeyCiphertext,
 		ID:               int64(id),
+		OwnerUserID:      int64(ownerUserID),
 	})
 	if err != nil {
 		return false, mapError(err)
@@ -91,24 +93,24 @@ func (s *Store) UpdateChannelRecord(ctx context.Context, id int, in domain.Chann
 	return affected > 0, nil
 }
 
-func (s *Store) UpdateChannelStatusRecord(ctx context.Context, id, status int) (bool, error) {
-	affected, err := s.queries.UpdateChannelStatus(ctx, sqlc.UpdateChannelStatusParams{Status: int32(status), ID: int64(id)})
+func (s *Store) UpdateChannelStatusRecord(ctx context.Context, ownerUserID, id, status int) (bool, error) {
+	affected, err := s.queries.UpdateChannelStatus(ctx, sqlc.UpdateChannelStatusParams{Status: int32(status), ID: int64(id), OwnerUserID: int64(ownerUserID)})
 	if err != nil {
 		return false, mapError(err)
 	}
 	return affected > 0, nil
 }
 
-func (s *Store) DeleteChannel(ctx context.Context, id int) (bool, error) {
-	affected, err := s.queries.DeleteChannel(ctx, int64(id))
+func (s *Store) DeleteChannel(ctx context.Context, ownerUserID, id int) (bool, error) {
+	affected, err := s.queries.DeleteChannel(ctx, sqlc.DeleteChannelParams{ID: int64(id), OwnerUserID: int64(ownerUserID)})
 	if err != nil {
 		return false, mapError(err)
 	}
 	return affected > 0, nil
 }
 
-func (s *Store) ListChannelModels(ctx context.Context, channelID int) (domain.ListResponse[domain.ChannelModel], error) {
-	rows, err := s.queries.ListChannelModels(ctx, int64(channelID))
+func (s *Store) ListChannelModels(ctx context.Context, ownerUserID, channelID int) (domain.ListResponse[domain.ChannelModel], error) {
+	rows, err := s.queries.ListChannelModels(ctx, sqlc.ListChannelModelsParams{ChannelID: int64(channelID), OwnerUserID: int64(ownerUserID)})
 	if err != nil {
 		return domain.ListResponse[domain.ChannelModel]{}, mapError(err)
 	}
@@ -156,8 +158,8 @@ func (s *Store) DeleteChannelModel(ctx context.Context, channelID, modelID int) 
 	return affected > 0, nil
 }
 
-func (s *Store) ChannelModelExists(ctx context.Context, channelID int, modelName string) (bool, error) {
-	_, err := s.queries.GetChannelModel(ctx, sqlc.GetChannelModelParams{ChannelID: int64(channelID), ModelName: modelName})
+func (s *Store) ChannelModelExists(ctx context.Context, ownerUserID, channelID int, modelName string) (bool, error) {
+	_, err := s.queries.GetChannelModel(ctx, sqlc.GetChannelModelParams{ChannelID: int64(channelID), ModelName: modelName, OwnerUserID: int64(ownerUserID)})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
@@ -167,8 +169,8 @@ func (s *Store) ChannelModelExists(ctx context.Context, channelID int, modelName
 	return true, nil
 }
 
-func (s *Store) ListCatalogModels(ctx context.Context, enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
-	rows, err := s.queries.ListCatalogModels(ctx, enabledOnly)
+func (s *Store) ListCatalogModels(ctx context.Context, ownerUserID int, enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
+	rows, err := s.queries.ListCatalogModels(ctx, sqlc.ListCatalogModelsParams{OwnerUserID: int64(ownerUserID), EnabledOnly: enabledOnly})
 	if err != nil {
 		return domain.ListResponse[domain.CatalogModelDTO]{}, mapError(err)
 	}
@@ -192,8 +194,8 @@ func (s *Store) ListCatalogModels(ctx context.Context, enabledOnly bool) (domain
 	return domain.ListResponse[domain.CatalogModelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) ListPricing(ctx context.Context) (domain.ListResponse[domain.PricingDTO], error) {
-	rows, err := s.queries.ListPricing(ctx)
+func (s *Store) ListPricing(ctx context.Context, ownerUserID int) (domain.ListResponse[domain.PricingDTO], error) {
+	rows, err := s.queries.ListPricing(ctx, int64(ownerUserID))
 	if err != nil {
 		return domain.ListResponse[domain.PricingDTO]{}, mapError(err)
 	}
@@ -245,9 +247,10 @@ func (s *Store) GetPricing(ctx context.Context, channelID int, modelName string)
 	return pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.ModelName, textOrEmpty(row.UpstreamModel), row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency), nil
 }
 
-func (s *Store) RouteCandidates(ctx context.Context, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
+func (s *Store) RouteCandidates(ctx context.Context, ownerUserID int, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
 	rows, err := s.queries.ListRouteCandidates(ctx, sqlc.ListRouteCandidatesParams{
 		ModelName:              modelName,
+		OwnerUserID:            int64(ownerUserID),
 		DefaultCooldownSeconds: int32(cooldownSeconds),
 	})
 	if err != nil {

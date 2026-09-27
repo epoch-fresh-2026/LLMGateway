@@ -7,44 +7,6 @@
 -- must be recreated, e.g. `docker compose -f deployments/docker-compose.yml
 -- down -v`.
 
-CREATE TABLE channels (
-    id BIGSERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    base_url TEXT NOT NULL,
-    api_key_ciphertext TEXT NOT NULL,
-    auth_type TEXT NOT NULL DEFAULT 'bearer',
-    status INTEGER NOT NULL DEFAULT 1,
-    weight INTEGER NOT NULL DEFAULT 100,
-    priority INTEGER NOT NULL DEFAULT 0,
-    balance NUMERIC(20, 6),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE channel_models (
-    id BIGSERIAL PRIMARY KEY,
-    channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-    model_name TEXT NOT NULL,
-    upstream_model TEXT NOT NULL,
-    enabled BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (channel_id, model_name)
-);
-
-CREATE TABLE model_pricing (
-    id BIGSERIAL PRIMARY KEY,
-    channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-    model_name TEXT NOT NULL,
-    input_price_per_1m NUMERIC(20, 8) NOT NULL,
-    output_price_per_1m NUMERIC(20, 8) NOT NULL,
-    cached_input_price_per_1m NUMERIC(20, 8),
-    currency TEXT NOT NULL DEFAULT 'USD',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (channel_id, model_name)
-);
-
 CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
     -- username/password_hash back self-service login. They stay nullable until
@@ -74,6 +36,49 @@ CREATE TABLE sessions (
 );
 
 CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
+
+CREATE TABLE channels (
+    id BIGSERIAL PRIMARY KEY,
+    -- Every channel is private to exactly one user; /v1 only routes to the
+    -- channels owned by the authenticated key's user.
+    owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    api_key_ciphertext TEXT NOT NULL,
+    auth_type TEXT NOT NULL DEFAULT 'bearer',
+    status INTEGER NOT NULL DEFAULT 1,
+    weight INTEGER NOT NULL DEFAULT 100,
+    priority INTEGER NOT NULL DEFAULT 0,
+    balance NUMERIC(20, 6),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX channels_owner_user_id_idx ON channels (owner_user_id);
+
+CREATE TABLE channel_models (
+    id BIGSERIAL PRIMARY KEY,
+    channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    model_name TEXT NOT NULL,
+    upstream_model TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (channel_id, model_name)
+);
+
+CREATE TABLE model_pricing (
+    id BIGSERIAL PRIMARY KEY,
+    channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    model_name TEXT NOT NULL,
+    input_price_per_1m NUMERIC(20, 8) NOT NULL,
+    output_price_per_1m NUMERIC(20, 8) NOT NULL,
+    cached_input_price_per_1m NUMERIC(20, 8),
+    currency TEXT NOT NULL DEFAULT 'USD',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (channel_id, model_name)
+);
 
 CREATE TABLE user_balances (
     user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

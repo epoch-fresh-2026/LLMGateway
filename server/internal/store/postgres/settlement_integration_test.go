@@ -24,7 +24,7 @@ func TestPGSettleChatCompletionRollsBackOnUsageInsertFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	channelBalance := "5.000000"
-	channel, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Balance: &channelBalance})
+	channel, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Balance: &channelBalance})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestPGSettleChatCompletionRollsBackOnUsageInsertFailure(t *testing.T) {
 	if balance.AvailableBalance != "10.000000" {
 		t.Fatalf("user balance not rolled back: %s", balance.AvailableBalance)
 	}
-	secret, _ := cat.GetChannelSecret(context.Background(), channel.ID)
+	secret, _ := cat.GetChannelSecret(context.Background(), 1, channel.ID)
 	if secret.Balance == nil || *secret.Balance != "5.000000" {
 		t.Fatalf("channel balance not rolled back: %v", secret.Balance)
 	}
@@ -61,7 +61,7 @@ func TestPGSettleChatCompletionPersistsTTFT(t *testing.T) {
 	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	channel, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	channel, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

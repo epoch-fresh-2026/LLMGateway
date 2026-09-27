@@ -11,9 +11,16 @@ import (
 
 	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/crypto"
+	"LLMGateway/server/internal/httpcommon"
 	"LLMGateway/server/internal/testutil/storefake"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
+
+// withOwner injects the authenticated identity the session middleware would
+// normally set on admin requests.
+func withOwner(req *http.Request, owner int) *http.Request {
+	return req.WithContext(httpcommon.WithIdentity(req.Context(), httpcommon.Identity{UserID: owner}))
+}
 
 const testEncryptionKey = "0123456789abcdef0123456789abcdef"
 
@@ -41,16 +48,16 @@ func TestChannelTestTimeoutReturnsSafeError(t *testing.T) {
 		<-r.Context().Done()
 		return nil, r.Context().Err()
 	})})
-	channel, err := server.CreateChannel(context.Background(), domain.ChannelInput{Name: "slow", BaseURL: "https://upstream.test", APIKey: "sk-secret", AuthType: "bearer", Status: 1})
+	channel, err := server.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "slow", BaseURL: "https://upstream.test", APIKey: "sk-secret", AuthType: "bearer", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.CreateChannelModel(context.Background(), channel.ID, domain.ChannelModel{ModelName: "public", UpstreamModel: "upstream", Enabled: true}); err != nil {
+	if _, err := server.CreateChannelModel(context.Background(), 1, channel.ID, domain.ChannelModel{ModelName: "public", UpstreamModel: "upstream", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	server.ConfigureTestTimeout(10 * time.Millisecond)
 	req := httptest.NewRequest(http.MethodPost, "/admin/channels/1/test", bytes.NewBufferString(`{}`))
-	result := server.TestChannel(req, channel.ID)
+	result := server.TestChannel(req, 1, channel.ID)
 	item := result.Data.(domain.ChannelTestResultDTO).List[0]
 	if item.OK || item.HTTPStatus != 0 || item.Error != "upstream request timed out" || item.LatencyMs <= 0 {
 		t.Fatalf("timeout item = %+v", item)
@@ -77,19 +84,19 @@ func TestChannelTestCheckAllFalseOnlyTestsFirstEnabledModel(t *testing.T) {
 
 	st := storefake.New()
 	server := newCatalogServer(st, &http.Client{})
-	channel, err := server.CreateChannel(context.Background(), domain.ChannelInput{Name: "test", BaseURL: upstream.URL, APIKey: "sk", AuthType: "bearer", Status: 1})
+	channel, err := server.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "test", BaseURL: upstream.URL, APIKey: "sk", AuthType: "bearer", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, model := range []domain.ChannelModel{{ModelName: "first", UpstreamModel: "first-upstream", Enabled: true}, {ModelName: "second", UpstreamModel: "second-upstream", Enabled: true}} {
-		if _, err := server.CreateChannelModel(context.Background(), channel.ID, model); err != nil {
+		if _, err := server.CreateChannelModel(context.Background(), 1, channel.ID, model); err != nil {
 			t.Fatal(err)
 		}
 	}
 	checkAll := false
 	body, _ := json.Marshal(map[string]bool{"check_all": checkAll})
 	req := httptest.NewRequest(http.MethodPost, "/admin/channels/1/test", bytes.NewReader(body))
-	result := server.TestChannel(req, channel.ID)
+	result := server.TestChannel(req, 1, channel.ID)
 	items := result.Data.(domain.ChannelTestResultDTO).List
 	if len(items) != 1 || len(models) != 1 || models[0] != "first-upstream" {
 		t.Fatalf("items/models = %+v/%+v", items, models)

@@ -55,7 +55,7 @@ func TestSettleCompletesDespiteCanceledParent(t *testing.T) {
 	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	channel, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	channel, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestBestEffortWritesCompleteDespiteCanceledParent(t *testing.T) {
 	st := storefake.New()
 	svc := newRouteTestApp(st, func(int) int { return 0 })
 	cat := newTestCatalog(st)
-	channel, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
+	channel, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

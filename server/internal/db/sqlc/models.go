@@ -21,6 +21,7 @@ type BalanceTransaction struct {
 
 type Channel struct {
 	ID               int64              `json:"id"`
+	OwnerUserID      int64              `json:"owner_user_id"`
 	Name             string             `json:"name"`
 	BaseUrl          string             `json:"base_url"`
 	ApiKeyCiphertext string             `json:"api_key_ciphertext"`

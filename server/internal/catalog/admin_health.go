@@ -10,11 +10,15 @@ func (a *Server) channelHealth(r *http.Request) httpcommon.AdminResult {
 	if r.Method != http.MethodGet {
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
+	ownerUserID, result := ownerFromRequest(r)
+	if result.Status != 0 {
+		return result
+	}
 	id, result := parseID(r.PathValue("id"), "channel")
 	if result.Status != 0 {
 		return result
 	}
-	if _, err := a.GetChannelSecret(r.Context(), id); err != nil {
+	if _, err := a.GetChannelSecret(r.Context(), ownerUserID, id); err != nil {
 		return httpcommon.Result(nil, err)
 	}
 	health, err := a.GetChannelHealth(r.Context(), id)
@@ -28,11 +32,15 @@ func (a *Server) channelHealthReset(r *http.Request) httpcommon.AdminResult {
 	if r.Method != http.MethodPost {
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
+	ownerUserID, result := ownerFromRequest(r)
+	if result.Status != 0 {
+		return result
+	}
 	id, result := parseID(r.PathValue("id"), "channel")
 	if result.Status != 0 {
 		return result
 	}
-	if _, err := a.GetChannelSecret(r.Context(), id); err != nil {
+	if _, err := a.GetChannelSecret(r.Context(), ownerUserID, id); err != nil {
 		return httpcommon.NoBody(err)
 	}
 	return httpcommon.NoBody(a.ResetChannelHealth(r.Context(), id))
@@ -42,25 +50,33 @@ func (a *Server) channelHealthList(r *http.Request) httpcommon.AdminResult {
 	if r.Method != http.MethodGet {
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
-	return httpcommon.Result(a.ListChannelHealth(r.Context()))
+	ownerUserID, result := ownerFromRequest(r)
+	if result.Status != 0 {
+		return result
+	}
+	return httpcommon.Result(a.ListChannelHealth(r.Context(), ownerUserID))
 }
 
 func (a *Server) channelBreakerConfig(r *http.Request) httpcommon.AdminResult {
+	ownerUserID, result := ownerFromRequest(r)
+	if result.Status != 0 {
+		return result
+	}
 	id, result := parseID(r.PathValue("id"), "channel")
 	if result.Status != 0 {
 		return result
 	}
 	switch r.Method {
 	case http.MethodGet:
-		return httpcommon.Result(a.GetChannelBreakerConfig(r.Context(), id))
+		return httpcommon.Result(a.GetChannelBreakerConfig(r.Context(), ownerUserID, id))
 	case http.MethodPut:
 		var req ChannelBreakerConfigInput
 		if err := httpcommon.ReadJSON(r, &req); err != nil {
 			return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 		}
-		return httpcommon.Result(a.UpdateChannelBreakerConfig(r.Context(), id, req))
+		return httpcommon.Result(a.UpdateChannelBreakerConfig(r.Context(), ownerUserID, id, req))
 	case http.MethodDelete:
-		return httpcommon.NoBody(a.DeleteChannelBreakerConfig(r.Context(), id))
+		return httpcommon.NoBody(a.DeleteChannelBreakerConfig(r.Context(), ownerUserID, id))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}

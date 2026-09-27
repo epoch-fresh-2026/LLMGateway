@@ -15,7 +15,7 @@ import (
 
 func TestAdminBreakerConfigRoute(t *testing.T) {
 	server := newCatalogServer(storefake.New(), &http.Client{})
-	channel, err := server.CreateChannel(context.Background(), domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
+	channel, err := server.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,13 +25,13 @@ func TestAdminBreakerConfigRoute(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"window_seconds":120,"minimum_samples":20,"error_rate_percent":30,"timeout_rate_percent":40,"cooldown_seconds":15}`)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, path, body))
+	mux.ServeHTTP(rec, withOwner(httptest.NewRequest(http.MethodPut, path, body), 1))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 
 	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	mux.ServeHTTP(rec, withOwner(httptest.NewRequest(http.MethodGet, path, nil), 1))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET status = %d, body = %s", rec.Code, rec.Body.String())
 	}

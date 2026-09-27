@@ -10,8 +10,8 @@ import (
 	"LLMGateway/server/internal/httpcommon"
 )
 
-func (a *Server) remoteModels(ctx context.Context, channelID int) httpcommon.AdminResult {
-	ch, err := a.GetChannelSecret(ctx, channelID)
+func (a *Server) remoteModels(ctx context.Context, ownerUserID, channelID int) httpcommon.AdminResult {
+	ch, err := a.GetChannelSecret(ctx, ownerUserID, channelID)
 	if err != nil {
 		return httpcommon.Result(nil, err)
 	}

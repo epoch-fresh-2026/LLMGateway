@@ -15,6 +15,37 @@ import (
 	"LLMGateway/server/internal/testutil/storefake"
 )
 
+// testOwnerID is the identity injected into admin-request helpers. Business
+// tests clear enforceSession, so they must supply the identity the middleware
+// would otherwise inject.
+const testOwnerID = 1
+
+func withIdentity(req *http.Request, userID int) *http.Request {
+	return req.WithContext(httpcommon.WithIdentity(req.Context(), httpcommon.Identity{UserID: userID}))
+}
+
+func withTestOwner(req *http.Request) *http.Request {
+	return withIdentity(req, testOwnerID)
+}
+
+// adminRawAs issues an admin request as a specific authenticated user.
+func adminRawAs(t *testing.T, server *Server, userID int, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	req := httptest.NewRequest(method, path, &buf)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	res := httptest.NewRecorder()
+	server.Admin(res, withIdentity(req, userID))
+	return res
+}
+
 func TestHealthz(t *testing.T) {
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -54,7 +85,7 @@ func TestDashboardStartupEndpoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			res := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req := withTestOwner(httptest.NewRequest(http.MethodGet, tt.path, nil))
 			server.Admin(res, req)
 
 			if res.Code != http.StatusOK {
@@ -89,7 +120,7 @@ func TestAdminSameOriginNoCORSReflection(t *testing.T) {
 
 	// Same-origin deployment must not reflect arbitrary Origins.
 	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/admin/stats/overview", nil)
+	req := withTestOwner(httptest.NewRequest(http.MethodGet, "/admin/stats/overview", nil))
 	req.Header.Set("Origin", "http://example.test")
 	server.Admin(res, req)
 	if res.Code != http.StatusOK {
@@ -172,7 +203,7 @@ func adminRaw(t *testing.T, server *Server, method, path string, body any) *http
 		req.Header.Set("Content-Type", "application/json")
 	}
 	res := httptest.NewRecorder()
-	server.Admin(res, req)
+	server.Admin(res, withTestOwner(req))
 	return res
 }
 

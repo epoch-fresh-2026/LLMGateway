@@ -131,9 +131,11 @@ func (q *Queries) GetChannelHealthForUpdate(ctx context.Context, channelID int64
 }
 
 const listChannelBreakerConfigs = `-- name: ListChannelBreakerConfigs :many
-SELECT channel_id, window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds
-FROM channel_breaker_configs
-ORDER BY channel_id
+SELECT b.channel_id, b.window_seconds, b.minimum_samples, b.error_rate_percent, b.timeout_rate_percent, b.cooldown_seconds
+FROM channel_breaker_configs b
+JOIN channels c ON c.id = b.channel_id
+WHERE c.owner_user_id = $1
+ORDER BY b.channel_id
 `
 
 type ListChannelBreakerConfigsRow struct {
@@ -145,8 +147,8 @@ type ListChannelBreakerConfigsRow struct {
 	CooldownSeconds    int32 `json:"cooldown_seconds"`
 }
 
-func (q *Queries) ListChannelBreakerConfigs(ctx context.Context) ([]ListChannelBreakerConfigsRow, error) {
-	rows, err := q.db.Query(ctx, listChannelBreakerConfigs)
+func (q *Queries) ListChannelBreakerConfigs(ctx context.Context, ownerUserID int64) ([]ListChannelBreakerConfigsRow, error) {
+	rows, err := q.db.Query(ctx, listChannelBreakerConfigs, ownerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,13 +175,15 @@ func (q *Queries) ListChannelBreakerConfigs(ctx context.Context) ([]ListChannelB
 }
 
 const listChannelHealth = `-- name: ListChannelHealth :many
-SELECT channel_id, state, consecutive_failures, success_count, failure_count, opened_at, updated_at
-FROM channel_health
-ORDER BY channel_id
+SELECT h.channel_id, h.state, h.consecutive_failures, h.success_count, h.failure_count, h.opened_at, h.updated_at
+FROM channel_health h
+JOIN channels c ON c.id = h.channel_id
+WHERE c.owner_user_id = $1
+ORDER BY h.channel_id
 `
 
-func (q *Queries) ListChannelHealth(ctx context.Context) ([]ChannelHealth, error) {
-	rows, err := q.db.Query(ctx, listChannelHealth)
+func (q *Queries) ListChannelHealth(ctx context.Context, ownerUserID int64) ([]ChannelHealth, error) {
+	rows, err := q.db.Query(ctx, listChannelHealth, ownerUserID)
 	if err != nil {
 		return nil, err
 	}

@@ -11,31 +11,34 @@ import (
 	"LLMGateway/server/internal/store"
 )
 
-func (s *Store) ListChannels(_ context.Context) (domain.ListResponse[domain.ChannelDTO], error) {
+func (s *Store) ListChannels(_ context.Context, ownerUserID int) (domain.ListResponse[domain.ChannelDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	list := []domain.ChannelDTO{}
 	for _, ch := range s.channels {
+		if ch.OwnerUserID != ownerUserID {
+			continue
+		}
 		list = append(list, s.channelDTO(ch))
 	}
 	return domain.ListResponse[domain.ChannelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) GetChannelDTO(_ context.Context, id int) (domain.ChannelDTO, error) {
+func (s *Store) GetChannelDTO(_ context.Context, ownerUserID, id int) (domain.ChannelDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
-	if !ok {
+	if !ok || ch.OwnerUserID != ownerUserID {
 		return domain.ChannelDTO{}, store.ErrNotFound
 	}
 	return s.channelDTO(ch), nil
 }
 
-func (s *Store) GetChannelRecord(_ context.Context, id int) (domain.ChannelRecord, error) {
+func (s *Store) GetChannelRecord(_ context.Context, ownerUserID, id int) (domain.ChannelRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
-	if !ok {
+	if !ok || ch.OwnerUserID != ownerUserID {
 		return domain.ChannelRecord{}, store.ErrNotFound
 	}
 	return domain.ChannelRecord{
@@ -55,26 +58,27 @@ func (s *Store) InsertChannel(_ context.Context, in domain.ChannelInsert) (int, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch := &domain.Channel{
-		ID:       s.nextChannelID,
-		Name:     in.Name,
-		BaseURL:  in.BaseURL,
-		APIKey:   in.APIKeyCiphertext,
-		AuthType: in.AuthType,
-		Status:   in.Status,
-		Weight:   in.Weight,
-		Priority: in.Priority,
-		Balance:  in.Balance,
+		ID:          s.nextChannelID,
+		OwnerUserID: in.OwnerUserID,
+		Name:        in.Name,
+		BaseURL:     in.BaseURL,
+		APIKey:      in.APIKeyCiphertext,
+		AuthType:    in.AuthType,
+		Status:      in.Status,
+		Weight:      in.Weight,
+		Priority:    in.Priority,
+		Balance:     in.Balance,
 	}
 	s.nextChannelID++
 	s.channels[ch.ID] = ch
 	return ch.ID, nil
 }
 
-func (s *Store) UpdateChannelRecord(_ context.Context, id int, in domain.ChannelUpdate) (bool, error) {
+func (s *Store) UpdateChannelRecord(_ context.Context, ownerUserID, id int, in domain.ChannelUpdate) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
-	if !ok {
+	if !ok || ch.OwnerUserID != ownerUserID {
 		return false, nil
 	}
 	ch.Name, ch.BaseURL, ch.AuthType, ch.Status, ch.Weight, ch.Priority = in.Name, in.BaseURL, in.AuthType, in.Status, in.Weight, in.Priority
@@ -85,21 +89,22 @@ func (s *Store) UpdateChannelRecord(_ context.Context, id int, in domain.Channel
 	return true, nil
 }
 
-func (s *Store) UpdateChannelStatusRecord(_ context.Context, id, status int) (bool, error) {
+func (s *Store) UpdateChannelStatusRecord(_ context.Context, ownerUserID, id, status int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
-	if !ok {
+	if !ok || ch.OwnerUserID != ownerUserID {
 		return false, nil
 	}
 	ch.Status = status
 	return true, nil
 }
 
-func (s *Store) DeleteChannel(_ context.Context, id int) (bool, error) {
+func (s *Store) DeleteChannel(_ context.Context, ownerUserID, id int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.channels[id]; !ok {
+	ch, ok := s.channels[id]
+	if !ok || ch.OwnerUserID != ownerUserID {
 		return false, nil
 	}
 	delete(s.channels, id)
@@ -112,9 +117,13 @@ func (s *Store) DeleteChannel(_ context.Context, id int) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) ListChannelModels(_ context.Context, channelID int) (domain.ListResponse[domain.ChannelModel], error) {
+func (s *Store) ListChannelModels(_ context.Context, ownerUserID, channelID int) (domain.ListResponse[domain.ChannelModel], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	channel, ok := s.channels[channelID]
+	if !ok || channel.OwnerUserID != ownerUserID {
+		return domain.ListResponse[domain.ChannelModel]{}, store.ErrNotFound
+	}
 	list := []domain.ChannelModel{}
 	for _, m := range s.models[channelID] {
 		list = append(list, *m)
@@ -163,20 +172,24 @@ func (s *Store) DeleteChannelModel(_ context.Context, channelID, modelID int) (b
 	return true, nil
 }
 
-func (s *Store) ChannelModelExists(_ context.Context, channelID int, modelName string) (bool, error) {
+func (s *Store) ChannelModelExists(_ context.Context, ownerUserID, channelID int, modelName string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	channel, ok := s.channels[channelID]
+	if !ok || channel.OwnerUserID != ownerUserID {
+		return false, nil
+	}
 	return s.hasChannelModelLocked(channelID, modelName), nil
 }
 
-func (s *Store) ListCatalogModels(_ context.Context, enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
+func (s *Store) ListCatalogModels(_ context.Context, ownerUserID int, enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	byName := map[string]*domain.CatalogModelDTO{}
 	order := []string{}
 	for channelID, models := range s.models {
 		ch := s.channels[channelID]
-		if ch == nil {
+		if ch == nil || ch.OwnerUserID != ownerUserID {
 			continue
 		}
 		for _, m := range models {
@@ -200,11 +213,15 @@ func (s *Store) ListCatalogModels(_ context.Context, enabledOnly bool) (domain.L
 	return domain.ListResponse[domain.CatalogModelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) ListPricing(_ context.Context) (domain.ListResponse[domain.PricingDTO], error) {
+func (s *Store) ListPricing(_ context.Context, ownerUserID int) (domain.ListResponse[domain.PricingDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	list := []domain.PricingDTO{}
 	for _, p := range s.pricing {
+		channel := s.channels[p.ChannelID]
+		if channel == nil || channel.OwnerUserID != ownerUserID {
+			continue
+		}
 		list = append(list, s.pricingDTO(p))
 	}
 	return domain.ListResponse[domain.PricingDTO]{List: list, Total: len(list)}, nil
@@ -248,7 +265,7 @@ func (s *Store) GetPricing(_ context.Context, channelID int, modelName string) (
 	return s.pricingDTO(pricing), nil
 }
 
-func (s *Store) RouteCandidates(_ context.Context, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
+func (s *Store) RouteCandidates(_ context.Context, ownerUserID int, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -258,7 +275,7 @@ func (s *Store) RouteCandidates(_ context.Context, modelName string, cooldownSec
 	candidates := []domain.RouteCandidate{}
 	for channelID, models := range s.models {
 		channel := s.channels[channelID]
-		if channel == nil || channel.Status != 1 {
+		if channel == nil || channel.OwnerUserID != ownerUserID || channel.Status != 1 {
 			continue
 		}
 		cfg := base

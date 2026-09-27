@@ -23,8 +23,8 @@ func (s *Store) GetChannelHealthRow(ctx context.Context, channelID int) (domain.
 	return channelHealthFromRow(row), true, nil
 }
 
-func (s *Store) ListChannelHealthRows(ctx context.Context) ([]domain.ChannelHealth, error) {
-	rows, err := s.pool.Query(ctx, `SELECT c.id, COALESCE(h.state,'closed'), COALESCE(h.consecutive_failures,0), COALESCE(h.success_count,0), COALESCE(h.failure_count,0), h.opened_at, COALESCE(h.updated_at,c.updated_at) FROM channels c LEFT JOIN channel_health h ON h.channel_id=c.id ORDER BY c.id`)
+func (s *Store) ListChannelHealthRows(ctx context.Context, ownerUserID int) ([]domain.ChannelHealth, error) {
+	rows, err := s.pool.Query(ctx, `SELECT c.id, COALESCE(h.state,'closed'), COALESCE(h.consecutive_failures,0), COALESCE(h.success_count,0), COALESCE(h.failure_count,0), h.opened_at, COALESCE(h.updated_at,c.updated_at) FROM channels c LEFT JOIN channel_health h ON h.channel_id=c.id WHERE c.owner_user_id=$1 ORDER BY c.id`, int64(ownerUserID))
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -78,8 +78,8 @@ func (s *Store) GetChannelBreakerConfigRow(ctx context.Context, channelID int) (
 	return channelBreakerConfig(row.WindowSeconds, row.MinimumSamples, row.ErrorRatePercent, row.TimeoutRatePercent, row.CooldownSeconds), true, nil
 }
 
-func (s *Store) ListChannelBreakerConfigRows(ctx context.Context) (map[int]domain.ChannelBreakerConfig, error) {
-	rows, err := s.queries.ListChannelBreakerConfigs(ctx)
+func (s *Store) ListChannelBreakerConfigRows(ctx context.Context, ownerUserID int) (map[int]domain.ChannelBreakerConfig, error) {
+	rows, err := s.queries.ListChannelBreakerConfigs(ctx, int64(ownerUserID))
 	if err != nil {
 		return nil, mapError(err)
 	}

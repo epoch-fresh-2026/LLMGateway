@@ -5,21 +5,21 @@ import (
 	"LLMGateway/server/internal/usage"
 )
 
-func (t *Tx) LockChannel(channelID int) error {
-	_, err := t.queries.LockChannel(t.ctx, int64(channelID))
+func (t *Tx) LockChannel(ownerUserID, channelID int) error {
+	_, err := t.queries.LockChannel(t.ctx, sqlc.LockChannelParams{ID: int64(channelID), OwnerUserID: int64(ownerUserID)})
 	return mapError(err)
 }
 
-func (t *Tx) GetChannelBalanceText(channelID int) (string, error) {
-	row, err := t.queries.GetChannel(t.ctx, int64(channelID))
+func (t *Tx) GetChannelBalanceText(ownerUserID, channelID int) (string, error) {
+	row, err := t.queries.GetChannel(t.ctx, sqlc.GetChannelParams{ID: int64(channelID), OwnerUserID: int64(ownerUserID)})
 	if err != nil {
 		return "", mapError(err)
 	}
 	return textValue(row.Balance), nil
 }
 
-func (t *Tx) UpdateChannelBalance(channelID int, balance string) (bool, error) {
-	affected, err := t.queries.UpdateChannelBalance(t.ctx, sqlc.UpdateChannelBalanceParams{Balance: balance, ID: int64(channelID)})
+func (t *Tx) UpdateChannelBalance(ownerUserID, channelID int, balance string) (bool, error) {
+	affected, err := t.queries.UpdateChannelBalance(t.ctx, sqlc.UpdateChannelBalanceParams{Balance: balance, ID: int64(channelID), OwnerUserID: int64(ownerUserID)})
 	if err != nil {
 		return false, mapError(err)
 	}

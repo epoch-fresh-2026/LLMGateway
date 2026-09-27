@@ -76,7 +76,7 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 
 	// Pricing + route candidates.
 	create := func(name string, status, priority, weight int, balance string) int {
-		created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: status, Priority: priority, Weight: weight, Balance: strPtr(balance)})
+		created, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: status, Priority: priority, Weight: weight, Balance: strPtr(balance)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,11 +87,11 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	channelC := create("C", 1, 5, 100, "")
 	disabledChannel := create("D", 0, 99, 999, "")
 	for _, id := range []int{channelA, channelB, channelC, disabledChannel} {
-		if _, err := cat.CreateChannelModel(context.Background(), id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(context.Background(), 1, id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := cat.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 	pricing, err := st.GetPricing(context.Background(), channelA, "gpt")
@@ -105,7 +105,7 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 		t.Fatalf("missing pricing err = %v, want ErrNotFound", err)
 	}
 
-	candidates, err := cat.RouteCandidates(context.Background(), "gpt")
+	candidates, err := cat.RouteCandidates(context.Background(), 1, "gpt")
 	if err != nil {
 		t.Fatalf("RouteCandidates: %v", err)
 	}
@@ -231,7 +231,7 @@ func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 		if balance != "" {
 			balancePtr = &balance
 		}
-		created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
+		created, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -240,11 +240,11 @@ func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 	channelA := create("A", 10, 100, "5.000000")
 	channelB := create("B", 10, 200, "")
 	for _, id := range []int{channelA, channelB} {
-		if _, err := cat.CreateChannelModel(context.Background(), id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(context.Background(), 1, id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := cat.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", CachedInputPricePer1M: "0.05000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", CachedInputPricePer1M: "0.05000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -254,7 +254,7 @@ func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 	}
 	_, missingPricingErr := st.GetPricing(context.Background(), channelA, "missing")
 
-	candidates, err := cat.RouteCandidates(context.Background(), "gpt")
+	candidates, err := cat.RouteCandidates(context.Background(), 1, "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}

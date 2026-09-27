@@ -116,7 +116,7 @@ func TestUsageInvalidTimeParams(t *testing.T) {
 func TestInsertUsageLogResolvesChannelName(t *testing.T) {
 	st := New()
 	cat := newCatalog(st)
-	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
 	id, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-1", ChannelID: intp(1), Model: "gpt", Status: "success", TotalTokens: 10, TotalCost: "0.000100"})
@@ -166,10 +166,10 @@ func TestStatsEmptyReturnsZeroValues(t *testing.T) {
 func TestStatsAggregation(t *testing.T) {
 	st := New()
 	cat := newCatalog(st)
-	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "Azure", BaseURL: "https://api2.test", APIKey: "sk", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "Azure", BaseURL: "https://api2.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
 	seedLog(st, intp(1), intp(1), "gpt", "success", "0.001000", 100, "2026-09-16T10:00:00Z")
