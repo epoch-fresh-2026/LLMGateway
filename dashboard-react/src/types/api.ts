@@ -28,8 +28,6 @@ export type Health = components['schemas']['Health']
 export type ChannelBreakerConfig = components['schemas']['ChannelBreakerConfig']
 export type ChannelBreakerConfigInput = components['schemas']['ChannelBreakerConfigInput']
 
-export type CatalogChannel = components['schemas']['CatalogChannel']
-export type CatalogModel = components['schemas']['CatalogModel']
 export type Pricing = components['schemas']['Pricing']
 export type PricingCreateInput = components['schemas']['PricingCreateInput']
 export type DeletePricingInput = components['schemas']['DeletePricingInput']

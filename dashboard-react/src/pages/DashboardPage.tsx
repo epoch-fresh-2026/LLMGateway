@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { listChannels, listChannelHealth, listModels, resetChannelHealth } from '../api/catalog'
+import { listChannels, listChannelHealth, resetChannelHealth } from '../api/catalog'
 import { daily, logs, overview, ttft, usageStats } from '../api/usage'
 import { listRateLimits } from '../api/ratelimit'
 import { AsyncState } from '../components/feedback/AsyncState'
@@ -42,7 +42,6 @@ export function DashboardPage() {
   const channelsQuery = useQuery({ queryKey: ['channels'], queryFn: () => listChannels(), staleTime: 60_000 })
   const healthQuery = useQuery({ queryKey: ['channel-health'], queryFn: listChannelHealth, staleTime: 30_000 })
   const logsQuery = useQuery({ queryKey: ['logs'], queryFn: () => logs(), staleTime: 10_000 })
-  const models = useQuery({ queryKey: ['models'], queryFn: () => listModels({ status: 1 }) })
   const limits = useQuery({ queryKey: ['rate-limits'], queryFn: () => listRateLimits() })
   const modelUsage = useQuery({ queryKey: ['model-usage'], queryFn: () => usageStats({ group_by: 'model', page: 1, page_size: 100 }) })
   // Live throughput and latency share one 60s window; 10s polling keeps the

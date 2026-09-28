@@ -24,11 +24,6 @@ export const PricingSchema = z.object({
   input_price_per_1m: MoneySchema, output_price_per_1m: MoneySchema, cached_input_price_per_1m: MoneySchema, currency: z.string(),
 })
 export const PricingListSchema = listSchema(PricingSchema)
-export const CatalogModelSchema = z.object({
-  model_name: z.string(), status: z.number().int(),
-  channels: z.array(z.object({ channel_id: z.number().int(), channel_name: z.string(), upstream_model: z.string(), enabled: z.boolean() })),
-})
-export const CatalogModelListSchema = listSchema(CatalogModelSchema)
 export const RemoteModelsSchema = z.object({ ok: z.boolean(), models: z.array(z.object({ id: z.string(), object: z.string().optional(), created: z.number().optional(), owned_by: z.string().optional() })).optional(), error: z.string().optional() })
 export const ChannelTestSchema = z.object({ list: z.array(z.object({ model_alias: z.string(), upstream_model: z.string(), http_status: z.number().int(), latency_ms: z.number().int(), ok: z.boolean(), error: z.string() })) })
 export { DeletedSchema }

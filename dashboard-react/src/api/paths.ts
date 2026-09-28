@@ -17,7 +17,6 @@ export const apiPaths = {
   channelRemoteModels: (id: number) => admin(`/admin/channels/${id}/remote-models` as `/admin/channels/${number}/remote-models`),
   channelTest: (id: number) => admin(`/admin/channels/${id}/test` as `/admin/channels/${number}/test`),
   channelHealthReset: (id: number) => admin(`/admin/channels/${id}/health/reset` as `/admin/channels/${number}/health/reset`),
-  models: () => admin('/admin/models'),
   pricing: () => admin('/admin/pricing'),
   profile: () => admin('/admin/profile'),
   keys: () => admin('/admin/keys'),
