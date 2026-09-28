@@ -14,7 +14,6 @@ import (
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
-	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/ratelimit"
 	usagecontracts "LLMGateway/server/internal/usage"
 )
@@ -268,30 +267,16 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		return ChatResponse{}, err
 	}
 
-	usageLog := a.usageLogInput(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
-	_, err = a.Settle(ctx, settlement.Input{
-		ReservationID: reservation.ID,
-		UserID:        auth.UserID,
-		APIKeyID:      auth.KeyID,
-		ChannelID:     &candidate.ChannelID,
-		Cost:          cost,
-		DebitChannel:  candidate.Balance != nil,
-		UsageLog:      usageLog,
-	})
-	if err != nil {
+	if _, err := a.settleUsage(ctx, settleUsageInput{
+		requestID: requestID, auth: auth, candidate: candidate, publicModel: req.Model,
+		clientIP: clientIP, durationMs: durationMs, status: "success",
+		reservationID: reservation.ID, rateReservationID: rateReservation.ID,
+		cost: cost, inputPrice: inputPrice, outputPrice: outputPrice, usage: usage,
+	}); err != nil {
 		return ChatResponse{}, err
 	}
 	releaseReservation = false
-	bestEffortCtx, bestEffortCancel := detachedCtx(ctx, bestEffortTimeout)
-	_ = a.ratelimit.FinalizeRateLimit(bestEffortCtx, rateReservation.ID, int64(usage.TotalTokens))
-	bestEffortCancel()
 	rateReservationOpen = false
-
-	// Best-effort: the request already succeeded and was charged, so a
-	// last_used_at update failure must not turn it into an error response.
-	lastUsedCtx, lastUsedCancel := detachedCtx(ctx, bestEffortTimeout)
-	_ = a.store.UpdateKeyLastUsed(lastUsedCtx, auth.KeyID)
-	lastUsedCancel()
 
 	return ChatResponse{Status: http.StatusOK, Body: a.adapter.RewriteResponse(responseBody, req.Model), Usage: usage}, nil
 }

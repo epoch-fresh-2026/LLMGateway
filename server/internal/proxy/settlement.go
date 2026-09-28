@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
 	apperrors "LLMGateway/server/internal/errors"
 	"LLMGateway/server/internal/money"
 	settlement "LLMGateway/server/internal/proxy/settlement"
+	usagecontracts "LLMGateway/server/internal/usage"
 )
 
 // Settle atomically settles a successful chat completion: quota reservation,
@@ -70,4 +73,67 @@ func (a *Service) Settle(ctx context.Context, in settlement.Input) (int, error) 
 		return 0, err
 	}
 	return usageID, nil
+}
+
+// settleUsageInput captures the fields needed to record and settle one priced
+// completion attempt. The caller owns pricing (priceFor) and channel-health
+// recording; settleUsage owns the atomic quota/balance/usage-log write plus the
+// best-effort rate-reservation finalization and key last-used update.
+type settleUsageInput struct {
+	requestID         string
+	auth              *accounts.AuthContext
+	candidate         catalog.RouteCandidate
+	publicModel       string
+	clientIP          string
+	durationMs        int
+	status            string
+	errorCode         string
+	ttft              *int
+	reservationID     int64
+	rateReservationID int64
+	cost              string
+	inputPrice        string
+	outputPrice       string
+	usage             *Usage
+}
+
+// settleUsage records the usage log and settles the quota reservation and
+// channel debit in one transaction, then best-effort finalizes the rate
+// reservation and the key last-used timestamp. It returns the constructed usage
+// log even on failure so callers can persist a distinct fallback entry.
+func (a *Service) settleUsage(ctx context.Context, in settleUsageInput) (usagecontracts.UsageLogInput, error) {
+	log := a.usageLogInput(in.requestID, in.auth, &in.candidate.ChannelID, in.candidate.UpstreamModel, in.publicModel, in.usage, in.cost, in.inputPrice, in.outputPrice, in.durationMs, in.clientIP, in.status, in.errorCode)
+	log.TTFTMs = in.ttft
+	if _, err := a.Settle(ctx, settlement.Input{
+		ReservationID: in.reservationID,
+		UserID:        in.auth.UserID,
+		APIKeyID:      in.auth.KeyID,
+		ChannelID:     &in.candidate.ChannelID,
+		Cost:          in.cost,
+		DebitChannel:  in.candidate.Balance != nil,
+		UsageLog:      log,
+	}); err != nil {
+		return log, err
+	}
+	a.finalizeRateReservation(ctx, in.rateReservationID, in.usage)
+	a.touchKeyLastUsed(ctx, in.auth.KeyID)
+	return log, nil
+}
+
+// finalizeRateReservation is best-effort: the request already succeeded and was
+// charged, so a finalization failure must not turn it into an error response.
+func (a *Service) finalizeRateReservation(ctx context.Context, id int64, usage *Usage) {
+	if id == 0 || usage == nil {
+		return
+	}
+	finalizeCtx, cancel := detachedCtx(ctx, bestEffortTimeout)
+	defer cancel()
+	_ = a.ratelimit.FinalizeRateLimit(finalizeCtx, id, int64(usage.TotalTokens))
+}
+
+// touchKeyLastUsed is best-effort and must never change the response.
+func (a *Service) touchKeyLastUsed(ctx context.Context, keyID int) {
+	lastUsedCtx, cancel := detachedCtx(ctx, bestEffortTimeout)
+	defer cancel()
+	_ = a.store.UpdateKeyLastUsed(lastUsedCtx, keyID)
 }

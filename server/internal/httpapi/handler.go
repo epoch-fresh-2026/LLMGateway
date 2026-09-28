@@ -174,7 +174,16 @@ func NewServer(st Port, opts ...Option) *Server {
 	})
 	quotaServer := quota.New(st, st.QuotaTx(), settings.now)
 	ratelimitServer := ratelimit.New(st, settings.now)
-	proxyService := proxy.NewService(st, catalogServer, quotaServer, ratelimitServer, client, settings.randIntN, settings.now, openaiwire.Adapter())
+	proxyService := proxy.NewServiceWithConfig(proxy.Config{
+		Store:     st,
+		Catalog:   catalogServer,
+		Quota:     quotaServer,
+		RateLimit: ratelimitServer,
+		Client:    client,
+		RandIntN:  settings.randIntN,
+		Now:       settings.now,
+		Adapter:   openaiwire.Adapter(),
+	})
 	proxyService.ConfigureQuota(settings.quotaDefaultMaxTokens, settings.quotaReservationTTL)
 	proxyService.ConfigureRequest(settings.upstreamTimeout, settings.upstreamMaxAttempts)
 	proxyService.ConfigureMinimumRouteBalance(settings.minimumRouteBalance)

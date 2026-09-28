@@ -48,12 +48,30 @@ type Service struct {
 	maxAttempts      int
 }
 
+// Config is the named composition input for a Service. Production assembly uses
+// NewServiceWithConfig; NewService keeps the positional form for compact test
+// fixtures.
+type Config struct {
+	Store     Port
+	Catalog   Catalog
+	Quota     Quota
+	RateLimit RateLimit
+	Client    *http.Client
+	RandIntN  func(int) int
+	Now       func() time.Time
+	Adapter   ProtocolAdapter
+}
+
 func NewService(st Port, catalog Catalog, quota Quota, rateLimit RateLimit, client *http.Client, randIntN func(int) int, now func() time.Time, adapters ...ProtocolAdapter) *Service {
 	adapter := ProtocolAdapter{}
 	if len(adapters) > 0 {
 		adapter = adapters[0]
 	}
-	return &Service{store: st, catalog: catalog, quota: quota, ratelimit: rateLimit, settleTx: st.SettlementTx(), client: client, randIntN: randIntN, now: now, adapter: adapter, defaultMaxTokens: 4096, reservationTTL: 2 * time.Minute, requestTimeout: 60 * time.Second, maxAttempts: 3}
+	return NewServiceWithConfig(Config{Store: st, Catalog: catalog, Quota: quota, RateLimit: rateLimit, Client: client, RandIntN: randIntN, Now: now, Adapter: adapter})
+}
+
+func NewServiceWithConfig(cfg Config) *Service {
+	return &Service{store: cfg.Store, catalog: cfg.Catalog, quota: cfg.Quota, ratelimit: cfg.RateLimit, settleTx: cfg.Store.SettlementTx(), client: cfg.Client, randIntN: cfg.RandIntN, now: cfg.Now, adapter: cfg.Adapter, defaultMaxTokens: 4096, reservationTTL: 2 * time.Minute, requestTimeout: 60 * time.Second, maxAttempts: 3}
 }
 
 func (a *Service) ConfigureRequest(timeout time.Duration, maxAttempts int) {

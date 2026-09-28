@@ -11,7 +11,6 @@ import (
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
-	settlement "LLMGateway/server/internal/proxy/settlement"
 )
 
 var errDownstreamWrite = errors.New("downstream stream write failed")
@@ -147,28 +146,18 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 		return err
 	}
 	s.service.recordChannelHealth(s.ctx, s.candidate.ChannelID, true, "")
-	usageLog := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, cost, inputPrice, outputPrice, durationMs, s.clientIP, "success", "")
-	usageLog.TTFTMs = ttft
-	_, err = s.service.Settle(s.ctx, settlement.Input{
-		ReservationID: s.reservationID,
-		UserID:        s.auth.UserID, APIKeyID: s.auth.KeyID, ChannelID: &s.candidate.ChannelID, Cost: cost,
-		DebitChannel: s.candidate.Balance != nil, UsageLog: usageLog,
-	})
-	if err != nil {
+	if _, err := s.service.settleUsage(s.ctx, settleUsageInput{
+		requestID: s.requestID, auth: s.auth, candidate: s.candidate, publicModel: s.publicModel,
+		clientIP: s.clientIP, durationMs: durationMs, status: "success", ttft: ttft,
+		reservationID: s.reservationID, rateReservationID: s.rateReservationID,
+		cost: cost, inputPrice: inputPrice, outputPrice: outputPrice, usage: usage,
+	}); err != nil {
 		s.logError(usage, ttft, "settlement_failed")
 		s.emitError(emit, "settlement_failed", "unable to settle completion")
 		return err
 	}
 	settled = true
-	if s.rateReservationID != 0 {
-		finCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
-		_ = s.service.ratelimit.FinalizeRateLimit(finCtx, s.rateReservationID, int64(usage.TotalTokens))
-		cancel()
-		s.rateReservationID = 0
-	}
-	lastUsedCtx, lastUsedCancel := detachedCtx(s.ctx, bestEffortTimeout)
-	_ = s.service.store.UpdateKeyLastUsed(lastUsedCtx, s.auth.KeyID)
-	lastUsedCancel()
+	s.rateReservationID = 0
 	if err := emit([]byte("data: [DONE]\n\n")); err != nil {
 		return fmt.Errorf("%w: %v", errDownstreamWrite, err)
 	}
@@ -207,17 +196,13 @@ func (s *completionStream) settlePartial(text string, ttft *int, code string) bo
 		s.logError(usage, ttft, code)
 		return false
 	}
-	input := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, cost, inputPrice, outputPrice, elapsedMs(s.start, s.service.now()), s.clientIP, "error", code)
-	input.TTFTMs = ttft
-	if _, err := s.service.Settle(s.ctx, settlement.Input{
-		ReservationID: s.reservationID,
-		UserID:        s.auth.UserID,
-		APIKeyID:      s.auth.KeyID,
-		ChannelID:     &s.candidate.ChannelID,
-		Cost:          cost,
-		DebitChannel:  s.candidate.Balance != nil,
-		UsageLog:      input,
-	}); err != nil {
+	input, err := s.service.settleUsage(s.ctx, settleUsageInput{
+		requestID: s.requestID, auth: s.auth, candidate: s.candidate, publicModel: s.publicModel,
+		clientIP: s.clientIP, durationMs: elapsedMs(s.start, s.service.now()), status: "error", errorCode: code, ttft: ttft,
+		reservationID: s.reservationID, rateReservationID: s.rateReservationID,
+		cost: cost, inputPrice: inputPrice, outputPrice: outputPrice, usage: usage,
+	})
+	if err != nil {
 		// The atomic settlement did not create a usage log, so record the failed
 		// partial charge with a distinct request id instead of colliding with it.
 		input.RequestID += "_settlement_failed"
@@ -230,15 +215,7 @@ func (s *completionStream) settlePartial(text string, ttft *int, code string) bo
 		cancel()
 		return false
 	}
-	if s.rateReservationID != 0 {
-		finCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
-		_ = s.service.ratelimit.FinalizeRateLimit(finCtx, s.rateReservationID, int64(usage.TotalTokens))
-		cancel()
-		s.rateReservationID = 0
-	}
-	lastUsedCtx, lastUsedCancel := detachedCtx(s.ctx, bestEffortTimeout)
-	_ = s.service.store.UpdateKeyLastUsed(lastUsedCtx, s.auth.KeyID)
-	lastUsedCancel()
+	s.rateReservationID = 0
 	return true
 }
 
