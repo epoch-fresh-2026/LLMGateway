@@ -40,8 +40,8 @@ func TestPGRegisterLoginSession(t *testing.T) {
 		t.Fatalf("session account = %+v, want %+v", account, reg.Account)
 	}
 
-	if _, err := acc.Register(ctx, "alice", "password123"); !errors.Is(err, store.ErrInvalid) {
-		t.Fatalf("duplicate username err = %v, want ErrInvalid", err)
+	if _, err := acc.Register(ctx, "alice", "password123"); !errors.Is(err, accounts.ErrUsernameTaken) {
+		t.Fatalf("duplicate username err = %v, want ErrUsernameTaken", err)
 	}
 	if _, err := acc.Login(ctx, "alice", "wrong-password"); !errors.Is(err, accounts.ErrInvalidCredentials) {
 		t.Fatalf("wrong password err = %v, want ErrInvalidCredentials", err)

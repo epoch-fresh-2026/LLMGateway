@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { AuthRequiredError } from '../api/client'
 import { getMe, login as apiLogin, logout as apiLogout, register as apiRegister } from '../api/auth'
+import { authErrorMessage } from '../api/errorMessages'
 import type { Account, AuthCredentialsInput } from '../types/api'
 
 type SessionValue = {
@@ -43,12 +43,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setAccount(await apiLogin(input))
     } catch (error) {
-      throw normalizeLoginError(error)
+      throw new Error(authErrorMessage(error, '登录失败'))
     }
   }
 
   const register = async (input: AuthCredentialsInput) => {
-    setAccount(await apiRegister(input))
+    try {
+      setAccount(await apiRegister(input))
+    } catch (error) {
+      throw new Error(authErrorMessage(error, '注册失败'))
+    }
   }
 
   const logout = async () => {
@@ -67,9 +71,4 @@ export function useSession() {
   const value = useContext(SessionContext)
   if (!value) throw new Error('useSession must be used within AuthProvider')
   return value
-}
-
-function normalizeLoginError(error: unknown): Error {
-  if (error instanceof AuthRequiredError) return new Error('用户名或密码错误')
-  return error instanceof Error ? error : new Error('登录失败')
 }

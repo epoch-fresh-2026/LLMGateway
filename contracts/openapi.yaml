@@ -220,7 +220,7 @@ paths:
       operationId: registerAccount
       security: []
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AuthCredentialsInput' } } } }
-      responses: { '200': { $ref: '#/components/responses/Account' }, '400': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' } }
+      responses: { '200': { $ref: '#/components/responses/Account' }, '400': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } }
   /admin/auth/login:
     post:
       operationId: loginAccount
@@ -285,7 +285,7 @@ components:
     QuotaPolicyList: { description: Quota policies, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseQuotaPolicyList' } } } }
     QuotaUsageList: { description: Quota usage, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseQuotaUsageList' } } } }
   schemas:
-    AdminError: { type: object, required: [code, message, data], properties: { code: { type: integer, minimum: 1 }, message: { type: string }, data: { type: object } } }
+    AdminError: { type: object, required: [code, message, data], properties: { code: { type: integer, minimum: 1 }, message: { type: string }, error_code: { type: string, description: Stable machine-readable code the dashboard localizes. }, data: { type: object } } }
     AdminResponse: { type: object, required: [code, message, data], properties: { code: { type: integer, const: 0 }, message: { type: string, const: ok }, data: {} } }
     List: { type: object, required: [list, total], properties: { list: { type: array, items: {} }, total: { type: integer } } }
     Money: { type: string, pattern: '^-?\\d+(\\.\\d+)?$' }

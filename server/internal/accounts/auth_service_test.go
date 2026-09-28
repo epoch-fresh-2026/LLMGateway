@@ -50,8 +50,8 @@ func TestAuthRegisterLoginSession(t *testing.T) {
 		t.Fatalf("session account = %+v, want %+v", account, reg.Account)
 	}
 
-	if _, err := srv.Register(ctx, "alice", "password123"); !errors.Is(err, store.ErrInvalid) {
-		t.Fatalf("duplicate username err = %v, want ErrInvalid", err)
+	if _, err := srv.Register(ctx, "alice", "password123"); !errors.Is(err, accounts.ErrUsernameTaken) {
+		t.Fatalf("duplicate username err = %v, want ErrUsernameTaken", err)
 	}
 }
 
@@ -67,8 +67,8 @@ func TestAuthLoginRejectsBadCredentials(t *testing.T) {
 	if _, err := srv.Login(ctx, "bob", "wrong-password"); !errors.Is(err, accounts.ErrInvalidCredentials) {
 		t.Fatalf("wrong password err = %v, want ErrInvalidCredentials", err)
 	}
-	if _, err := srv.Login(ctx, "nobody", "password123"); !errors.Is(err, accounts.ErrInvalidCredentials) {
-		t.Fatalf("unknown user err = %v, want ErrInvalidCredentials", err)
+	if _, err := srv.Login(ctx, "nobody", "password123"); !errors.Is(err, accounts.ErrUserNotFound) {
+		t.Fatalf("unknown user err = %v, want ErrUserNotFound", err)
 	}
 
 	login, err := srv.Login(ctx, "bob", "password123")
@@ -132,13 +132,16 @@ func TestAuthRegisterValidation(t *testing.T) {
 	srv := newAuthServer(t, &now)
 	ctx := context.Background()
 
-	for _, tc := range []struct{ username, password string }{
-		{"ab", "password123"},
-		{"has space", "password123"},
-		{"alice", "short"},
+	for _, tc := range []struct {
+		username, password string
+		want               error
+	}{
+		{"ab", "password123", accounts.ErrUsernameLength},
+		{"has space", "password123", accounts.ErrUsernameWhitespace},
+		{"alice", "short", accounts.ErrPasswordLength},
 	} {
-		if _, err := srv.Register(ctx, tc.username, tc.password); !errors.Is(err, store.ErrInvalid) {
-			t.Fatalf("Register(%q,%q) err = %v, want ErrInvalid", tc.username, tc.password, err)
+		if _, err := srv.Register(ctx, tc.username, tc.password); !errors.Is(err, tc.want) {
+			t.Fatalf("Register(%q,%q) err = %v, want %v", tc.username, tc.password, err, tc.want)
 		}
 	}
 }

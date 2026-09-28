@@ -29,7 +29,8 @@ Dashboard 由 nginx 与后端保持同源，默认请求相对路径管理端：
 要求：
 
 - `code = 0` 表示成功。
-- `code != 0` 表示业务失败，前端会展示 `message`。
+- `code != 0` 表示业务失败，通常等于 HTTP 状态码。
+- 失败响应可携带稳定、机器可读的 `error_code`；前端优先按 `error_code` 展示本地化文案，缺失时回退到 `message`。`message` 仅作技术兜底，不保证稳定。
 - HTTP 非 2xx 会被前端视为请求失败。
 - 列表接口建议返回 `{ "list": [], "total": 0 }`。
 
@@ -101,11 +102,21 @@ Cookie 属性为 `HttpOnly; SameSite=Lax; Path=/`；`Secure` 由 `SESSION_COOKIE
 { "username": "alice", "password": "password123" }
 ```
 
-注册成功即建立会话（注册即登录）并通过 `Set-Cookie` 下发会话。`REGISTRATION_ENABLED=false` 时返回 403；用户名需 3–64 字符且不含空白，密码需 8–72 字节；重名或非法输入返回 400。
+注册成功即建立会话（注册即登录）并通过 `Set-Cookie` 下发会话。用户名需 3–64 字符且不含空白，密码需 8–72 字节。失败时 HTTP 状态与响应 `error_code` 对应如下（`message` 仅为技术回退文案，前端按 `error_code` 本地化）：
+
+| 场景 | HTTP | error_code |
+|---|---|---|
+| 用户名已存在 | 409 | `username_taken` |
+| 用户名长度非法 | 400 | `username_length` |
+| 用户名含空白 | 400 | `username_whitespace` |
+| 密码长度非法 | 400 | `password_length` |
+| 已关闭注册 | 403 | `registration_disabled` |
 
 ### POST /admin/auth/login
 
-请求体同注册。用户名不存在或密码错误统一返回 401，不区分具体原因。
+请求体同注册。响应通过 `error_code` 区分失败：用户名不存在返回 401 `username_not_found`，密码错误返回 401 `wrong_password`。
+
+> 登录区分会允许攻击者枚举已注册用户名。开启注册时 `username_taken` 本身也会暴露该信息；若部署在 `REGISTRATION_ENABLED=false` 且需要抗枚举，应在网关入口统一失败文案。
 
 ### POST /admin/auth/logout
 

@@ -14,10 +14,19 @@ export class ApiContractError extends Error {
   }
 }
 
+// ApiError carries the HTTP status and the backend's stable error_code so the
+// presentation layer can localize failures without parsing message text.
+export class ApiError extends Error {
+  constructor(readonly status: number, readonly code: string | undefined, message: string) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 // AuthRequiredError marks a 401 so the session layer can redirect to login.
-export class AuthRequiredError extends Error {
-  constructor() {
-    super('authentication required')
+export class AuthRequiredError extends ApiError {
+  constructor(status: number, code: string | undefined, message: string) {
+    super(status, code, message)
     this.name = 'AuthRequiredError'
   }
 }
@@ -40,16 +49,20 @@ export async function adminSend<T>(method: string, path: ContractPath, bodyOrSch
   return unwrap<T>(path, response, schema)
 }
 
+type ErrorBody = Partial<AdminResponse<unknown>> & { error_code?: string }
+
 function unwrap<T>(path: string, response: { response: Response; data?: unknown; error?: unknown }, schema?: z.ZodType<T>): T {
-  if (response.response.status === 401) {
+  const status = response.response.status
+  const error = response.error as ErrorBody | undefined
+  const json = response.data as ErrorBody | undefined
+  const code = error?.error_code ?? json?.error_code
+  if (status === 401) {
     if (typeof window !== 'undefined') window.dispatchEvent(new Event('auth:unauthorized'))
-    throw new AuthRequiredError()
+    throw new AuthRequiredError(status, code, error?.message || json?.message || 'authentication required')
   }
   const envelope = z.object({ code: z.literal(0), message: z.literal('ok'), data: z.unknown() }).safeParse(response.data)
   if (!response.response.ok || !envelope.success) {
-    const error = response.error as AdminResponse<unknown> | undefined
-    const json = response.data as Partial<AdminResponse<unknown>> | undefined
-    throw new Error(error?.message || json?.message || `${path} failed`)
+    throw new ApiError(status, code, error?.message || json?.message || `${path} failed`)
   }
   if (!schema) return envelope.data.data as T
   const parsed = schema.safeParse(envelope.data.data)
