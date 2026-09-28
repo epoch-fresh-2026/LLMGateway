@@ -12,6 +12,19 @@ import (
 // sessionCookieName is the management-console session cookie.
 const sessionCookieName = "llmgateway_session"
 
+// Stable machine-readable codes carried in the response error_code field. The
+// dashboard localizes these; message text is only a technical fallback.
+const (
+	errCodeUsernameNotFound     = "username_not_found"
+	errCodeWrongPassword        = "wrong_password"
+	errCodeUsernameTaken        = "username_taken"
+	errCodeUsernameLength       = "username_length"
+	errCodeUsernameWhitespace   = "username_whitespace"
+	errCodePasswordLength       = "password_length"
+	errCodeRegistrationDisabled = "registration_disabled"
+	errCodeUnauthenticated      = "unauthenticated"
+)
+
 type authCredentialsInput struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -36,7 +49,7 @@ func (a *Server) authRegister(r *http.Request) httpcommon.AdminResult {
 	if err != nil {
 		return authError(err)
 	}
-	res := httpcommon.Handled(map[string]any{"account": result.Account})
+	res := httpcommon.Handled(result.Account)
 	res.Cookies = []*http.Cookie{a.sessionCookie(result.Token)}
 	return res
 }
@@ -53,7 +66,7 @@ func (a *Server) authLogin(r *http.Request) httpcommon.AdminResult {
 	if err != nil {
 		return authError(err)
 	}
-	res := httpcommon.Handled(map[string]any{"account": result.Account})
+	res := httpcommon.Handled(result.Account)
 	res.Cookies = []*http.Cookie{a.sessionCookie(result.Token)}
 	return res
 }
@@ -125,9 +138,21 @@ func sessionTokenFromRequest(r *http.Request) string {
 func authError(err error) httpcommon.AdminResult {
 	switch {
 	case errors.Is(err, ErrRegistrationDisabled):
-		return httpcommon.HTTPError(http.StatusForbidden, "registration disabled")
-	case errors.Is(err, ErrInvalidCredentials), errors.Is(err, apperrors.ErrNotFound):
-		return httpcommon.HTTPError(http.StatusUnauthorized, "invalid credentials")
+		return httpcommon.HTTPErrorCode(http.StatusForbidden, errCodeRegistrationDisabled, "registration disabled")
+	case errors.Is(err, ErrUsernameTaken):
+		return httpcommon.HTTPErrorCode(http.StatusConflict, errCodeUsernameTaken, "username already exists")
+	case errors.Is(err, ErrUserNotFound):
+		return httpcommon.HTTPErrorCode(http.StatusUnauthorized, errCodeUsernameNotFound, "username not found")
+	case errors.Is(err, ErrInvalidCredentials):
+		return httpcommon.HTTPErrorCode(http.StatusUnauthorized, errCodeWrongPassword, "wrong password")
+	case errors.Is(err, ErrUsernameLength):
+		return httpcommon.HTTPErrorCode(http.StatusBadRequest, errCodeUsernameLength, "username must be 3-64 characters")
+	case errors.Is(err, ErrUsernameWhitespace):
+		return httpcommon.HTTPErrorCode(http.StatusBadRequest, errCodeUsernameWhitespace, "username must not contain whitespace")
+	case errors.Is(err, ErrPasswordLength):
+		return httpcommon.HTTPErrorCode(http.StatusBadRequest, errCodePasswordLength, "password must be 8-72 bytes")
+	case errors.Is(err, apperrors.ErrNotFound):
+		return httpcommon.HTTPErrorCode(http.StatusUnauthorized, errCodeUnauthenticated, "unauthenticated")
 	case errors.Is(err, apperrors.ErrInvalid):
 		return httpcommon.HTTPError(http.StatusBadRequest, httpcommon.MessageFor(err))
 	default:

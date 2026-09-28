@@ -14,9 +14,24 @@ import (
 // ErrRegistrationDisabled is returned when public self-registration is off.
 var ErrRegistrationDisabled = errors.New("registration disabled")
 
-// ErrInvalidCredentials is the single login failure returned for both unknown
-// usernames and wrong passwords, so responses cannot reveal which accounts exist.
+// ErrInvalidCredentials reports a wrong password. It is deliberately distinct
+// from ErrUserNotFound so callers can render specific copy; deployments that
+// care about username enumeration should treat both as one failure.
 var ErrInvalidCredentials = errors.New("invalid credentials")
+
+// ErrUserNotFound reports a login attempt for an unknown username.
+var ErrUserNotFound = errors.New("user not found")
+
+// ErrUsernameTaken reports a registration whose username already exists.
+var ErrUsernameTaken = errors.New("username taken")
+
+// Credential-shape errors. They carry no HTTP status by themselves; the
+// accounts HTTP layer maps each to a stable error_code.
+var (
+	ErrUsernameLength     = errors.New("username length")
+	ErrUsernameWhitespace = errors.New("username whitespace")
+	ErrPasswordLength     = errors.New("password length")
+)
 
 // LoginResult carries the freshly minted session token and the account it
 // belongs to. Token is plaintext and is delivered to the browser once.
@@ -28,7 +43,8 @@ type LoginResult struct {
 
 // Register creates a self-service account and immediately establishes a
 // session (registration logs the user in). A duplicate username surfaces as
-// ErrInvalid from the unique index.
+// ErrUsernameTaken; the unique index is the authoritative guard, and the
+// post-error lookup keeps the sentinel independent of database error text.
 func (a *Server) Register(ctx context.Context, username, password string) (LoginResult, error) {
 	if !a.auth.RegistrationOpen {
 		return LoginResult{}, ErrRegistrationDisabled
@@ -67,6 +83,13 @@ func (a *Server) Register(ctx context.Context, username, password string) (Login
 		return nil
 	})
 	if err != nil {
+		// The unique index is the race-safe guard. Re-check after rollback so a
+		// duplicate is a stable sentinel rather than a database-specific message.
+		if errors.Is(err, apperrors.ErrInvalid) {
+			if _, lookupErr := a.store.GetUserCredentialsByUsername(ctx, username); lookupErr == nil {
+				return LoginResult{}, ErrUsernameTaken
+			}
+		}
 		return LoginResult{}, err
 	}
 	return LoginResult{Token: token, ExpiresAt: expiresAt, Account: account}, nil
@@ -78,7 +101,7 @@ func (a *Server) Login(ctx context.Context, username, password string) (LoginRes
 	creds, err := a.store.GetUserCredentialsByUsername(ctx, strings.TrimSpace(username))
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
-			return LoginResult{}, ErrInvalidCredentials
+			return LoginResult{}, ErrUserNotFound
 		}
 		return LoginResult{}, err
 	}
@@ -148,13 +171,15 @@ func (a *Server) newSessionToken() (string, time.Time, error) {
 	return token, a.now().Add(a.auth.SessionTTL), nil
 }
 
-// validateCredentials enforces the username/password shape.
+// validateCredentials enforces the username/password shape. Each failure wraps
+// both apperrors.ErrInvalid (for generic mapping) and a specific sentinel that
+// the HTTP layer turns into a stable error_code.
 func validateCredentials(username, password string) error {
 	if len(username) < 3 || len(username) > 64 {
-		return fmt.Errorf("%w: username must be 3-64 characters", apperrors.ErrInvalid)
+		return fmt.Errorf("%w: %w: username must be 3-64 characters", apperrors.ErrInvalid, ErrUsernameLength)
 	}
 	if strings.ContainsAny(username, " \t\r\n") {
-		return fmt.Errorf("%w: username must not contain whitespace", apperrors.ErrInvalid)
+		return fmt.Errorf("%w: %w: username must not contain whitespace", apperrors.ErrInvalid, ErrUsernameWhitespace)
 	}
 	return validatePassword(password)
 }
@@ -163,7 +188,7 @@ func validateCredentials(username, password string) error {
 // would otherwise be silently truncated.
 func validatePassword(password string) error {
 	if len(password) < 8 || len(password) > 72 {
-		return fmt.Errorf("%w: password must be 8-72 bytes", apperrors.ErrInvalid)
+		return fmt.Errorf("%w: %w: password must be 8-72 bytes", apperrors.ErrInvalid, ErrPasswordLength)
 	}
 	return nil
 }

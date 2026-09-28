@@ -23,11 +23,12 @@ func ParsePagination(r *http.Request) (int, int) {
 // the request path. Cookies are attached to the response (used by the auth
 // module to set/clear the session cookie).
 type AdminResult struct {
-	Data    any
-	Handled bool
-	Status  int
-	Message string
-	Cookies []*http.Cookie
+	Data      any
+	Handled   bool
+	Status    int
+	Message   string
+	ErrorCode string
+	Cookies   []*http.Cookie
 }
 
 // AdminHandler adapts a module's AdminResult handler to net/http.
@@ -38,11 +39,11 @@ func AdminHandler(fn func(*http.Request) AdminResult) http.Handler {
 			http.SetCookie(w, cookie)
 		}
 		if result.Status != 0 {
-			writeAdminError(w, result.Status, result.Message)
+			writeAdminError(w, result.Status, result.ErrorCode, result.Message)
 			return
 		}
 		if !result.Handled {
-			writeAdminError(w, http.StatusNotFound, "not found")
+			writeAdminError(w, http.StatusNotFound, "", "not found")
 			return
 		}
 		writeJSON(w, http.StatusOK, adminResponse{Code: 0, Message: "ok", Data: result.Data})
@@ -65,6 +66,12 @@ func Unhandled() AdminResult { return AdminResult{} }
 // HTTPError returns a handled result with an HTTP error response.
 func HTTPError(status int, message string) AdminResult {
 	return AdminResult{Handled: true, Status: status, Message: message}
+}
+
+// HTTPErrorCode returns an HTTP error that also carries a stable machine
+// error_code so clients can localize the failure without parsing message text.
+func HTTPErrorCode(status int, code, message string) AdminResult {
+	return AdminResult{Handled: true, Status: status, Message: message, ErrorCode: code}
 }
 
 // Result converts a store operation into the business module handler result.
@@ -109,13 +116,14 @@ func positiveInt(value string, fallback int) int {
 }
 
 type adminResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    any    `json:"data"`
+	Code      int    `json:"code"`
+	Message   string `json:"message"`
+	ErrorCode string `json:"error_code,omitempty"`
+	Data      any    `json:"data"`
 }
 
-func writeAdminError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, adminResponse{Code: status, Message: message, Data: map[string]any{}})
+func writeAdminError(w http.ResponseWriter, status int, errorCode, message string) {
+	writeJSON(w, status, adminResponse{Code: status, Message: message, ErrorCode: errorCode, Data: map[string]any{}})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

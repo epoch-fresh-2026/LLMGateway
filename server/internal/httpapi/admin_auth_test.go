@@ -25,17 +25,13 @@ func TestAdminAuthFlow(t *testing.T) {
 	if !cookie.HttpOnly {
 		t.Fatal("session cookie must be HttpOnly")
 	}
+	assertAccountData(t, registered, "alice")
 
 	me := authRequest(t, server, http.MethodGet, "/admin/auth/me", nil, cookie)
 	if me.Code != http.StatusOK {
 		t.Fatalf("me status = %d, want 200; body=%s", me.Code, me.Body.String())
 	}
-	var meBody map[string]any
-	decodeJSON(t, me, &meBody)
-	data, _ := meBody["data"].(map[string]any)
-	if data["username"] != "alice" {
-		t.Fatalf("me data = %+v, want username alice", data)
-	}
+	assertAccountData(t, me, "alice")
 
 	anonymous := authRequest(t, server, http.MethodGet, "/admin/auth/me", nil, nil)
 	if anonymous.Code != http.StatusUnauthorized {
@@ -51,6 +47,7 @@ func TestAdminAuthFlow(t *testing.T) {
 	if login.Code != http.StatusOK {
 		t.Fatalf("login status = %d, want 200; body=%s", login.Code, login.Body.String())
 	}
+	assertAccountData(t, login, "alice")
 	loginCookie := sessionCookieFrom(t, login)
 
 	logout := authRequest(t, server, http.MethodPost, "/admin/auth/logout", nil, loginCookie)
@@ -65,6 +62,21 @@ func TestAdminAuthFlow(t *testing.T) {
 	if afterLogout.Code != http.StatusUnauthorized {
 		t.Fatalf("me after logout status = %d, want 401", afterLogout.Code)
 	}
+}
+
+func TestAdminAuthErrorCodes(t *testing.T) {
+	server := newTestServer()
+
+	assertErrorCode(t, authRequest(t, server, http.MethodPost, "/admin/auth/login", map[string]any{"username": "ghost", "password": "password123"}, nil), http.StatusUnauthorized, "username_not_found")
+
+	authRequest(t, server, http.MethodPost, "/admin/auth/register", map[string]any{"username": "carol", "password": "password123"}, nil)
+	assertErrorCode(t, authRequest(t, server, http.MethodPost, "/admin/auth/login", map[string]any{"username": "carol", "password": "wrong-password"}, nil), http.StatusUnauthorized, "wrong_password")
+
+	assertErrorCode(t, authRequest(t, server, http.MethodPost, "/admin/auth/register", map[string]any{"username": "carol", "password": "password123"}, nil), http.StatusConflict, "username_taken")
+
+	assertErrorCode(t, authRequest(t, server, http.MethodPost, "/admin/auth/register", map[string]any{"username": "carol", "password": "short"}, nil), http.StatusBadRequest, "password_length")
+	assertErrorCode(t, authRequest(t, server, http.MethodPost, "/admin/auth/register", map[string]any{"username": "ab", "password": "password123"}, nil), http.StatusBadRequest, "username_length")
+	assertErrorCode(t, authRequest(t, server, http.MethodPost, "/admin/auth/register", map[string]any{"username": "has space", "password": "password123"}, nil), http.StatusBadRequest, "username_whitespace")
 }
 
 func TestAdminRoutesRequireSession(t *testing.T) {
@@ -115,6 +127,42 @@ func authRequest(t *testing.T, server *Server, method, path string, body any, co
 	res := httptest.NewRecorder()
 	server.Admin(res, req)
 	return res
+}
+
+// assertAccountData checks the auth envelope returns the Account directly in
+// data, matching the OpenAPI contract shared with the dashboard.
+func assertAccountData(t *testing.T, res *httptest.ResponseRecorder, username string) {
+	t.Helper()
+	var body struct {
+		Data struct {
+			ID       int    `json:"id"`
+			Username string `json:"username"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode account response: %v; body=%s", err, res.Body.String())
+	}
+	if body.Data.ID == 0 || body.Data.Username != username {
+		t.Fatalf("account data = %+v, want username %q with id", body.Data, username)
+	}
+}
+
+// assertErrorCode checks the HTTP status and the stable error_code that the
+// dashboard localizes from.
+func assertErrorCode(t *testing.T, res *httptest.ResponseRecorder, wantStatus int, wantCode string) {
+	t.Helper()
+	if res.Code != wantStatus {
+		t.Fatalf("status = %d, want %d; body=%s", res.Code, wantStatus, res.Body.String())
+	}
+	var body struct {
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error response: %v; body=%s", err, res.Body.String())
+	}
+	if body.ErrorCode != wantCode {
+		t.Fatalf("error_code = %q, want %q; body=%s", body.ErrorCode, wantCode, res.Body.String())
+	}
 }
 
 func sessionCookieFrom(t *testing.T, res *httptest.ResponseRecorder) *http.Cookie {
