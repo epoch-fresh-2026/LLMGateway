@@ -36,6 +36,7 @@ export type DeletePricingInput = components['schemas']['DeletePricingInput']
 
 export type UsageLog = components['schemas']['UsageLog']
 export type Stats = components['schemas']['Stats']
+export type TTFTStats = components['schemas']['TTFTStats']
 export type DailyStats = components['schemas']['DailyStats']
 export type ChannelStats = components['schemas']['ChannelStats']
 export type UsageAggregate = components['schemas']['UsageAggregate']

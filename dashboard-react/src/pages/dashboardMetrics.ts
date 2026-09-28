@@ -10,7 +10,18 @@ export type DailyPoint = {
   total_cost: string
 }
 
+export type TrendDirection = 'up' | 'down' | 'flat' | 'none'
+
 export const utcDayKey = (date: Date): string => date.toISOString().slice(0, 10)
+
+// trendDirection classifies a delta for arrow/color styling. A null baseline
+// (see ratioChange) is "none" so the card renders a neutral dash.
+export function trendDirection(current: number, previous: number | null): TrendDirection {
+  if (previous === null) return 'none'
+  if (current > previous) return 'up'
+  if (current < previous) return 'down'
+  return 'flat'
+}
 
 // recentUtcDays returns the last count UTC day keys, oldest first, ending today.
 export function recentUtcDays(count: number, today: Date = new Date()): string[] {

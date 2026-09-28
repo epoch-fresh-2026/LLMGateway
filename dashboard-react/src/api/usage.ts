@@ -1,6 +1,6 @@
 import { adminGet } from './client'
 import { apiPaths } from './paths'
-import { ChannelStatsListSchema, DailyStatsListSchema, StatsSchema, UsageAggregateListSchema, UsageLogListSchema, UsageLogSchema } from './runtime/usage'
+import { ChannelStatsListSchema, DailyStatsListSchema, StatsSchema, TTFTStatsSchema, UsageAggregateListSchema, UsageLogListSchema, UsageLogSchema } from './runtime/usage'
 import type { DailyStats, ListResponse, Stats, UsageAggregate, UsageLog } from '../types/api'
 
 export type DateRange = { date_from?: string; date_to?: string }
@@ -17,3 +17,4 @@ export const usageStats = (params: UsageAggregateParams) => adminGet(apiPaths.us
 export const listUsageLogs = (params: UsageLogParams = {}) => adminGet(apiPaths.usageLogs(), { page: 1, page_size: 20, ...params }, UsageLogListSchema)
 export const getUsageLog = (id: number) => adminGet(apiPaths.usageLog(id), UsageLogSchema)
 export const channelStats = (params: TimeRange & DateRange = {}) => adminGet(apiPaths.usageChannels(), params, ChannelStatsListSchema)
+export const ttft = (params: TimeRange = {}) => adminGet(apiPaths.usageTTFT(), params, TTFTStatsSchema)

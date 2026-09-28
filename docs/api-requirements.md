@@ -77,6 +77,8 @@ YYYY-MM-DD
 ```text
 GET /admin/stats/overview
 GET /admin/stats/daily
+GET /admin/stats/ttft
+GET /admin/stats/usage
 GET /admin/channels
 GET /admin/stats/channels
 GET /admin/usage-logs

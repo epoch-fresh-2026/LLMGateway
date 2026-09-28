@@ -30,6 +30,11 @@ paths:
       operationId: getUsageAggregates
       parameters: [{$ref: '#/components/parameters/GroupBy'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
       responses: { '200': { $ref: '#/components/responses/UsageAggregateList' }, '400': { $ref: '#/components/responses/Error' } }
+  /admin/stats/ttft:
+    get:
+      operationId: getTTFTStats
+      parameters: [$ref: '#/components/parameters/StartTime', $ref: '#/components/parameters/EndTime']
+      responses: { '200': { $ref: '#/components/responses/TTFTStats' }, '400': { $ref: '#/components/responses/Error' } }
   /admin/channels:
     get:
       operationId: listChannels
@@ -258,6 +263,7 @@ components:
     Error: { description: Error, content: { application/json: { schema: { $ref: '#/components/schemas/AdminError' } } } }
     Account: { description: Account, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseAccount' } } } }
     Stats: { description: Stats, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseStats' } } } }
+    TTFTStats: { description: TTFT statistics, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseTTFTStats' } } } }
     Deleted: { description: Deleted, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseDeleted' } } } }
     Channel: { description: Channel, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseChannel' } } } }
     ChannelList: { description: Channels, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseChannelList' } } } }
@@ -314,6 +320,7 @@ components:
     KeyUpdateInput: { type: object, required: [is_active], properties: { is_active: { type: boolean } } }
     KeySecret: { type: object, required: [full_key], properties: { id: { type: integer }, full_key: { type: string, writeOnly: true } } }
     Stats: { type: object, required: [request_count, success_count, error_count, total_tokens, total_cost, active_key_count], properties: { request_count: { type: integer }, success_count: { type: integer }, error_count: { type: integer }, total_tokens: { type: integer }, total_cost: { $ref: '#/components/schemas/Money' }, active_key_count: { type: integer } } }
+    TTFTStats: { type: object, required: [sample_count, average_ms, p50_ms, p95_ms, p99_ms], properties: { sample_count: { type: integer }, average_ms: { type: integer }, p50_ms: { type: integer }, p95_ms: { type: integer }, p99_ms: { type: integer } } }
     DailyStats: { type: object, required: [stat_date, request_count, success_count, error_count, total_tokens, total_cost], properties: { stat_date: { type: string, format: date }, request_count: { type: integer }, success_count: { type: integer }, error_count: { type: integer }, total_tokens: { type: integer }, total_cost: { $ref: '#/components/schemas/Money' } } }
     ChannelStats: { type: object, required: [channel_id, channel_name, request_count, success_count, error_count, total_tokens, total_cost], properties: { channel_id: { type: integer }, channel_name: { type: string }, request_count: { type: integer }, success_count: { type: integer }, error_count: { type: integer }, total_tokens: { type: integer }, total_cost: { $ref: '#/components/schemas/Money' } } }
     UsageAggregate: { type: object, required: [model, request_count, success_count, error_count, total_tokens, total_cost, duration_ms], properties: { user_id: { type: [integer, 'null'] }, api_key_id: { type: [integer, 'null'] }, channel_id: { type: [integer, 'null'] }, model: { type: string }, request_count: { type: integer }, success_count: { type: integer }, error_count: { type: integer }, total_tokens: { type: integer }, total_cost: { $ref: '#/components/schemas/Money' }, duration_ms: { type: integer } } }
@@ -329,6 +336,7 @@ components:
     ChannelTestItem: { type: object, required: [model_alias, upstream_model, http_status, latency_ms, ok, error], properties: { model_alias: { type: string }, upstream_model: { type: string }, http_status: { type: integer }, latency_ms: { type: integer }, ok: { type: boolean }, error: { type: string } } }
     Deleted: { type: object, required: [deleted], properties: { deleted: { const: true } } }
     AdminResponseStats: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Stats' } } }
+    AdminResponseTTFTStats: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/TTFTStats' } } }
     AdminResponseDeleted: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Deleted' } } }
     AdminResponseChannel: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Channel' } } }
     AdminResponseChannelList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/Channel' } } } } } }

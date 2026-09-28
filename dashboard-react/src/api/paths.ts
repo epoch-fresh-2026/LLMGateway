@@ -27,6 +27,7 @@ export const apiPaths = {
   usageDaily: () => admin('/admin/stats/daily'),
   usageChannels: () => admin('/admin/stats/channels'),
   usageAggregate: () => admin('/admin/stats/usage'),
+  usageTTFT: () => admin('/admin/stats/ttft'),
   usageLogs: () => admin('/admin/usage-logs'),
   usageLog: (id: number) => admin(`/admin/usage-logs/${id}` as `/admin/usage-logs/${number}`),
   rateLimits: () => admin('/admin/rate-limits'),

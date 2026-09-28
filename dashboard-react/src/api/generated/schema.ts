@@ -68,6 +68,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/stats/ttft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getTTFTStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/channels": {
         parameters: {
             query?: never;
@@ -775,6 +791,13 @@ export interface components {
             total_cost: components["schemas"]["Money"];
             active_key_count: number;
         };
+        TTFTStats: {
+            sample_count: number;
+            average_ms: number;
+            p50_ms: number;
+            p95_ms: number;
+            p99_ms: number;
+        };
         DailyStats: {
             /** Format: date */
             stat_date: string;
@@ -951,6 +974,9 @@ export interface components {
         AdminResponseStats: {
             data?: components["schemas"]["Stats"];
         } & components["schemas"]["AdminResponse"];
+        AdminResponseTTFTStats: {
+            data?: components["schemas"]["TTFTStats"];
+        } & components["schemas"]["AdminResponse"];
         AdminResponseDeleted: {
             data?: components["schemas"]["Deleted"];
         } & components["schemas"]["AdminResponse"];
@@ -1088,6 +1114,15 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["AdminResponseStats"];
+            };
+        };
+        /** @description TTFT statistics */
+        TTFTStats: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["AdminResponseTTFTStats"];
             };
         };
         /** @description Deleted */
@@ -1406,6 +1441,22 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["UsageAggregateList"];
+            400: components["responses"]["Error"];
+        };
+    };
+    getTTFTStats: {
+        parameters: {
+            query?: {
+                start_time?: components["parameters"]["StartTime"];
+                end_time?: components["parameters"]["EndTime"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["TTFTStats"];
             400: components["responses"]["Error"];
         };
     };

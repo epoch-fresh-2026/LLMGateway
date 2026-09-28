@@ -15,6 +15,13 @@ const pointChange = (currentRate, previousRate) => {
   return `${points >= 0 ? '+' : ''}${points.toFixed(1)}pp`
 }
 
+const trendDirection = (current, previous) => {
+  if (previous === null) return 'none'
+  if (current > previous) return 'up'
+  if (current < previous) return 'down'
+  return 'flat'
+}
+
 test('ratio change hides a zero baseline instead of fabricating a percent', () => {
   assert.equal(ratioChange(12, 0), null)
   assert.equal(ratioChange(0, 0), null)
@@ -29,4 +36,11 @@ test('success-rate delta is reported in percentage points', () => {
   assert.equal(pointChange(99.4, 99.0), '+0.4pp')
   assert.equal(pointChange(99.0, 99.4), '-0.4pp')
   assert.equal(pointChange(99.0, null), null)
+})
+
+test('trend direction drives arrow and color independently of text', () => {
+  assert.equal(trendDirection(12, 10), 'up')
+  assert.equal(trendDirection(8, 10), 'down')
+  assert.equal(trendDirection(10, 10), 'flat')
+  assert.equal(trendDirection(10, null), 'none')
 })
