@@ -97,7 +97,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
   - `server/internal/ratelimit/`：限流规则和运行时限流业务模块（HTTP 入口由顶层装配）
   - `server/internal/httpapi/`：`handler.go`（顶层入口/分派/响应）、`openai.go`（/v1 分派与错误映射）
   - `server/internal/httpcommon/`：共享 HTTP 请求解析、路径解析、分页、存储错误映射和删除响应 helper；这些通用行为只在此处实现
-- `server/internal/proxy/`：`proxy.go`（编排依赖装配与代理错误）、`ports.go`（编排依赖的窄 port）、`contracts.go`（协议中立请求/响应/usage 与 `ProtocolAdapter` contract）、`auth.go`（认证）、`routing.go`（选路）、`ratelimit.go`（限流编排）、`quota.go`（配额预留编排）、`settlement.go`（结算编排与共享结算收尾）、`stream.go`（流式结算与部分计费）、`orchestration.go`（代理编排）
+- `server/internal/proxy/`：`proxy.go`（编排依赖装配与代理错误）、`ports.go`（编排依赖的窄 port）、`contracts.go`（协议中立请求/响应/usage 与 `ProtocolAdapter` contract）、`auth.go`（认证）、`routing.go`（选路）、`upstream.go`（上游尝试与故障切换）、`ratelimit.go`（限流编排）、`quota.go`（配额预留编排）、`settlement.go`（结算编排与共享结算收尾）、`stream.go`（流式结算与部分计费）、`orchestration.go`（代理编排入口）
     - `server/internal/proxy/openai/`：`types.go`、`adapter.go`（OpenAI 兼容 wire DTO、请求解析和响应适配；proxy 业务模块的协议边界）
 - 进程装配边界可以组合业务 port，但禁止在 `internal/store` 恢复 aggregate `Store`。
 

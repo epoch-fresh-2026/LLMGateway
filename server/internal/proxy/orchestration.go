@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -9,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"LLMGateway/server/internal/accounts"
@@ -124,95 +122,18 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	if a.adapter.RewriteRequest == nil {
 		return ChatResponse{}, ErrInvalidRequest
 	}
-	var resp *http.Response
-	var responseBody []byte
-	var readErr error
-	healthRecorded := false
-	for attempt, next := range candidates {
-		if ctx.Err() != nil {
-			return ChatResponse{}, ctx.Err()
-		}
-		candidate = next
-		if err := a.checkChannelRateLimit(ctx, auth, req.Model, candidate.ChannelID, *estimatedTokens); err != nil {
-			if errors.Is(err, ErrRateLimited) {
-				a.recordChannelHealth(ctx, candidate.ChannelID, false, catalog.FailureUpstreamUnreachable)
-				if attempt+1 < len(candidates) {
-					continue
-				}
-				a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "rate_limited")
-			}
-			return ChatResponse{}, err
-		}
-		secret, secretErr := a.catalog.GetChannelSecret(ctx, auth.UserID, candidate.ChannelID)
-		if secretErr != nil {
-			return ChatResponse{}, secretErr
-		}
-		upstreamBody, rewriteErr := a.adapter.RewriteRequest(req.Body, candidate.UpstreamModel)
-		if rewriteErr != nil {
-			return ChatResponse{}, ErrInvalidRequest
-		}
-		httpReq, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(secret.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(upstreamBody))
-		if requestErr != nil {
-			return ChatResponse{}, ErrUpstream
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		if req.Stream {
-			httpReq.Header.Set("Accept", "text/event-stream")
-		} else {
-			httpReq.Header.Set("Accept", "application/json")
-		}
-		if secret.AuthType == "bearer" && secret.APIKey != "" {
-			httpReq.Header.Set("Authorization", "Bearer "+secret.APIKey)
-		}
-		resp, err = a.client.Do(httpReq)
-		if err != nil {
-			if ctx.Err() != nil {
-				return ChatResponse{}, ctx.Err()
-			}
-			if reason := catalog.ClassifyUpstreamResult(0, err); reason.CountsAsChannelFailure() {
-				a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
-				if attempt+1 < len(candidates) {
-					continue
-				}
-			}
-			a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "upstream_unreachable")
-			return ChatResponse{}, ErrUpstream
-		}
-		if req.Stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			break
-		}
-		responseBody, readErr = io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			if ctx.Err() != nil {
-				return ChatResponse{}, ctx.Err()
-			}
-			a.recordChannelHealth(ctx, candidate.ChannelID, false, catalog.FailureUpstreamUnreachable)
-			if attempt+1 < len(candidates) {
-				continue
-			}
-			a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "upstream_stream_interrupted")
-			return ChatResponse{}, ErrUpstream
-		}
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			break
-		}
-		if reason := catalog.ClassifyUpstreamResult(resp.StatusCode, nil); reason.CountsAsChannelFailure() {
-			a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
-			healthRecorded = true
-			if attempt+1 < len(candidates) {
-				continue
-			}
-		}
-		break
+	attempt, err := a.attemptUpstreams(ctx, upstreamAttemptInput{
+		requestID: requestID, auth: auth, req: req, candidates: candidates,
+		estimatedTokens: *estimatedTokens, start: start, clientIP: clientIP,
+	})
+	if err != nil {
+		return ChatResponse{}, err
 	}
-	if resp == nil {
-		return ChatResponse{}, ErrUpstream
-	}
-	if catalog.ClassifyUpstreamResult(resp.StatusCode, nil).CountsAsChannelFailure() && len(candidates) > 1 {
-		a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
-		return ChatResponse{}, ErrUpstream
-	}
+	resp := attempt.resp
+	candidate = attempt.candidate
+	healthRecorded := attempt.healthRecorded
+	responseBody := attempt.body
+
 	if req.Stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if a.adapter.ParseStream == nil || a.adapter.StreamError == nil {
 			resp.Body.Close()
@@ -231,6 +152,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		}}, nil
 	}
 
+	var readErr error
 	if responseBody == nil {
 		defer resp.Body.Close()
 		responseBody, readErr = io.ReadAll(resp.Body)
