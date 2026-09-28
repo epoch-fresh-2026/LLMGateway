@@ -9,22 +9,6 @@ import (
 	"fmt"
 )
 
-// selectChannel returns the channel to use for a public model. Candidates come
-// ordered by priority desc, weight desc, channel id; channels with a non-nil
-// balance below the configured reserve are excluded. Within the highest priority
-// group the choice is weighted-random using the injected source.
-func (a *Service) selectChannel(ctx context.Context, ownerUserID int, model string) (catalog.RouteCandidate, error) {
-	candidates, probes, err := a.orderedCandidates(ctx, ownerUserID, model)
-	if err != nil {
-		return catalog.RouteCandidate{}, err
-	}
-	if len(candidates) == 0 {
-		return catalog.RouteCandidate{}, ErrNoHealthyChannel
-	}
-	a.releaseProbes(ctx, probes)
-	return candidates[0], nil
-}
-
 // releaseProbes returns every still-held probe lease. It is best-effort: a
 // failed release must not change the response, and the lease TTL is the
 // backstop. The map is emptied so a caller's deferred release is a no-op.

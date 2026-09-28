@@ -1,5 +1,11 @@
 package catalog
 
+import (
+	"context"
+	"errors"
+	"net/http"
+)
+
 // FailureReason describes why an upstream channel attempt failed. The values
 // are shared by the proxy (which classifies upstream results) and the circuit
 // breaker (which decides whether to open), so a rename is a compile error
@@ -23,6 +29,35 @@ const (
 // value is the explicit "not a channel failure" sentinel.
 func (r FailureReason) CountsAsChannelFailure() bool {
 	return r != ""
+}
+
+// ClassifyUpstreamResult maps an upstream outcome to a channel failure reason,
+// or the zero value when the outcome must not count against the channel. Only
+// transport errors, upstream 429/401/403/402 and 5xx are penalised; other client
+// errors (400/404/...) pass through without tripping the breaker, so a bad
+// caller cannot open a healthy channel. Callers use
+// FailureReason.CountsAsChannelFailure as the single decision point.
+func ClassifyUpstreamResult(statusCode int, err error) FailureReason {
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return FailureUpstreamTimeout
+		}
+		return FailureUpstreamUnreachable
+	}
+	switch statusCode {
+	case http.StatusTooManyRequests:
+		return FailureUpstream429
+	case http.StatusUnauthorized:
+		return FailureUpstream401
+	case http.StatusForbidden:
+		return FailureUpstream403
+	case http.StatusPaymentRequired:
+		return FailureUpstream402
+	}
+	if statusCode >= 500 && statusCode <= 599 {
+		return FailureUpstream5xx
+	}
+	return ""
 }
 
 // IsDeterministic reports whether the failure will not recover on retry, so the

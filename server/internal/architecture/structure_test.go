@@ -139,7 +139,7 @@ func TestBusinessModuleDocumentationExists(t *testing.T) {
 
 func TestProxyOrchestrationStaysOutOfHTTPAPI(t *testing.T) {
 	root := filepath.Join("..", "..")
-	for _, name := range []string{"orchestration.go", "routing.go", "ratelimit.go", "billing.go", "auth.go"} {
+	for _, name := range []string{"orchestration.go", "routing.go", "ratelimit.go", "quota.go", "auth.go"} {
 		if _, err := os.Stat(filepath.Join(root, "internal", "proxy", name)); err != nil {
 			t.Fatalf("expected proxy orchestration file %s in internal/proxy: %v", name, err)
 		}

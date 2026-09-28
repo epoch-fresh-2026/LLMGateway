@@ -52,16 +52,20 @@ func seedRoutingStore(t *testing.T) *storefake.Store {
 	return st
 }
 
-func TestSelectChannelUsesHighestPriorityGroup(t *testing.T) {
+func TestOrderedCandidatesUsesHighestPriorityGroup(t *testing.T) {
 	st := seedRoutingStore(t)
 
 	// rand 0 selects the first candidate in the highest priority group, which
 	// is ordered by weight desc (highB weight 200 before highA weight 100).
 	a := newRouteTestApp(st, func(int) int { return 0 })
-	candidate, err := a.selectChannel(context.Background(), 1, "gpt")
+	candidates, _, err := a.orderedCandidates(context.Background(), 1, "gpt")
 	if err != nil {
-		t.Fatalf("selectChannel: %v", err)
+		t.Fatalf("orderedCandidates: %v", err)
 	}
+	if len(candidates) == 0 {
+		t.Fatal("expected candidates")
+	}
+	candidate := candidates[0]
 	if candidate.ChannelName != "highB" || candidate.Priority != 10 {
 		t.Fatalf("candidate = %+v, want highB priority 10", candidate)
 	}
@@ -70,21 +74,21 @@ func TestSelectChannelUsesHighestPriorityGroup(t *testing.T) {
 	}
 }
 
-func TestSelectChannelWeightedFallback(t *testing.T) {
+func TestOrderedCandidatesWeightedFallback(t *testing.T) {
 	st := seedRoutingStore(t)
 
 	// Total weight in the top group is 300; a pick of 299 lands on highA.
 	a := newRouteTestApp(st, func(int) int { return 299 })
-	candidate, err := a.selectChannel(context.Background(), 1, "gpt")
+	candidates, _, err := a.orderedCandidates(context.Background(), 1, "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if candidate.ChannelName != "highA" {
-		t.Fatalf("candidate = %+v, want highA", candidate)
+	if len(candidates) == 0 || candidates[0].ChannelName != "highA" {
+		t.Fatalf("candidates = %+v, want highA first", candidates)
 	}
 }
 
-func TestSelectChannelExcludesNonPositiveBalance(t *testing.T) {
+func TestOrderedCandidatesExcludesNonPositiveBalance(t *testing.T) {
 	st := seedRoutingStore(t)
 	cat := newTestCatalog(st)
 
@@ -94,8 +98,12 @@ func TestSelectChannelExcludesNonPositiveBalance(t *testing.T) {
 	}
 
 	a := newRouteTestApp(st, func(int) int { return 0 })
-	if _, err := a.selectChannel(context.Background(), 1, "only-zero"); err != ErrNoHealthyChannel {
-		t.Fatalf("err = %v, want ErrNoHealthyChannel", err)
+	candidates, _, err := a.orderedCandidates(context.Background(), 1, "only-zero")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("candidates = %+v, want none", candidates)
 	}
 }
 
@@ -152,10 +160,14 @@ func TestOrderedCandidatesScopedToOwner(t *testing.T) {
 	}
 }
 
-func TestSelectChannelNoCandidates(t *testing.T) {
+func TestOrderedCandidatesNoCandidates(t *testing.T) {
 	a := newRouteTestApp(storefake.New(), func(int) int { return 0 })
-	if _, err := a.selectChannel(context.Background(), 1, "missing"); err != ErrNoHealthyChannel {
-		t.Fatalf("err = %v, want ErrNoHealthyChannel", err)
+	candidates, _, err := a.orderedCandidates(context.Background(), 1, "missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("candidates = %+v, want none", candidates)
 	}
 }
 

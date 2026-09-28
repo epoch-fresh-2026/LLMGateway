@@ -170,7 +170,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 			if ctx.Err() != nil {
 				return ChatResponse{}, ctx.Err()
 			}
-			if reason := classifyUpstreamResult(0, err); reason.CountsAsChannelFailure() {
+			if reason := catalog.ClassifyUpstreamResult(0, err); reason.CountsAsChannelFailure() {
 				a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
 				if attempt+1 < len(candidates) {
 					continue
@@ -198,7 +198,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			break
 		}
-		if reason := classifyUpstreamResult(resp.StatusCode, nil); reason.CountsAsChannelFailure() {
+		if reason := catalog.ClassifyUpstreamResult(resp.StatusCode, nil); reason.CountsAsChannelFailure() {
 			a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
 			healthRecorded = true
 			if attempt+1 < len(candidates) {
@@ -210,7 +210,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	if resp == nil {
 		return ChatResponse{}, ErrUpstream
 	}
-	if classifyUpstreamResult(resp.StatusCode, nil).CountsAsChannelFailure() && len(candidates) > 1 {
+	if catalog.ClassifyUpstreamResult(resp.StatusCode, nil).CountsAsChannelFailure() && len(candidates) > 1 {
 		a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
 		return ChatResponse{}, ErrUpstream
 	}
@@ -246,7 +246,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if reason := classifyUpstreamResult(resp.StatusCode, nil); reason.CountsAsChannelFailure() && !healthRecorded {
+		if reason := catalog.ClassifyUpstreamResult(resp.StatusCode, nil); reason.CountsAsChannelFailure() && !healthRecorded {
 			a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
 		}
 		a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
@@ -296,35 +296,6 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	return ChatResponse{Status: http.StatusOK, Body: a.adapter.RewriteResponse(responseBody, req.Model), Usage: usage}, nil
 }
 
-// classifyUpstreamResult maps an upstream outcome to a channel failure reason,
-// or the zero value when the outcome must not count against the channel. Only
-// transport errors, upstream 429/401/403/402 and 5xx are penalised; other client
-// errors (400/404/...) pass through without tripping the breaker, so a bad
-// caller cannot open a healthy channel. Callers use
-// FailureReason.CountsAsChannelFailure as the single decision point.
-func classifyUpstreamResult(statusCode int, err error) catalog.FailureReason {
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return catalog.FailureUpstreamTimeout
-		}
-		return catalog.FailureUpstreamUnreachable
-	}
-	switch statusCode {
-	case http.StatusTooManyRequests:
-		return catalog.FailureUpstream429
-	case http.StatusUnauthorized:
-		return catalog.FailureUpstream401
-	case http.StatusForbidden:
-		return catalog.FailureUpstream403
-	case http.StatusPaymentRequired:
-		return catalog.FailureUpstream402
-	}
-	if statusCode >= 500 && statusCode <= 599 {
-		return catalog.FailureUpstream5xx
-	}
-	return ""
-}
-
 // recordChannelHealth drives the circuit breaker state machine. It is
 // best-effort: a recording failure must never change the response.
 func (a *Service) recordChannelHealth(ctx context.Context, channelID int, success bool, reason catalog.FailureReason) {
@@ -353,7 +324,7 @@ func (a *Service) priceFor(ctx context.Context, channelID int, model string, usa
 		outputTokens = usage.CompletionTokens
 		cachedTokens = cachedTokenCount(usage)
 	}
-	cost, err := computeCost(inputPrice, outputPrice, pricing.CachedInputPricePer1M, inputTokens, outputTokens, cachedTokens)
+	cost, err := catalog.ComputeCost(inputPrice, outputPrice, pricing.CachedInputPricePer1M, inputTokens, outputTokens, cachedTokens)
 	if err != nil {
 		return "", "", "", err
 	}

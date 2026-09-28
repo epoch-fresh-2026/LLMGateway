@@ -13,7 +13,7 @@ server/internal/ratelimit/          限流规则管理和运行时限流能力
 server/internal/quota/              UTC 日/月 token/费用业务配额策略与管理能力
 server/internal/httpapi/            顶层 HTTP 装配、响应 envelope 和业务入口委托
 server/internal/httpcommon/         共享 HTTP 请求解析、路径、分页、存储错误映射和删除响应 helper 的唯一归属
-server/internal/proxy/              下游代理业务：OpenAI 适配、路由、成本计算、限流、熔断、结算和上游调用
+server/internal/proxy/              下游代理业务：认证、路由、限流、配额、熔断、结算和上游调用
 server/internal/proxy/openai/       OpenAI 兼容 wire DTO 与协议适配；归属 proxy 业务模块
 server/internal/proxy/settlement/   结算事务 contract（proxy 拥有），供 Store 实现
 server/internal/errors/             跨模块通用错误
@@ -81,12 +81,12 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 目录保持较浅层级：包内按领域拆文件，仅在协议与存储实现处使用子包，使目录能直接呈现模块边界。
 
 - 每个包内按领域命名文件，禁止把多个领域堆进同一个文件：
-  - `server/internal/catalog/`：渠道、模型、定价、健康、失败原因、路由 DTO 和 catalog/health ports
+  - `server/internal/catalog/`：渠道、模型、定价、定价成本公式、上游失败分类、健康、失败原因、路由 DTO 和 catalog/health ports
   - `server/internal/accounts/`：凭据、资料、Key、会话、认证 DTO 和 accounts port
   - `server/internal/usage/`：usage DTO、时间校验、结算输入和 usage port
-  - `server/internal/ratelimit/`：限流规则、reservation、规范化规则和 ratelimit port
+  - `server/internal/ratelimit/`：限流规则、纯规则判定（目标匹配、override、窗口/滑窗）、reservation、规范化规则和 ratelimit port
   - `server/internal/quota/`：配额策略、reservation、周期规则和 quota port
-  - `server/internal/proxy/`：代理请求/响应、失败、限流/配额编排和 settlement contract
+  - `server/internal/proxy/`：代理请求/响应 contract、限流/配额/结算编排和 settlement contract
   - `server/internal/store/`：仅错误兼容别名，不定义业务 port 或 aggregate interface
   - `server/internal/store/postgres/`：`postgres.go`（结构体/构造函数）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`
   - `server/internal/testutil/storefake/`：测试专用 Store fake，仅供测试夹具使用
@@ -97,7 +97,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
   - `server/internal/ratelimit/`：限流规则和运行时限流业务模块（HTTP 入口由顶层装配）
   - `server/internal/httpapi/`：`handler.go`（顶层入口/分派/响应）、`openai.go`（/v1 分派与错误映射）
   - `server/internal/httpcommon/`：共享 HTTP 请求解析、路径解析、分页、存储错误映射和删除响应 helper；这些通用行为只在此处实现
-- `server/internal/proxy/`：`proxy.go`（编排依赖装配与代理错误）、`contracts.go`（协议中立请求/响应/usage contract）、`auth.go`（认证）、`routing.go`（选路）、`billing.go`（成本计算，用于近似渠道记账与 usage log）、`ratelimit.go`（限流）、`orchestration.go`（代理编排）
+- `server/internal/proxy/`：`proxy.go`（编排依赖装配与代理错误）、`ports.go`（编排依赖的窄 port）、`contracts.go`（协议中立请求/响应/usage 与 `ProtocolAdapter` contract）、`auth.go`（认证）、`routing.go`（选路）、`ratelimit.go`（限流编排）、`quota.go`（配额预留编排）、`settlement.go`（结算编排）、`stream.go`（流式结算与部分计费）、`orchestration.go`（代理编排）
     - `server/internal/proxy/openai/`：`types.go`、`adapter.go`（OpenAI 兼容 wire DTO、请求解析和响应适配；proxy 业务模块的协议边界）
 - 进程装配边界可以组合业务 port，但禁止在 `internal/store` 恢复 aggregate `Store`。
 

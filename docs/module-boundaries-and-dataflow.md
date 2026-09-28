@@ -76,7 +76,7 @@ flowchart TB
 
 #### `catalog`
 
-拥有渠道、模型映射、定价和渠道连通性测试。渠道按 `owner_user_id` 隔离；下游请求的选路、重试和结算不在这里。
+拥有渠道、模型映射、定价、定价成本公式和渠道连通性测试。渠道按 `owner_user_id` 隔离；下游请求的选路、重试和结算不在这里。上游失败分类（`ClassifyUpstreamResult`）与定价成本公式（`ComputeCost`/`EstimateReservationCost`）也归本模块，proxy 只调用。
 
 #### `accounts`
 
@@ -88,7 +88,7 @@ flowchart TB
 
 #### `ratelimit`
 
-拥有用户私有限流规则管理入口。速率规则的运行时编排属于 `proxy`，持久化端口属于 `store`。
+拥有用户私有限流规则管理入口与纯规则判定：目标匹配、Key override、指标窗口和滑窗计数。proxy 负责加载规则、查询 usage 计数并预留 reservation；持久化端口属于 `store`。
 
 #### `quota`
 
@@ -96,7 +96,7 @@ flowchart TB
 
 #### `proxy`
 
-拥有下游请求的业务编排：Key 认证、模型权限、按 owner 选路、渠道健康、故障切换、限流、配额预留、上游请求和结算。它是跨领域协调者，但不直接依赖 PostgreSQL、pgx 或 HTTP `ResponseWriter`，也不向用户计费。
+拥有下游请求的业务编排：Key 认证、模型权限、按 owner 选路、渠道健康、故障切换、限流、配额预留、上游请求和结算。它是跨领域协调者，依赖 `catalog` 的失败分类与定价公式、`ratelimit` 的规则判定，但不直接依赖 PostgreSQL、pgx 或 HTTP `ResponseWriter`，也不向用户计费。
 
 #### `proxy/openai`
 

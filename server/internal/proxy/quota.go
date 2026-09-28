@@ -3,11 +3,10 @@ package proxy
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
 	apperrors "LLMGateway/server/internal/errors"
-	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/quota"
 )
 
@@ -42,24 +41,5 @@ func (a *Service) estimatedCost(ctx context.Context, channelID int, model string
 		}
 		return "", err
 	}
-	inputPrice, err := parsePrice8(pricing.InputPricePer1M)
-	if err != nil {
-		return "", err
-	}
-	cachedPrice, err := parsePrice8(pricing.CachedInputPricePer1M)
-	if err != nil {
-		return "", err
-	}
-	if cachedPrice > inputPrice {
-		inputPrice = cachedPrice
-	}
-	outputPrice, err := parsePrice8(pricing.OutputPricePer1M)
-	if err != nil {
-		return "", err
-	}
-	total := priceTokens(inputPrice, estimate.InputTokens) + priceTokens(outputPrice, estimate.OutputTokens)
-	if total < 0 {
-		return "", fmt.Errorf("%w: invalid estimated cost", apperrors.ErrInvalid)
-	}
-	return money.Format6(money.Amount(total)), nil
+	return catalog.EstimateReservationCost(pricing.InputPricePer1M, pricing.OutputPricePer1M, pricing.CachedInputPricePer1M, estimate.InputTokens, estimate.OutputTokens)
 }

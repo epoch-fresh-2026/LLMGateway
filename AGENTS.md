@@ -6,16 +6,16 @@
 
 - `server/` 是 Go 模块根。所有 Go 命令在该目录执行，或在仓库根使用 `go -C server ...`。
 - `server/cmd/llmgateway/` 只放进程装配、启动、优雅关闭和顶层 HTTP 路由表。路径到入口的映射统一放在 `router.go`。
-- `server/internal/catalog/` 放渠道、模型映射、定价、渠道连通性测试及对应管理端入口。
+- `server/internal/catalog/` 放渠道、模型映射、定价、定价成本公式、上游失败分类、渠道连通性测试及对应管理端入口。
 - `server/internal/accounts/` 放自助账户（注册/登录/会话/资料）、网关 Key、认证上下文和权限能力；不含平台计费、用户状态或分组。
 - `server/internal/usage/` 放用量日志、审计查询和统计能力。
-- `server/internal/ratelimit/` 放限流规则管理；与代理请求执行强相关的限流编排放在 `server/internal/proxy/`。
+- `server/internal/ratelimit/` 放限流规则管理及纯规则判定（目标匹配、Key override、指标窗口与滑窗计数）；加载规则、查询计数和预留 reservation 等代理请求执行编排放在 `server/internal/proxy/`。
 - `server/internal/quota/` 放 UTC 日/月业务配额策略和管理端入口；`rate_limit_rules` 只做速率控制，配额策略不得复用其持久化模型。
 - `server/internal/proxy/` 放下游代理业务编排，包括认证、选路、计费、限流、熔断、结算和上游调用。
 - `server/internal/proxy/openai/` 只放 OpenAI 兼容 wire DTO、请求解析和响应适配。
 - `server/internal/httpapi/` 只放顶层 HTTP 入口、统一响应、错误映射、静态 Dashboard 托管和对业务模块的委托，不集中放具体业务实现。
 - `server/internal/httpcommon/` 放跨业务复用的 HTTP 路径、JSON、分页、存储错误映射和响应 helper。
-- 业务类型、规则和窄端口由业务模块拥有：`catalog` 管理渠道/定价/健康，`accounts` 管理自助账户/资料/Key/会话与认证，`usage` 管理用量 DTO/校验，`ratelimit` 管理规则/reservation，`quota` 管理策略/reservation，`proxy` 管理代理编排 contract、失败和结算类型。`internal/domain` 已删除。
+- 业务类型、规则和窄端口由业务模块拥有：`catalog` 管理渠道/定价/健康、定价成本公式与上游失败分类，`accounts` 管理自助账户/资料/Key/会话与认证，`usage` 管理用量 DTO/校验，`ratelimit` 管理规则/reservation 与纯规则判定，`quota` 管理策略/reservation，`proxy` 管理代理编排 contract 和结算类型。`internal/domain` 已删除。
 - `server/internal/store/` 不再定义业务端口或 aggregate `Store`，仅保留通用错误兼容别名；组合接口由 `httpapi`、`proxy` 或 cmd 装配边界定义。
 - `server/internal/store/postgres/` 放 PostgreSQL Store 实现，只提供持久化原语（CRUD/lock/query）与事务边界，不承担业务规则或跨表流程编排；业务模块不得直接导入该包。
 - `server/internal/store/postgres/` 是唯一生产 Store 实现；`server/internal/testutil/storefake/` 与 `server/internal/testutil/app/` 仅供不需要数据库的单元与 HTTP 契约测试使用，生产代码不得导入，运行时不得提供 memory fallback。

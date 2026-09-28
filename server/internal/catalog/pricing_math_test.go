@@ -1,4 +1,4 @@
-package proxy
+package catalog
 
 import "testing"
 
@@ -22,19 +22,29 @@ func TestComputeCost(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := computeCost(tt.inputPrice, tt.outputPrice, tt.cachedPrice, tt.inputTokens, tt.outputTokens, tt.cachedTokens)
+			got, err := ComputeCost(tt.inputPrice, tt.outputPrice, tt.cachedPrice, tt.inputTokens, tt.outputTokens, tt.cachedTokens)
 			if err != nil {
-				t.Fatalf("computeCost: %v", err)
+				t.Fatalf("ComputeCost: %v", err)
 			}
 			if got != tt.want {
-				t.Fatalf("computeCost = %q, want %q", got, tt.want)
+				t.Fatalf("ComputeCost = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
 func TestComputeCostInvalidPrice(t *testing.T) {
-	if _, err := computeCost("bad", "0.60000000", "", 1, 1, 0); err == nil {
+	if _, err := ComputeCost("bad", "0.60000000", "", 1, 1, 0); err == nil {
 		t.Fatal("invalid price should fail")
+	}
+}
+
+func TestEstimateReservationCostUsesHigherCachedPrice(t *testing.T) {
+	cost, err := EstimateReservationCost("0.10000000", "0.00000000", "0.20000000", 1000, 0)
+	if err != nil {
+		t.Fatalf("EstimateReservationCost: %v", err)
+	}
+	if cost != "0.000200" {
+		t.Fatalf("cost = %q, want 0.000200 (cached price is higher)", cost)
 	}
 }
