@@ -4,24 +4,14 @@ import { listChannels, listChannelHealth, listModels, resetChannelHealth } from 
 import { daily, logs, overview, usageStats } from '../api/usage'
 import { listRateLimits } from '../api/ratelimit'
 import { AsyncState } from '../components/feedback/AsyncState'
+import { pointChange, ratioChange, recentUtcDays } from './dashboardMetrics'
 import type { Channel, DailyStats, Health, Stats, UsageLog } from '../types/api'
 
 const n = (value: unknown) => Number(value || 0)
 const money = (value: unknown) => Number(value || 0).toFixed(2)
 const compact = (value: number) => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : value.toLocaleString()
-const dateKey = (date: Date) => date.toISOString().slice(0, 10)
-const recentDays = (source: DailyStats[]) => {
-  const values = new Map(source.map(row => [row.stat_date, row]))
-  const today = new Date()
-  const days: DailyStats[] = []
-  for (let offset = 13; offset >= 0; offset -= 1) {
-    const date = new Date(today)
-    date.setDate(today.getDate() - offset)
-    const key = dateKey(date)
-    days.push(values.get(key) || { stat_date: key, request_count: 0, success_count: 0, error_count: 0, total_tokens: 0, total_cost: '0' })
-  }
-  return days
-}
+const TREND_DAYS = 14
+const emptyDay = (key: string): DailyStats => ({ stat_date: key, request_count: 0, success_count: 0, error_count: 0, total_tokens: 0, total_cost: '0' })
 
 function Panel({ title, desc, children, className = '' }: { title: string; desc: string; children: React.ReactNode; className?: string }) {
   return <section className={`panel ${className}`}><div className="panel-head"><div><h3>{title}</h3><p className="muted">{desc}</p></div></div>{children}</section>
@@ -33,8 +23,9 @@ function Progress({ label, value, right }: { label: string; value: number; right
 
 export function DashboardPage() {
   const client = useQueryClient(); const [actionError, setActionError] = useState('')
+  const windowDays = recentUtcDays(TREND_DAYS); const windowFrom = windowDays[0]; const windowTo = windowDays[windowDays.length - 1]
   const overviewQuery = useQuery({ queryKey: ['overview'], queryFn: () => overview(), staleTime: 30_000 })
-  const dailyQuery = useQuery({ queryKey: ['daily'], queryFn: () => daily(), staleTime: 30_000 })
+  const dailyQuery = useQuery({ queryKey: ['daily', windowFrom, windowTo], queryFn: () => daily({ date_from: windowFrom, date_to: windowTo }), staleTime: 30_000 })
   const channelsQuery = useQuery({ queryKey: ['channels'], queryFn: () => listChannels(), staleTime: 60_000 })
   const healthQuery = useQuery({ queryKey: ['channel-health'], queryFn: listChannelHealth, staleTime: 30_000 })
   const logsQuery = useQuery({ queryKey: ['logs'], queryFn: () => logs(), staleTime: 10_000 })
@@ -48,7 +39,21 @@ export function DashboardPage() {
   const logRows = logsQuery.data?.list || []
   const healthMap = new Map(healthRows.map(item => [item.channel_id, item]))
   const successRate = stats ? stats.success_count / Math.max(stats.request_count, 1) * 100 : 0
-  const trend = recentDays(dailyRows); const max = Math.max(1, ...trend.map(row => n(row.request_count)))
+  const dailyByDate = new Map(dailyRows.map(row => [row.stat_date, row]))
+  const trend = windowDays.map(key => dailyByDate.get(key) ?? emptyDay(key))
+  const max = Math.max(1, ...trend.map(row => n(row.request_count)))
+  const today = dailyByDate.get(windowTo)
+  const yesterday = dailyByDate.get(windowDays[windowDays.length - 2])
+  const todayRequests = n(today?.request_count)
+  const yesterdayRequests = n(yesterday?.request_count)
+  const todaySuccessRate = todayRequests ? n(today?.success_count) / todayRequests * 100 : 0
+  const yesterdaySuccessRate = yesterdayRequests ? n(yesterday?.success_count) / yesterdayRequests * 100 : null
+  const metrics = [
+    { label: '总请求量（UTC 今日）', value: compact(todayRequests), delta: ratioChange(todayRequests, yesterdayRequests) },
+    { label: '请求成功率（UTC 今日）', value: `${todaySuccessRate.toFixed(1)}%`, delta: pointChange(todaySuccessRate, yesterdaySuccessRate) },
+    { label: '消耗 Tokens（UTC 今日）', value: compact(n(today?.total_tokens)), delta: ratioChange(n(today?.total_tokens), n(yesterday?.total_tokens)) },
+    { label: '费用（美元 · UTC 今日）', value: `$${money(today?.total_cost)}`, delta: ratioChange(n(today?.total_cost), n(yesterday?.total_cost)) },
+  ]
   const dist = new Map<string, number>()
   logRows.forEach(row => dist.set(row.model || 'unknown', (dist.get(row.model || 'unknown') || 0) + row.total_tokens))
   const modelRows = modelUsage.data?.list?.length ? modelUsage.data.list.map(row => ({ name: row.model || 'unknown', value: n(row.total_tokens || row.request_count) })) : [...dist.entries()].map(([name, value]) => ({ name, value }))
@@ -57,7 +62,7 @@ export function DashboardPage() {
   const reset = async (channel: Channel) => { if (!window.confirm(`确认恢复渠道「${channel.name}」的熔断状态？`)) return; try { await resetChannelHealth(channel.id); await client.invalidateQueries({ queryKey: ['channel-health'] }) } catch (error) { setActionError(error instanceof Error ? error.message : '操作失败') } }
   return <>
     {actionError && <div className="error action-error">{actionError}</div>}
-     <div className="metric-grid">{overviewQuery.error && <AsyncState loading={false} error={overviewQuery.error} hasData={Boolean(overviewQuery.data)} onRetry={() => void overviewQuery.refetch()} />}{[['总请求量（7 天）', compact(stats?.request_count || 0), '12.4%'], ['请求成功率', `${successRate.toFixed(1)}%`, '0.6%'], ['消耗 Tokens（7 天）', compact(stats?.total_tokens || 0), '8.9%'], ['累计费用（美元）', `$${money(stats?.total_cost)}`, '15.2%']].map(([label, value, delta]) => <section className="metric" key={label}><span>{label}</span><strong>{value}</strong><small>{delta} 较昨日</small></section>)}</div>
+     <div className="metric-grid">{overviewQuery.error && <AsyncState loading={false} error={overviewQuery.error} hasData={Boolean(overviewQuery.data)} onRetry={() => void overviewQuery.refetch()} />}{metrics.map(metric => <section className="metric" key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.delta ?? '—'} 较昨日</small></section>)}</div>
     <div className="bento-grid">
       <Panel title="请求趋势（近 14 天）" desc="按 user_daily_stats 自然日汇总 · 含成功 / 失败" className="span-8"><AsyncState loading={dailyQuery.isLoading} error={dailyQuery.error} hasData={Boolean(dailyQuery.data)} onRetry={() => void dailyQuery.refetch()} />{dailyQuery.data && <><div className="trend-meta"><span>今日 <b>{n(trend.at(-1)?.request_count).toLocaleString()}</b> 次</span><span>成功率 <b>{successRate.toFixed(1)}%</b></span><span>错误 <b>{(stats?.error_count || 0).toLocaleString()}</b> 次</span></div><div className="chart trend-chart">{trend.map((row, index) => <div className="bar" key={String(row.stat_date || index)}><i style={{ '--h': `${n(row.request_count) / max * 100}%` } as React.CSSProperties} /><small>{String(row.stat_date || '').slice(5)}</small></div>)}</div></>}</Panel>
       <Panel title="看 API 文档" desc="下游兼容接口与管理端接口速查" className="span-4"><div className="doc-list"><button onClick={() => window.location.hash = '#/docs'}>后端结构 <span>查看</span></button><button onClick={() => window.location.hash = '#/docs'}>API 需求 <span>查看</span></button><button onClick={() => window.location.hash = '#/docs'}>全部文档 <span>查看</span></button></div></Panel>
