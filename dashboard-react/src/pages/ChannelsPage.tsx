@@ -113,14 +113,27 @@ function Mappings({ channel, onClose, onChanged }: { channel: Channel; onClose: 
     }
   }
   const save = async (input: ChannelModelInput | ChannelModelUpdate) => { if (editor) { const updateInput: ChannelModelUpdate = { upstream_model: input.upstream_model, enabled: input.enabled }; await updateChannelModel(channel.id, editor.id, updateInput) } else { if (!('model_name' in input)) throw new Error('新建映射缺少对外模型名'); await createChannelModel(channel.id, input) } setEditor(undefined); onChanged(); await query.refetch() }
-  return <Modal title={`模型映射 · ${channel.name}`} onClose={onClose}>
-    <div className="modal-toolbar"><button type="button" className="button ghost" onClick={() => void loadRemote()}>拉取远端模型</button><button type="button" className="button ghost" disabled={!remote.length || mapping} onClick={() => void mapModels(remote.map(item => item.id))}>一键全部映射</button><button type="button" className="button primary" onClick={() => setEditor(null)}>手动添加映射</button></div>
-    {remoteError && <p className="error">{remoteError}</p>}
-    {remote.length > 0 && <div className="remote-models">{remote.map(item => { const done = mapped.has(item.id); return <button type="button" key={item.id} className="remote-model" disabled={done || mapping} onClick={() => void mapModels([item.id])}><b>{item.id}</b><small>{item.id}：{item.id}</small><span>{done ? '已映射' : '点击映射'}</span></button> })}</div>}
-    {query.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>对外模型</th><th>上游模型</th><th>状态</th><th /></tr></thead><tbody>{query.data?.list.map(row => <tr key={row.id}><td>{row.model_name}</td><td>{row.upstream_model}</td><td><span className={`badge ${row.enabled ? 'ok-bg' : 'danger-bg'}`}>{row.enabled ? '启用' : '停用'}</span></td><td><button className="button ghost" onClick={() => setEditor(row)}>编辑</button><button className="button delete" onClick={() => { if (window.confirm('删除该映射？')) void deleteChannelModel(channel.id, row.id).then(() => { onChanged(); void query.refetch() }) }}>删除</button></td></tr>)}</tbody></table></div>}
+  return <>
+    <Modal title={`模型映射 · ${channel.name}`} onClose={onClose}>
+      <div className="modal-toolbar"><button type="button" className="button ghost" onClick={() => void loadRemote()}>拉取远端模型</button><button type="button" className="button ghost" disabled={!remote.length || mapping} onClick={() => void mapModels(remote.map(item => item.id))}>一键全部映射</button><button type="button" className="button primary" onClick={() => setEditor(null)}>手动添加映射</button></div>
+      {remoteError && <p className="error">{remoteError}</p>}
+      {remote.length > 0 && <div className="remote-models">{remote.map(item => { const done = mapped.has(item.id); return <button type="button" key={item.id} className="remote-model" disabled={done || mapping} onClick={() => void mapModels([item.id])}><b>{item.id}</b><small>{item.id}：{item.id}</small><span>{done ? '已映射' : '点击映射'}</span></button> })}</div>}
+      {query.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap mappings-table"><table><thead><tr><th>对外模型</th><th>上游模型</th><th /></tr></thead><tbody>{query.data?.list.map(row => <tr key={row.id}><td>{row.model_name}</td><td>{row.upstream_model}</td><td><button className="button ghost" onClick={() => setEditor(row)}>编辑</button><button className="button delete" onClick={() => { if (window.confirm('删除该映射？')) void deleteChannelModel(channel.id, row.id).then(() => { onChanged(); void query.refetch() }) }}>删除</button></td></tr>)}</tbody></table></div>}
+    </Modal>
     {editor !== undefined && <MappingEditor mapping={editor} onClose={() => setEditor(undefined)} onSave={save} />}
-  </Modal>
+  </>
 }
 
-function MappingEditor({ mapping, onClose, onSave }: { mapping: ChannelModel | null; onClose: () => void; onSave: (input: ChannelModelInput | ChannelModelUpdate) => Promise<void> }) { return <Modal title={mapping ? '编辑映射' : '添加映射'} submitText="保存" onClose={onClose} onSubmit={async event => { const form = new FormData(event.currentTarget); await onSave({ model_name: String(form.get('model_name') || ''), upstream_model: String(form.get('upstream_model') || ''), enabled: form.get('enabled') === 'on' }) }}><Field label="对外模型名" name="model_name" defaultValue={mapping?.model_name} readOnly={Boolean(mapping)} required /><Field label="上游模型名" name="upstream_model" defaultValue={mapping?.upstream_model} required /><label className="checkbox"><input name="enabled" type="checkbox" defaultChecked={mapping?.enabled ?? true} /> 启用</label></Modal> }
+function MappingEditor({ mapping, onClose, onSave }: { mapping: ChannelModel | null; onClose: () => void; onSave: (input: ChannelModelInput | ChannelModelUpdate) => Promise<void> }) {
+  return <Modal title={mapping ? '编辑映射' : '添加映射'} submitText="保存" onClose={onClose} onSubmit={async event => {
+    const form = new FormData(event.currentTarget)
+    await onSave({ model_name: String(form.get('model_name') || ''), upstream_model: String(form.get('upstream_model') || ''), enabled: form.get('enabled') === 'on' })
+  }}>
+    <div className="form-grid mapping-form">
+      <Field label="对外模型名" name="model_name" defaultValue={mapping?.model_name} readOnly={Boolean(mapping)} required />
+      <Field label="上游模型名" name="upstream_model" defaultValue={mapping?.upstream_model} required />
+      <label className="checkbox"><input name="enabled" type="checkbox" defaultChecked={mapping?.enabled ?? true} /> 启用</label>
+    </div>
+  </Modal>
+}
 function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) { return <label><span>{label}</span><input {...props} /></label> }
