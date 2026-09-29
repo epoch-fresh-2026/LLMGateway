@@ -12,15 +12,15 @@
    Copy-Item deployments/.env.example deployments/.env
    ```
 
-   - `POSTGRES_PASSWORD`：数据库密码，使用足够长的随机值。
-   - `CHANNEL_KEY_ENCRYPTION_KEY`：恰好 16、24 或 32 个 ASCII 字节；用于加密上游渠道密钥，保存渠道后不可再修改，否则无法解密已有渠道密钥。
+    - `POSTGRES_PASSWORD`：数据库密码，使用足够长的随机值。
+    - `CHANNEL_KEY_ENCRYPTION_KEY`：恰好 16、24 或 32 个 ASCII 字节；用于加密上游渠道密钥，保存渠道后不可再修改，否则无法解密已有渠道密钥。
 
    以下会话/安全变量可选（缺省值见 `deployments/.env.example`）：
 
-   - `SESSION_TTL_SECONDS`：登录会话有效期，默认 604800（7 天）。
-   - `SESSION_COOKIE_SECURE`：默认 `true`。**纯 HTTP 本地部署必须设为 `false`**，否则浏览器不会保存会话 Cookie。
-   - `REGISTRATION_ENABLED`：默认 `true`；设为 `false` 可关闭公开注册。
-   - `BCRYPT_COST`：密码哈希成本，默认 10，范围 4–31。
+    - `SESSION_TTL_SECONDS`：登录会话有效期，默认 604800（7 天）。
+    - `SESSION_COOKIE_SECURE`：默认 `true`。**纯 HTTP 本地部署必须设为 `false`**，否则浏览器不会保存会话 Cookie。
+    - `REGISTRATION_ENABLED`：默认 `true`；设为 `false` 可关闭公开注册。
+    - `BCRYPT_COST`：密码哈希成本，默认 10，范围 4–31。
 
 2. 在仓库根目录启动：
 
