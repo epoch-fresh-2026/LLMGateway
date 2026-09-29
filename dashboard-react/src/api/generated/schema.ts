@@ -874,7 +874,7 @@ export interface components {
             target_type: "user" | "api_key" | "model" | "channel";
             target_value?: string;
             /** @enum {string} */
-            metric: "rpm" | "tpm" | "rpd" | "concurrency";
+            metric: "rpm" | "tpm" | "concurrency";
             limit_value: number;
             window_seconds: number;
             /** @enum {string} */
@@ -891,7 +891,7 @@ export interface components {
             target_type?: "user" | "api_key" | "model" | "channel";
             target_value?: string;
             /** @enum {string} */
-            metric?: "rpm" | "tpm" | "rpd" | "concurrency";
+            metric?: "rpm" | "tpm" | "concurrency";
             limit_value?: number;
             window_seconds?: number;
             /** @enum {string} */

@@ -7,8 +7,8 @@ import (
 )
 
 func TestOverridesParseAllMetricsAndOnlyKeyScope(t *testing.T) {
-	overrides := ParseOverrides(json.RawMessage(`{"rpm":2,"tpm":100,"rpd":3,"concurrency":1}`))
-	if overrides.RPM != 2 || overrides.TPM != 100 || overrides.RPD != 3 || overrides.Concurrency != 1 {
+	overrides := ParseOverrides(json.RawMessage(`{"rpm":2,"tpm":100,"concurrency":1}`))
+	if overrides.RPM != 2 || overrides.TPM != 100 || overrides.Concurrency != 1 {
 		t.Fatalf("overrides = %+v", overrides)
 	}
 	if _, ok := overrides.ForRule(RateLimitRuleDTO{TargetType: "user", Metric: "rpm"}); ok {

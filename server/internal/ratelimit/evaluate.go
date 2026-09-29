@@ -9,19 +9,19 @@ import (
 // Overrides is the per-Key rate-limit override embedded in a gateway key's
 // rate_limit_overrides JSON. Zero values mean "not overridden".
 type Overrides struct {
-	RPM, TPM, RPD, Concurrency int64
-	RPMWindowSeconds           int
+	RPM, TPM, Concurrency int64
+	RPMWindowSeconds      int
 }
 
 // ParseOverrides decodes raw gateway-key override JSON. Malformed input yields
 // the zero Overrides so callers fall back to the matching rules.
 func ParseOverrides(raw json.RawMessage) Overrides {
 	var value struct {
-		RPM, TPM, RPD, Concurrency int64
-		RPMWindowSeconds           int `json:"rpm_window_seconds"`
+		RPM, TPM, Concurrency int64
+		RPMWindowSeconds      int `json:"rpm_window_seconds"`
 	}
 	_ = json.Unmarshal(raw, &value)
-	return Overrides{RPM: value.RPM, TPM: value.TPM, RPD: value.RPD, Concurrency: value.Concurrency, RPMWindowSeconds: value.RPMWindowSeconds}
+	return Overrides{RPM: value.RPM, TPM: value.TPM, Concurrency: value.Concurrency, RPMWindowSeconds: value.RPMWindowSeconds}
 }
 
 // ForRule returns the override value that replaces a matching rule's limit.
@@ -36,8 +36,6 @@ func (o Overrides) ForRule(rule RateLimitRuleDTO) (int64, bool) {
 		return o.RPM, o.RPM > 0
 	case "tpm":
 		return o.TPM, o.TPM > 0
-	case "rpd":
-		return o.RPD, o.RPD > 0
 	case "concurrency":
 		return o.Concurrency, o.Concurrency > 0
 	}
@@ -83,12 +81,7 @@ func RequestWindowStart(now time.Time, windowSeconds int) time.Time {
 	return time.Unix(seconds-(seconds%int64(windowSeconds)), 0).UTC()
 }
 
-// MetricSince returns the UTC lower bound of the lookback window for a metric.
-// rpd resets at UTC midnight; other metrics use a trailing window.
-func MetricSince(now time.Time, metric string, windowSeconds int) time.Time {
-	now = now.UTC()
-	if metric == "rpd" {
-		return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	}
-	return now.Add(-time.Duration(windowSeconds) * time.Second)
+// MetricSince returns the UTC lower bound of the trailing lookback window.
+func MetricSince(now time.Time, windowSeconds int) time.Time {
+	return now.UTC().Add(-time.Duration(windowSeconds) * time.Second)
 }

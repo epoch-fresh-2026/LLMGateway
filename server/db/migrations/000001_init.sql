@@ -109,7 +109,7 @@ CREATE TABLE rate_limit_rules (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (target_type IN ('user', 'api_key', 'model', 'channel')),
-    CHECK (metric IN ('rpm', 'tpm', 'rpd', 'concurrency')),
+    CHECK (metric IN ('rpm', 'tpm', 'concurrency')),
     -- Queueing synchronous proxy requests is unsupported, so 'reject' is the
     -- only valid action.
     CHECK (action = 'reject')
