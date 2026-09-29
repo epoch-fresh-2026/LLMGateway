@@ -161,14 +161,28 @@ func (s *Store) InsertChannelModel(_ context.Context, channelID int, in domain.C
 	return m, nil
 }
 
-func (s *Store) UpdateChannelModelRecord(_ context.Context, channelID, modelID int, upstreamModel string, enabled bool) (domain.ChannelModel, bool, error) {
+func (s *Store) GetChannelModelByID(_ context.Context, channelID, modelID int) (domain.ChannelModel, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m, ok := s.models[channelID][modelID]
 	if !ok {
 		return domain.ChannelModel{}, false, nil
 	}
-	m.UpstreamModel, m.Enabled = upstreamModel, enabled
+	return *m, true, nil
+}
+
+func (t *catalogTx) UpdateChannelModelRecord(channelID, modelID int, modelName string, enabled bool) (domain.ChannelModel, bool, error) {
+	m, ok := t.s.models[channelID][modelID]
+	if !ok {
+		return domain.ChannelModel{}, false, nil
+	}
+	if modelName != "" && modelName != m.ModelName {
+		if t.s.hasChannelModelLocked(channelID, modelName) {
+			return domain.ChannelModel{}, false, fmt.Errorf("%w: model mapping already exists", store.ErrInvalid)
+		}
+		m.ModelName = modelName
+	}
+	m.Enabled = enabled
 	return *m, true, nil
 }
 
@@ -244,10 +258,10 @@ func (s *Store) UpsertPricingRecord(_ context.Context, in domain.PricingRecord) 
 		return domain.PricingDTO{}, store.ErrNotFound
 	}
 
-	key := pricingKey(in.ChannelID, in.ModelName)
+	key := pricingKey(in.ChannelID, in.UpstreamModel)
 	p := s.pricing[key]
 	if p == nil {
-		p = &domain.Pricing{ID: s.nextPricingID, ChannelID: in.ChannelID, ModelName: in.ModelName}
+		p = &domain.Pricing{ID: s.nextPricingID, ChannelID: in.ChannelID, UpstreamModel: in.UpstreamModel}
 		s.nextPricingID++
 		s.pricing[key] = p
 	}
@@ -261,18 +275,28 @@ func (s *Store) UpsertPricingRecord(_ context.Context, in domain.PricingRecord) 
 func (s *Store) DeletePricing(_ context.Context, in domain.DeletePricingInput) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.pricing, pricingKey(in.ChannelID, in.ModelName))
+	delete(s.pricing, pricingKey(in.ChannelID, in.UpstreamModel))
 	return nil
 }
 
-func (s *Store) GetPricing(_ context.Context, channelID int, modelName string) (domain.PricingDTO, error) {
+func (s *Store) GetPricing(_ context.Context, channelID int, upstreamModel string) (domain.PricingDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	pricing, ok := s.pricing[pricingKey(channelID, modelName)]
+	pricing, ok := s.pricing[pricingKey(channelID, upstreamModel)]
 	if !ok {
 		return domain.PricingDTO{}, store.ErrNotFound
 	}
 	return s.pricingDTO(pricing), nil
+}
+
+func (s *Store) ChannelUpstreamExists(_ context.Context, ownerUserID, channelID int, upstreamModel string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	channel, ok := s.channels[channelID]
+	if !ok || channel.OwnerUserID != ownerUserID {
+		return false, nil
+	}
+	return s.hasChannelUpstreamLocked(channelID, upstreamModel), nil
 }
 
 func (s *Store) RouteCandidates(_ context.Context, ownerUserID int, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {

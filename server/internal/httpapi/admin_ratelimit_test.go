@@ -9,7 +9,7 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 	handler := newTestServer()
 
 	created := adminDo(t, handler, http.MethodPost, "/admin/rate-limits", map[string]any{
-		"rule_name": "default user rpm", "target_type": "user", "metric": "rpm", "limit_value": 600, "window_seconds": 60, "action": "reject",
+		"rule_name": "default user rpm", "target_type": "user", "metric": "rpm", "limit_value": 600, "action": "reject",
 	})
 	rule := created["data"].(map[string]any)
 	if rule["id"].(float64) != 1 || rule["target_value"] != "*" || rule["enabled"] != true {
@@ -41,13 +41,13 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 	}
 
 	invalid := adminRaw(t, handler, http.MethodPost, "/admin/rate-limits", map[string]any{
-		"rule_name": "bad", "target_type": "user", "metric": "bogus", "limit_value": 1, "window_seconds": 1, "action": "reject",
+		"rule_name": "bad", "target_type": "user", "metric": "bogus", "limit_value": 1, "action": "reject",
 	})
 	if invalid.Code != http.StatusBadRequest {
 		t.Fatalf("invalid metric status = %d, want 400", invalid.Code)
 	}
 	queue := adminRaw(t, handler, http.MethodPost, "/admin/rate-limits", map[string]any{
-		"rule_name": "queue", "target_type": "user", "metric": "rpm", "limit_value": 1, "window_seconds": 60, "action": "queue",
+		"rule_name": "queue", "target_type": "user", "metric": "rpm", "limit_value": 1, "action": "queue",
 	})
 	if queue.Code != http.StatusBadRequest {
 		t.Fatalf("queue action status = %d, want 400", queue.Code)

@@ -91,7 +91,7 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts
 	if _, err := handler.catalog.CreateChannelModel(context.Background(), 1, channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := handler.catalog.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: channelID, ModelName: "gpt", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"}); err != nil {
+	if _, err := handler.catalog.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: channelID, UpstreamModel: "up-gpt", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -482,8 +482,8 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 func TestChatCompletionsTokenRateLimitRejectsConservatively(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	metric, target, action := "tpm", "user", "reject"
-	limit, window, priority := int64(1), 60, 1
-	if _, err := f.ratelimit.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: stringPointer("token limit"), TargetType: &target, TargetValue: stringPointer("1"), Metric: &metric, LimitValue: &limit, WindowSeconds: &window, Action: &action, Priority: &priority}); err != nil {
+	limit, priority := int64(1), 1
+	if _, err := f.ratelimit.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: stringPointer("token limit"), TargetType: &target, TargetValue: stringPointer("1"), Metric: &metric, LimitValue: &limit, Action: &action, Priority: &priority}); err != nil {
 		t.Fatal(err)
 	}
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
@@ -528,7 +528,7 @@ func TestChatCompletionsRateLimited(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	rule, err := f.ratelimit.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{
 		RuleName: stringPointer("user rpm"), TargetType: stringPointer("user"), TargetValue: stringPointer("1"), Metric: stringPointer("rpm"),
-		LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject"),
+		LimitValue: int64Pointer(1), Action: stringPointer("reject"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -616,13 +616,13 @@ func TestChatCompletionsModelRateLimitCountsOnlySameModel(t *testing.T) {
 	if _, err := f.catalog.CreateChannelModel(context.Background(), 1, 1, domain.ChannelModel{ModelName: "gpt-other", UpstreamModel: "up-other", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.catalog.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: 1, ModelName: "gpt-other", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := f.catalog.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: 1, UpstreamModel: "up-other", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.store.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "prior-other", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt-other", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.ratelimit.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: stringPointer("gpt rpm"), TargetType: stringPointer("model"), TargetValue: stringPointer("gpt"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
+	if _, err := f.ratelimit.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: stringPointer("gpt rpm"), TargetType: stringPointer("model"), TargetValue: stringPointer("gpt"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), Action: stringPointer("reject")}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -643,7 +643,7 @@ func TestChatCompletionsChannelRateLimitAfterRouting(t *testing.T) {
 	if _, err := f.store.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "prior-channel", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.ratelimit.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: stringPointer("channel rpm"), TargetType: stringPointer("channel"), TargetValue: stringPointer("1"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
+	if _, err := f.ratelimit.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: stringPointer("channel rpm"), TargetType: stringPointer("channel"), TargetValue: stringPointer("1"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), Action: stringPointer("reject")}); err != nil {
 		t.Fatal(err)
 	}
 

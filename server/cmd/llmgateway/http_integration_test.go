@@ -145,10 +145,10 @@ func TestHTTPIntegrationMutationAndDeleteBody(t *testing.T) {
 	assertHTTPStatus(t, res, http.StatusOK)
 
 	res = sendHTTPJSON(t, server, http.MethodPost, "/admin/pricing", map[string]any{
-		"channel_id": 1, "model_name": "contract-model", "input_price_per_1m": "0.100000", "output_price_per_1m": "0.200000", "currency": "USD",
+		"channel_id": 1, "upstream_model": "contract-upstream", "input_price_per_1m": "0.100000", "output_price_per_1m": "0.200000", "currency": "USD",
 	})
 	assertHTTPStatus(t, res, http.StatusOK)
-	res = sendHTTPJSON(t, server, http.MethodDelete, "/admin/pricing", map[string]any{"channel_id": 1, "model_name": "contract-model"})
+	res = sendHTTPJSON(t, server, http.MethodDelete, "/admin/pricing", map[string]any{"channel_id": 1, "upstream_model": "contract-upstream"})
 	assertHTTPStatus(t, res, http.StatusOK)
 	var deleted httpAdminEnvelope
 	decodeHTTPJSON(t, res, &deleted)

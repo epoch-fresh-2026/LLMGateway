@@ -12,21 +12,23 @@ func (a *Server) ListPricing(ctx context.Context, ownerUserID int) (ListResponse
 	return a.store.ListPricing(ctx, ownerUserID)
 }
 
-// UpsertPricing validates the target channel and model mapping, normalizes the
-// 8-decimal prices and persists the row.
+// UpsertPricing validates the target channel and that the channel maps the
+// upstream (real) model, normalizes the 8-decimal prices and persists the row.
+// Pricing is keyed by the upstream model so every public alias that routes to
+// the same real model shares one price.
 func (a *Server) UpsertPricing(ctx context.Context, ownerUserID int, in PricingInput) (PricingDTO, error) {
-	if in.ChannelID <= 0 || strings.TrimSpace(in.ModelName) == "" {
-		return PricingDTO{}, fmt.Errorf("%w: channel_id and model_name are required", ErrInvalid)
+	if in.ChannelID <= 0 || strings.TrimSpace(in.UpstreamModel) == "" {
+		return PricingDTO{}, fmt.Errorf("%w: channel_id and upstream_model are required", ErrInvalid)
 	}
 	if _, err := a.store.GetChannelDTO(ctx, ownerUserID, in.ChannelID); err != nil {
 		return PricingDTO{}, err
 	}
-	exists, err := a.store.ChannelModelExists(ctx, ownerUserID, in.ChannelID, in.ModelName)
+	exists, err := a.store.ChannelUpstreamExists(ctx, ownerUserID, in.ChannelID, in.UpstreamModel)
 	if err != nil {
 		return PricingDTO{}, err
 	}
 	if !exists {
-		return PricingDTO{}, fmt.Errorf("%w: model mapping not found", ErrInvalid)
+		return PricingDTO{}, fmt.Errorf("%w: upstream model mapping not found", ErrInvalid)
 	}
 
 	inputPrice, err := normalizePrice(in.InputPricePer1M, "input_price_per_1m")
@@ -48,7 +50,7 @@ func (a *Server) UpsertPricing(ctx context.Context, ownerUserID int, in PricingI
 
 	return a.store.UpsertPricingRecord(ctx, PricingRecord{
 		ChannelID:             in.ChannelID,
-		ModelName:             in.ModelName,
+		UpstreamModel:         in.UpstreamModel,
 		InputPricePer1M:       inputPrice,
 		OutputPricePer1M:      outputPrice,
 		CachedInputPricePer1M: cachedPrice,
@@ -63,8 +65,8 @@ func (a *Server) DeletePricing(ctx context.Context, ownerUserID int, in DeletePr
 	return a.store.DeletePricing(ctx, in)
 }
 
-func (a *Server) GetPricing(ctx context.Context, channelID int, modelName string) (PricingDTO, error) {
-	return a.store.GetPricing(ctx, channelID, modelName)
+func (a *Server) GetPricing(ctx context.Context, channelID int, upstreamModel string) (PricingDTO, error) {
+	return a.store.GetPricing(ctx, channelID, upstreamModel)
 }
 
 func normalizePrice(value string, field string) (string, error) {

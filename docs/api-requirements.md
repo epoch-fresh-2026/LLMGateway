@@ -487,10 +487,12 @@ page_size=20
 
 ```json
 {
-  "upstream_model": "gpt-4o-mini",
+  "model_name": "gpt-4o-mini",
   "enabled": true
 }
 ```
+
+`model_name` 可省略（保持现有对外模型名）；提供时重命名对外别名，同一渠道内不允许重复。上游模型名由上游设置，创建后不可修改；定价按上游模型绑定，因此改别名不影响价格。
 
 ### DELETE /admin/channels/:id/models/:model_id
 
@@ -620,7 +622,6 @@ enabled=true
       "target_value": "*",
       "metric": "rpm",
       "limit_value": 600,
-      "window_seconds": 60,
       "action": "reject",
       "priority": 100,
       "enabled": true,
@@ -648,7 +649,7 @@ tpm
 concurrency
 ```
 
-> 限流只覆盖短窗口速率控制（`rpm`/`tpm`/`concurrency`），全部使用滚动窗口。
+> 限流只覆盖短窗口速率控制：`rpm`、`tpm` 固定按 **60 秒**统计（`rpm` 为每分钟请求数、`tpm` 为每分钟 token 数），`concurrency` 按当前活跃请求数瞬时判定。不再提供 `window_seconds` 字段。
 > `tpd`（自然日 token 上限）已废弃：日 token/费用预算由配额模块（`/admin/quota-policies`）承担，具备原子预留与费用维度。
 
 支持的 `action`：
@@ -670,7 +671,6 @@ reject
   "target_value": "*",
   "metric": "rpm",
   "limit_value": 600,
-  "window_seconds": 60,
   "action": "reject",
   "priority": 100,
   "enabled": true,
@@ -696,6 +696,8 @@ reject
 
 ## 计费定价
 
+定价按**上游真实模型**绑定(唯一键 `(channel_id, upstream_model)`),同一渠道内多个对外别名映射到同一上游模型时共享一条定价。上游模型名由上游设置、网关不可修改,因此改对外别名不会影响价格。渠道未配置对应上游模型的映射时,定价创建返回 400。
+
 ### GET /admin/pricing
 
 查询参数：
@@ -714,7 +716,6 @@ page_size=100
       "id": 1,
       "channel_id": 1,
       "channel_name": "OpenAI",
-      "model_name": "gpt-4o-mini",
       "upstream_model": "gpt-4o-mini",
       "input_price_per_1m": "0.15000000",
       "output_price_per_1m": "0.60000000",
@@ -735,7 +736,7 @@ page_size=100
 ```json
 {
   "channel_id": 1,
-  "model_name": "gpt-4o-mini",
+  "upstream_model": "gpt-4o-mini",
   "input_price_per_1m": "0.15000000",
   "output_price_per_1m": "0.60000000",
   "cached_input_price_per_1m": "0.07500000",
@@ -750,7 +751,7 @@ page_size=100
 ```json
 {
   "channel_id": 1,
-  "model_name": "gpt-4o-mini"
+  "upstream_model": "gpt-4o-mini"
 }
 ```
 

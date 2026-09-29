@@ -10,7 +10,7 @@ import (
 	"LLMGateway/server/internal/quota"
 )
 
-func (a *Service) reserveQuota(ctx context.Context, requestID string, auth *accounts.AuthContext, req ChatRequest, channelID int) (quota.QuotaReservation, error) {
+func (a *Service) reserveQuota(ctx context.Context, requestID string, auth *accounts.AuthContext, req ChatRequest, channelID int, upstreamModel string) (quota.QuotaReservation, error) {
 	if a.adapter.EstimateUsage == nil {
 		return quota.QuotaReservation{}, ErrInvalidRequest
 	}
@@ -18,7 +18,7 @@ func (a *Service) reserveQuota(ctx context.Context, requestID string, auth *acco
 	if err != nil {
 		return quota.QuotaReservation{}, ErrInvalidRequest
 	}
-	estimatedCost, err := a.estimatedCost(ctx, channelID, req.Model, estimate)
+	estimatedCost, err := a.estimatedCost(ctx, channelID, upstreamModel, estimate)
 	if err != nil {
 		return quota.QuotaReservation{}, err
 	}
@@ -33,8 +33,8 @@ func (a *Service) reserveQuota(ctx context.Context, requestID string, auth *acco
 	return reservation, err
 }
 
-func (a *Service) estimatedCost(ctx context.Context, channelID int, model string, estimate EstimatedUsage) (string, error) {
-	pricing, err := a.catalog.GetPricing(ctx, channelID, model)
+func (a *Service) estimatedCost(ctx context.Context, channelID int, upstreamModel string, estimate EstimatedUsage) (string, error) {
+	pricing, err := a.catalog.GetPricing(ctx, channelID, upstreamModel)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return "0.000000", nil

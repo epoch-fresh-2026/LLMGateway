@@ -22,18 +22,21 @@ type Port interface {
 	DeleteChannel(ctx context.Context, ownerUserID, id int) (bool, error)
 
 	ListChannelModels(ctx context.Context, ownerUserID, channelID int) (ListResponse[ChannelModel], error)
+	GetChannelModelByID(ctx context.Context, channelID, modelID int) (ChannelModel, bool, error)
 	InsertChannelModel(ctx context.Context, channelID int, in ChannelModel) (ChannelModel, error)
-	UpdateChannelModelRecord(ctx context.Context, channelID, modelID int, upstreamModel string, enabled bool) (ChannelModel, bool, error)
 	DeleteChannelModel(ctx context.Context, channelID, modelID int) (bool, error)
 	// ChannelModelExists reports whether a model mapping exists on a channel.
 	ChannelModelExists(ctx context.Context, ownerUserID, channelID int, modelName string) (bool, error)
+	// ChannelUpstreamExists reports whether a channel maps any public alias to
+	// the given upstream model, so pricing can only target a real model.
+	ChannelUpstreamExists(ctx context.Context, ownerUserID, channelID int, upstreamModel string) (bool, error)
 
 	ListCatalogModels(ctx context.Context, ownerUserID int, enabledOnly bool) (ListResponse[CatalogModelDTO], error)
 
 	ListPricing(ctx context.Context, ownerUserID int) (ListResponse[PricingDTO], error)
 	UpsertPricingRecord(ctx context.Context, in PricingRecord) (PricingDTO, error)
 	DeletePricing(ctx context.Context, in DeletePricingInput) error
-	GetPricing(ctx context.Context, channelID int, modelName string) (PricingDTO, error)
+	GetPricing(ctx context.Context, channelID int, upstreamModel string) (PricingDTO, error)
 
 	// RouteCandidates returns enabled mappings on enabled, non-open channels for
 	// a public model owned by ownerUserID, ordered by priority desc, weight desc,
@@ -59,6 +62,10 @@ type Tx interface {
 	DeleteChannelBreakerConfig(channelID int) error
 	UpsertUserBreakerConfig(ownerUserID int, cfg ChannelBreakerConfig) error
 	DeleteUserBreakerConfig(ownerUserID int) error
+
+	// UpdateChannelModelRecord renames a mapping's public model name and toggles
+	// it. The upstream model name is upstream-owned and cannot change.
+	UpdateChannelModelRecord(channelID, modelID int, modelName string, enabled bool) (ChannelModel, bool, error)
 
 	LockChannel(ownerUserID, channelID int) error
 	GetChannelBalanceText(ownerUserID, channelID int) (string, error)

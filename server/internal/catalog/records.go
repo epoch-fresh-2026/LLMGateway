@@ -40,10 +40,11 @@ type ChannelUpdate struct {
 	APIKeyCiphertext string
 }
 
-// PricingRecord is the normalized persistence input for a pricing row.
+// PricingRecord is the normalized persistence input for a pricing row. It is
+// keyed by the upstream (real) model name, not the public alias.
 type PricingRecord struct {
 	ChannelID             int
-	ModelName             string
+	UpstreamModel         string
 	InputPricePer1M       string
 	OutputPricePer1M      string
 	CachedInputPricePer1M string

@@ -60,17 +60,19 @@ CREATE TABLE channel_models (
     UNIQUE (channel_id, model_name)
 );
 
+-- Pricing is bound to the upstream (real) model name, which the upstream sets
+-- and the gateway cannot change, so renaming a public alias never affects price.
 CREATE TABLE model_pricing (
     id BIGSERIAL PRIMARY KEY,
     channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-    model_name TEXT NOT NULL,
+    upstream_model TEXT NOT NULL,
     input_price_per_1m NUMERIC(20, 8) NOT NULL,
     output_price_per_1m NUMERIC(20, 8) NOT NULL,
     cached_input_price_per_1m NUMERIC(20, 8),
     currency TEXT NOT NULL DEFAULT 'USD',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (channel_id, model_name)
+    UNIQUE (channel_id, upstream_model)
 );
 
 CREATE TABLE client_api_keys (
@@ -101,7 +103,6 @@ CREATE TABLE rate_limit_rules (
     target_value TEXT NOT NULL DEFAULT '*',
     metric TEXT NOT NULL,
     limit_value BIGINT NOT NULL,
-    window_seconds INTEGER NOT NULL,
     action TEXT NOT NULL DEFAULT 'reject',
     priority INTEGER NOT NULL DEFAULT 100,
     enabled BOOLEAN NOT NULL DEFAULT true,

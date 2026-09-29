@@ -19,13 +19,6 @@ func TestOverridesParseAllMetricsAndOnlyKeyScope(t *testing.T) {
 	}
 }
 
-func TestOverridesParseRPMWindow(t *testing.T) {
-	overrides := ParseOverrides(json.RawMessage(`{"rpm":2,"rpm_window_seconds":300}`))
-	if overrides.RPMWindowSeconds != 300 {
-		t.Fatalf("window = %d, want 300", overrides.RPMWindowSeconds)
-	}
-}
-
 func TestSlidingWindowCountWeightsPreviousBucket(t *testing.T) {
 	now := time.Unix(125, 0).UTC()
 	if got := SlidingWindowCount(10, 20, 10, now, time.Unix(120, 0).UTC()); got != 25 {

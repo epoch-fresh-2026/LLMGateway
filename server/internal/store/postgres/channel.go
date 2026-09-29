@@ -142,12 +142,23 @@ func (s *Store) InsertChannelModel(ctx context.Context, channelID int, in domain
 	return domain.ChannelModel{ID: int(row.ID), ModelName: row.ModelName, UpstreamModel: row.UpstreamModel, Enabled: row.Enabled}, nil
 }
 
-func (s *Store) UpdateChannelModelRecord(ctx context.Context, channelID, modelID int, upstreamModel string, enabled bool) (domain.ChannelModel, bool, error) {
-	row, err := s.queries.UpdateChannelModel(ctx, sqlc.UpdateChannelModelParams{
-		UpstreamModel: upstreamModel,
-		Enabled:       enabled,
-		ChannelID:     int64(channelID),
-		ID:            int64(modelID),
+func (s *Store) GetChannelModelByID(ctx context.Context, channelID, modelID int) (domain.ChannelModel, bool, error) {
+	row, err := s.queries.GetChannelModelByID(ctx, sqlc.GetChannelModelByIDParams{ChannelID: int64(channelID), ID: int64(modelID)})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ChannelModel{}, false, nil
+		}
+		return domain.ChannelModel{}, false, mapError(err)
+	}
+	return domain.ChannelModel{ID: int(row.ID), ModelName: row.ModelName, UpstreamModel: row.UpstreamModel, Enabled: row.Enabled}, true, nil
+}
+
+func (t *Tx) UpdateChannelModelRecord(channelID, modelID int, modelName string, enabled bool) (domain.ChannelModel, bool, error) {
+	row, err := t.queries.UpdateChannelModel(t.ctx, sqlc.UpdateChannelModelParams{
+		ModelName: modelName,
+		Enabled:   enabled,
+		ChannelID: int64(channelID),
+		ID:        int64(modelID),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -209,7 +220,7 @@ func (s *Store) ListPricing(ctx context.Context, ownerUserID int) (domain.ListRe
 	}
 	list := []domain.PricingDTO{}
 	for _, row := range rows {
-		list = append(list, pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.ModelName, textOrEmpty(row.UpstreamModel), row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency))
+		list = append(list, pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.UpstreamModel, row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency))
 	}
 	return domain.ListResponse[domain.PricingDTO]{List: list, Total: len(list)}, nil
 }
@@ -221,7 +232,7 @@ func (s *Store) UpsertPricingRecord(ctx context.Context, in domain.PricingRecord
 	}
 	if _, err := s.queries.UpsertPricing(ctx, sqlc.UpsertPricingParams{
 		ChannelID:             int64(in.ChannelID),
-		ModelName:             in.ModelName,
+		UpstreamModel:         in.UpstreamModel,
 		InputPricePer1m:       in.InputPricePer1M,
 		OutputPricePer1m:      in.OutputPricePer1M,
 		CachedInputPricePer1m: cached,
@@ -230,29 +241,40 @@ func (s *Store) UpsertPricingRecord(ctx context.Context, in domain.PricingRecord
 		return domain.PricingDTO{}, mapError(err)
 	}
 
-	row, err := s.queries.GetPricing(ctx, sqlc.GetPricingParams{ChannelID: int64(in.ChannelID), ModelName: in.ModelName})
+	row, err := s.queries.GetPricing(ctx, sqlc.GetPricingParams{ChannelID: int64(in.ChannelID), UpstreamModel: in.UpstreamModel})
 	if err != nil {
 		return domain.PricingDTO{}, mapError(err)
 	}
-	return pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.ModelName, textOrEmpty(row.UpstreamModel), row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency), nil
+	return pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.UpstreamModel, row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency), nil
 }
 
 func (s *Store) DeletePricing(ctx context.Context, in domain.DeletePricingInput) error {
 	if err := s.queries.DeletePricing(ctx, sqlc.DeletePricingParams{
-		ChannelID: int64(in.ChannelID),
-		ModelName: in.ModelName,
+		ChannelID:     int64(in.ChannelID),
+		UpstreamModel: in.UpstreamModel,
 	}); err != nil {
 		return mapError(err)
 	}
 	return nil
 }
 
-func (s *Store) GetPricing(ctx context.Context, channelID int, modelName string) (domain.PricingDTO, error) {
-	row, err := s.queries.GetPricing(ctx, sqlc.GetPricingParams{ChannelID: int64(channelID), ModelName: modelName})
+func (s *Store) GetPricing(ctx context.Context, channelID int, upstreamModel string) (domain.PricingDTO, error) {
+	row, err := s.queries.GetPricing(ctx, sqlc.GetPricingParams{ChannelID: int64(channelID), UpstreamModel: upstreamModel})
 	if err != nil {
 		return domain.PricingDTO{}, mapError(err)
 	}
-	return pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.ModelName, textOrEmpty(row.UpstreamModel), row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency), nil
+	return pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.UpstreamModel, row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency), nil
+}
+
+func (s *Store) ChannelUpstreamExists(ctx context.Context, ownerUserID, channelID int, upstreamModel string) (bool, error) {
+	_, err := s.queries.ChannelUpstreamExists(ctx, sqlc.ChannelUpstreamExistsParams{ChannelID: int64(channelID), UpstreamModel: upstreamModel, OwnerUserID: int64(ownerUserID)})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, mapError(err)
+	}
+	return true, nil
 }
 
 func (s *Store) RouteCandidates(ctx context.Context, ownerUserID int, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {

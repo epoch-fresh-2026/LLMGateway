@@ -17,7 +17,7 @@ func TestPGRateLimitOwnerIsolation(t *testing.T) {
 	owner2 := testOwner(t, st)
 
 	created, err := rl.CreateRateLimit(context.Background(), owner1, domain.RateLimitInput{
-		RuleName: strp("mine"), TargetType: strp("user"), TargetValue: strp(strconv.Itoa(owner1)), Metric: strp("rpm"), LimitValue: i64p(1), WindowSeconds: intp(60), Action: strp("reject"),
+		RuleName: strp("mine"), TargetType: strp("user"), TargetValue: strp(strconv.Itoa(owner1)), Metric: strp("rpm"), LimitValue: i64p(1), Action: strp("reject"),
 	})
 	if err != nil {
 		t.Fatalf("CreateRateLimit: %v", err)
@@ -47,7 +47,7 @@ func TestPGRateLimitCRUDAndFilter(t *testing.T) {
 	_ = testOwner(t, st)
 
 	created, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{
-		RuleName: strp("default user rpm"), TargetType: strp("user"), Metric: strp("rpm"), LimitValue: i64p(600), WindowSeconds: intp(60), Action: strp("reject"),
+		RuleName: strp("default user rpm"), TargetType: strp("user"), Metric: strp("rpm"), LimitValue: i64p(600), Action: strp("reject"),
 	})
 	if err != nil {
 		t.Fatalf("CreateRateLimit: %v", err)
@@ -56,10 +56,10 @@ func TestPGRateLimitCRUDAndFilter(t *testing.T) {
 		t.Fatalf("unexpected rule: %+v", created)
 	}
 
-	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("q"), TargetType: strp("model"), Metric: strp("rpm"), LimitValue: i64p(1000), WindowSeconds: intp(60), Action: strp("queue")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("q"), TargetType: strp("model"), Metric: strp("rpm"), LimitValue: i64p(1000), Action: strp("queue")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("queue action err = %v, want ErrInvalid", err)
 	}
-	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("user"), Metric: strp("bogus"), LimitValue: i64p(1), WindowSeconds: intp(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("user"), Metric: strp("bogus"), LimitValue: i64p(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid metric err = %v, want ErrInvalid", err)
 	}
 

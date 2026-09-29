@@ -48,7 +48,7 @@ func TestRateLimitRejectsForeignTarget(t *testing.T) {
 	}
 
 	rule := func(targetType, targetValue string) domain.RateLimitInput {
-		return domain.RateLimitInput{RuleName: strp("rule"), TargetType: strp(targetType), TargetValue: strp(targetValue), Metric: strp("rpm"), LimitValue: int64p(1), WindowSeconds: intp(60), Action: strp("reject")}
+		return domain.RateLimitInput{RuleName: strp("rule"), TargetType: strp(targetType), TargetValue: strp(targetValue), Metric: strp("rpm"), LimitValue: int64p(1), Action: strp("reject")}
 	}
 
 	// Own resources are accepted.
@@ -80,12 +80,11 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 	rl := newRateLimit(st, nil)
 
 	created, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{
-		RuleName:      strp("default user rpm"),
-		TargetType:    strp("user"),
-		Metric:        strp("rpm"),
-		LimitValue:    int64p(600),
-		WindowSeconds: intp(60),
-		Action:        strp("reject"),
+		RuleName:   strp("default user rpm"),
+		TargetType: strp("user"),
+		Metric:     strp("rpm"),
+		LimitValue: int64p(600),
+		Action:     strp("reject"),
 	})
 	if err != nil {
 		t.Fatalf("CreateRateLimit: %v", err)
@@ -97,20 +96,20 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 		t.Fatalf("extras = %v, want {}", created.Extras)
 	}
 
-	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("nope"), Metric: strp("rpm"), LimitValue: int64p(1), WindowSeconds: intp(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("nope"), Metric: strp("rpm"), LimitValue: int64p(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid target_type err = %v, want ErrInvalid", err)
 	}
-	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("user"), Metric: strp("bogus"), LimitValue: int64p(1), WindowSeconds: intp(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("user"), Metric: strp("bogus"), LimitValue: int64p(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid metric err = %v, want ErrInvalid", err)
 	}
-	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("deprecated"), TargetType: strp("user"), Metric: strp("tpd"), LimitValue: int64p(1), WindowSeconds: intp(86400), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("deprecated"), TargetType: strp("user"), Metric: strp("tpd"), LimitValue: int64p(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("deprecated tpd metric err = %v, want ErrInvalid", err)
 	}
-	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("user"), Metric: strp("rpm"), LimitValue: int64p(0), WindowSeconds: intp(60), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("user"), Metric: strp("rpm"), LimitValue: int64p(0), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("non-positive limit err = %v, want ErrInvalid", err)
 	}
 
-	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("queue"), TargetType: strp("model"), Metric: strp("rpm"), LimitValue: int64p(1000), WindowSeconds: intp(60), Action: strp("queue")}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := rl.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strp("queue"), TargetType: strp("model"), Metric: strp("rpm"), LimitValue: int64p(1000), Action: strp("queue")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("queue action err = %v, want ErrInvalid", err)
 	}
 

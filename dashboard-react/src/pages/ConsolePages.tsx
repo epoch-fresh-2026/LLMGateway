@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { createRateLimit, deleteRateLimit, listRateLimits, updateRateLimit } from '../api/ratelimit'
 import { createQuotaPolicy, deleteQuotaPolicy, listQuotaPolicies, listQuotaUsage } from '../api/quota'
-import { createPricing, deletePricing, listChannels, listModels, listPricing } from '../api/catalog'
+import { createPricing, deletePricing, listChannelModels, listChannels, listModels, listPricing } from '../api/catalog'
 import { listKeys } from '../api/accounts'
 import { useSession } from '../auth/AuthProvider'
 import { Modal } from '../components/feedback/Modal'
@@ -51,7 +51,6 @@ export function LimitsPage() {
         target_value: targetType === 'user' ? '*' : targetValue,
         metric: String(form.get('metric') || 'rpm') as RateLimitCreateInput['metric'],
         limit_value: Number(form.get('limit_value')),
-        window_seconds: Number(form.get('window_seconds')),
         action: 'reject',
         priority: Number(form.get('priority') || 0),
         enabled: form.get('enabled') === 'on',
@@ -66,8 +65,8 @@ export function LimitsPage() {
   return <section className="panel">
     <div className="panel-head"><div><h3>限流规则</h3><p className="muted">rate_limit_rules · 短窗口速率控制</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void query.refetch()}>刷新</button><button className="button primary" onClick={() => { setError(''); setTargetType('user'); setTargetValue('*'); setCreating(true) }}>新建</button></div></div>
     {error && !creating && <p className="error">{error}</p>}
-    {query.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>规则名</th><th>作用域</th><th>目标</th><th>指标</th><th>限额</th><th>状态</th><th /></tr></thead><tbody>{query.data?.list.map(rule => <tr key={rule.id}><td>{rule.rule_name}</td><td>{rule.target_type}</td><td>{targetLabel(rule)}</td><td>{rule.metric}</td><td>{rule.limit_value} / {rule.window_seconds}s</td><td>{rule.enabled ? '启用' : '停用'}</td><td><button className="button ghost" onClick={() => void updateRateLimit(rule.id, { enabled: !rule.enabled }).then(() => query.refetch())}>切换</button><button className="button delete" onClick={() => void deleteRateLimit(rule.id).then(() => query.refetch())}>删除</button></td></tr>)}</tbody></table></div>}
-    {creating && <Modal title="新建限流规则" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">{error && <p className="error">{error}</p>}<Field label="规则名" name="rule_name" required /><label><span>作用域</span><select value={targetType} onChange={event => changeTarget(event.target.value)}><option value="user">user（当前用户）</option><option value="api_key">api_key（指定密钥）</option><option value="model">model（指定模型）</option><option value="channel">channel（指定渠道）</option></select></label><label><span>目标值</span>{targetType === 'user' ? <input value="本人（当前用户全部请求）" readOnly disabled /> : targetType === 'api_key' ? <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部密钥（*）</option>{keys.data?.list.map(key => <option key={key.id} value={String(key.id)}>{key.key_name} #{key.id}</option>)}</select> : targetType === 'model' ? <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部模型（*）</option>{models.data?.list.map(model => <option key={model.model_name} value={model.model_name}>{model.model_name}</option>)}</select> : <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部渠道（*）</option>{channels.data?.list.map(channel => <option key={channel.id} value={String(channel.id)}>{channel.name}</option>)}</select>}</label><label><span>指标</span><select name="metric" defaultValue="rpm"><option value="rpm">rpm</option><option value="tpm">tpm</option><option value="concurrency">concurrency</option></select></label><Field label="限额" name="limit_value" type="number" min={1} required /><Field label="窗口秒数" name="window_seconds" type="number" min={1} required /><Field label="优先级" name="priority" type="number" defaultValue={0} /><label className="checkbox"><input name="enabled" type="checkbox" defaultChecked /> 启用</label></div></Modal>}
+    {query.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>规则名</th><th>作用域</th><th>目标</th><th>指标</th><th>限额</th><th>状态</th><th /></tr></thead><tbody>{query.data?.list.map(rule => <tr key={rule.id}><td>{rule.rule_name}</td><td>{rule.target_type}</td><td>{targetLabel(rule)}</td><td>{rule.metric}</td><td>{rule.metric === 'concurrency' ? rule.limit_value : `${rule.limit_value} / 分钟`}</td><td>{rule.enabled ? '启用' : '停用'}</td><td><button className="button ghost" onClick={() => void updateRateLimit(rule.id, { enabled: !rule.enabled }).then(() => query.refetch())}>切换</button><button className="button delete" onClick={() => void deleteRateLimit(rule.id).then(() => query.refetch())}>删除</button></td></tr>)}</tbody></table></div>}
+    {creating && <Modal title="新建限流规则" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">{error && <p className="error">{error}</p>}<Field label="规则名" name="rule_name" required /><label><span>作用域</span><select value={targetType} onChange={event => changeTarget(event.target.value)}><option value="user">user（当前用户）</option><option value="api_key">api_key（指定密钥）</option><option value="model">model（指定模型）</option><option value="channel">channel（指定渠道）</option></select></label><label><span>目标值</span>{targetType === 'user' ? <input value="本人（当前用户全部请求）" readOnly disabled /> : targetType === 'api_key' ? <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部密钥（*）</option>{keys.data?.list.map(key => <option key={key.id} value={String(key.id)}>{key.key_name} #{key.id}</option>)}</select> : targetType === 'model' ? <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部模型（*）</option>{models.data?.list.map(model => <option key={model.model_name} value={model.model_name}>{model.model_name}</option>)}</select> : <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部渠道（*）</option>{channels.data?.list.map(channel => <option key={channel.id} value={String(channel.id)}>{channel.name}</option>)}</select>}</label><label><span>指标</span><select name="metric" defaultValue="rpm"><option value="rpm">rpm</option><option value="tpm">tpm</option><option value="concurrency">concurrency</option></select></label><Field label="限额" name="limit_value" type="number" min={1} required /><Field label="优先级" name="priority" type="number" defaultValue={0} /><label className="checkbox"><input name="enabled" type="checkbox" defaultChecked /> 启用</label></div></Modal>}
   </section>
 }
 
@@ -129,18 +128,30 @@ export function QuotasPage() {
 
 export function PricingPage() {
   const query = useQuery({ queryKey: ['pricing'], queryFn: () => listPricing() })
+  const channels = useQuery({ queryKey: ['channels'], queryFn: () => listChannels({ page: 1, page_size: 1000 }) })
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  const [channelID, setChannelID] = useState('')
+  const [upstreamModel, setUpstreamModel] = useState('')
+
+  const selectedChannel = channelID || String(channels.data?.list[0]?.id ?? '')
+  const mappings = useQuery({ queryKey: ['channel-models', selectedChannel], queryFn: () => listChannelModels(Number(selectedChannel)), enabled: Boolean(selectedChannel) })
+  const upstreams = [...new Set((mappings.data?.list || []).map(row => row.upstream_model).filter(Boolean))]
+  const selectedUpstream = upstreamModel || upstreams[0] || ''
+
+  const open = () => { setError(''); setChannelID(''); setUpstreamModel(''); setCreating(true) }
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     try {
       setError('')
+      if (!selectedChannel) throw new Error('请先创建渠道并配置模型映射')
+      if (!selectedUpstream) throw new Error('该渠道没有可定价的上游模型，请先配置模型映射')
       const cached = String(form.get('cached_input_price_per_1m') || '')
       const input: PricingCreateInput = {
-        channel_id: Number(form.get('channel_id')),
-        model_name: String(form.get('model_name') || ''),
+        channel_id: Number(selectedChannel),
+        upstream_model: selectedUpstream,
         input_price_per_1m: String(form.get('input_price_per_1m') || ''),
         output_price_per_1m: String(form.get('output_price_per_1m') || ''),
         currency: String(form.get('currency') || 'USD'),
@@ -155,9 +166,9 @@ export function PricingPage() {
   }
 
   return <section className="panel">
-    <div className="panel-head"><div><h3>计费定价</h3><p className="muted">渠道×模型单价</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void query.refetch()}>刷新</button><button className="button primary" onClick={() => { setError(''); setCreating(true) }}>新建</button></div></div>
+    <div className="panel-head"><div><h3>计费定价</h3><p className="muted">按上游真实模型定价 · 同一真实模型的别名共享价格</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void query.refetch()}>刷新</button><button className="button primary" onClick={open}>新建</button></div></div>
     {error && !creating && <p className="error">{error}</p>}
-    {query.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>渠道</th><th>模型</th><th>输入</th><th>输出</th><th /></tr></thead><tbody>{query.data?.list.map(row => <tr key={row.id}><td>{row.channel_name}</td><td>{row.model_name}</td><td>{row.input_price_per_1m}</td><td>{row.output_price_per_1m}</td><td><button className="button delete" onClick={() => void deletePricing({ channel_id: row.channel_id, model_name: row.model_name }).then(() => query.refetch())}>删除</button></td></tr>)}</tbody></table></div>}
-    {creating && <Modal title="新建计费定价" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">{error && <p className="error">{error}</p>}<Field label="渠道 ID" name="channel_id" type="number" min={1} required /><Field label="模型名" name="model_name" required /><Field label="输入单价 / 1M" name="input_price_per_1m" placeholder="0.100000" required /><Field label="输出单价 / 1M" name="output_price_per_1m" placeholder="0.200000" required /><Field label="缓存输入单价 / 1M（可选）" name="cached_input_price_per_1m" placeholder="0.000000" /><Field label="币种" name="currency" defaultValue="USD" required /></div></Modal>}
+    {query.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>渠道</th><th>上游模型</th><th>输入</th><th>输出</th><th /></tr></thead><tbody>{query.data?.list.map(row => <tr key={row.id}><td>{row.channel_name}</td><td>{row.upstream_model}</td><td>{row.input_price_per_1m}</td><td>{row.output_price_per_1m}</td><td><button className="button delete" onClick={() => void deletePricing({ channel_id: row.channel_id, upstream_model: row.upstream_model }).then(() => query.refetch())}>删除</button></td></tr>)}</tbody></table></div>}
+    {creating && <Modal title="新建计费定价" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">{error && <p className="error">{error}</p>}<label><span>渠道</span><select value={selectedChannel} onChange={event => { setChannelID(event.target.value); setUpstreamModel('') }}>{channels.data?.list.length ? channels.data.list.map(channel => <option key={channel.id} value={String(channel.id)}>{channel.name}</option>) : <option value="">（暂无渠道）</option>}</select></label><label><span>上游模型</span><select value={selectedUpstream} onChange={event => setUpstreamModel(event.target.value)}>{upstreams.length ? upstreams.map(name => <option key={name} value={name}>{name}</option>) : <option value="">（该渠道暂无映射）</option>}</select></label><Field label="输入单价 / 1M" name="input_price_per_1m" placeholder="0.100000" required /><Field label="输出单价 / 1M" name="output_price_per_1m" placeholder="0.200000" required /><Field label="缓存输入单价 / 1M（可选）" name="cached_input_price_per_1m" placeholder="0.000000" /><Field label="币种" name="currency" defaultValue="USD" required /></div></Modal>}
   </section>
 }

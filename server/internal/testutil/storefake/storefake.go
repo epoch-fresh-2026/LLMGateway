@@ -151,17 +151,20 @@ func (s *Store) channelDTO(ch *catalog.Channel) catalog.ChannelDTO {
 }
 
 func (s *Store) pricingDTO(p *catalog.Pricing) catalog.PricingDTO {
-	channelName, upstream := "", ""
+	channelName := ""
 	if ch := s.channels[p.ChannelID]; ch != nil {
 		channelName = ch.Name
 	}
-	for _, m := range s.models[p.ChannelID] {
-		if m.ModelName == p.ModelName {
-			upstream = m.UpstreamModel
-			break
+	return catalog.PricingDTO{ID: p.ID, ChannelID: p.ChannelID, ChannelName: channelName, UpstreamModel: p.UpstreamModel, InputPricePer1M: p.InputPricePer1M, OutputPricePer1M: p.OutputPricePer1M, CachedInputPricePer1M: p.CachedInputPricePer1M, Currency: p.Currency}
+}
+
+func (s *Store) hasChannelUpstreamLocked(channelID int, upstreamModel string) bool {
+	for _, m := range s.models[channelID] {
+		if m.UpstreamModel == upstreamModel {
+			return true
 		}
 	}
-	return catalog.PricingDTO{ID: p.ID, ChannelID: p.ChannelID, ChannelName: channelName, ModelName: p.ModelName, UpstreamModel: upstream, InputPricePer1M: p.InputPricePer1M, OutputPricePer1M: p.OutputPricePer1M, CachedInputPricePer1M: p.CachedInputPricePer1M, Currency: p.Currency}
+	return false
 }
 
 func (s *Store) hasChannelModelLocked(channelID int, modelName string) bool {

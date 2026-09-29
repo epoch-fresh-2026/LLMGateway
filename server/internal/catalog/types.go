@@ -55,7 +55,7 @@ type CatalogModelDTO struct {
 type Pricing struct {
 	ID                    int
 	ChannelID             int
-	ModelName             string
+	UpstreamModel         string
 	InputPricePer1M       string
 	OutputPricePer1M      string
 	CachedInputPricePer1M string
@@ -66,7 +66,6 @@ type PricingDTO struct {
 	ID                    int    `json:"id"`
 	ChannelID             int    `json:"channel_id"`
 	ChannelName           string `json:"channel_name"`
-	ModelName             string `json:"model_name"`
 	UpstreamModel         string `json:"upstream_model"`
 	InputPricePer1M       string `json:"input_price_per_1m"`
 	OutputPricePer1M      string `json:"output_price_per_1m"`
@@ -109,7 +108,7 @@ type ChannelInput struct {
 
 type PricingInput struct {
 	ChannelID             int    `json:"channel_id"`
-	ModelName             string `json:"model_name"`
+	UpstreamModel         string `json:"upstream_model"`
 	InputPricePer1M       string `json:"input_price_per_1m"`
 	OutputPricePer1M      string `json:"output_price_per_1m"`
 	CachedInputPricePer1M string `json:"cached_input_price_per_1m"`
@@ -117,8 +116,8 @@ type PricingInput struct {
 }
 
 type DeletePricingInput struct {
-	ChannelID int    `json:"channel_id"`
-	ModelName string `json:"model_name"`
+	ChannelID     int    `json:"channel_id"`
+	UpstreamModel string `json:"upstream_model"`
 }
 
 // ChannelBreakerConfigInput is the admin payload for a per-channel breaker

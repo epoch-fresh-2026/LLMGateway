@@ -58,9 +58,9 @@ func TestAdminMutationResponseContract(t *testing.T) {
 	assertFields(t, mapping, "id", "model_name", "upstream_model", "enabled")
 
 	pricing := assertAdminSuccess(t, adminRaw(t, server, http.MethodPost, "/admin/pricing", map[string]any{
-		"channel_id": 1, "model_name": "gpt-contract", "input_price_per_1m": "0.100000", "output_price_per_1m": "0.200000", "currency": "USD",
+		"channel_id": 1, "upstream_model": "gpt-contract-upstream", "input_price_per_1m": "0.100000", "output_price_per_1m": "0.200000", "currency": "USD",
 	}))
-	assertFields(t, pricing, "id", "channel_id", "channel_name", "model_name", "upstream_model", "input_price_per_1m", "output_price_per_1m", "cached_input_price_per_1m", "currency")
+	assertFields(t, pricing, "id", "channel_id", "channel_name", "upstream_model", "input_price_per_1m", "output_price_per_1m", "cached_input_price_per_1m", "currency")
 	assertStringFields(t, pricing, "input_price_per_1m", "output_price_per_1m", "cached_input_price_per_1m")
 
 	key := assertAdminSuccess(t, adminRaw(t, server, http.MethodPost, "/admin/keys", map[string]any{"key_name": "contract", "prefix": "sk-"}))
@@ -72,9 +72,9 @@ func TestAdminMutationResponseContract(t *testing.T) {
 	assertNoSecret(t, key, "sk-contract-secret")
 
 	rateLimit := assertAdminSuccess(t, adminRaw(t, server, http.MethodPost, "/admin/rate-limits", map[string]any{
-		"rule_name": "contract-rpm", "target_type": "user", "metric": "rpm", "limit_value": 60, "window_seconds": 60, "action": "reject",
+		"rule_name": "contract-rpm", "target_type": "user", "metric": "rpm", "limit_value": 60, "action": "reject",
 	}))
-	assertFields(t, rateLimit, "id", "rule_name", "target_type", "target_value", "metric", "limit_value", "window_seconds", "action", "priority", "enabled", "extras")
+	assertFields(t, rateLimit, "id", "rule_name", "target_type", "target_value", "metric", "limit_value", "action", "priority", "enabled", "extras")
 
 	quota := assertAdminSuccess(t, adminRaw(t, server, http.MethodPost, "/admin/quota-policies", map[string]any{
 		"policy_name": "contract-day", "scope_type": "user", "scope_id": 1, "period_type": "day", "token_limit": 100,

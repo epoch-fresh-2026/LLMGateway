@@ -46,5 +46,5 @@ type Catalog interface {
 	ReleaseChannelProbe(ctx context.Context, channelID int, leaseID string) (bool, error)
 	GetChannelSecret(ctx context.Context, ownerUserID, channelID int) (*catalog.Channel, error)
 	RecordChannelAttempt(ctx context.Context, channelID int, success bool, reason catalog.FailureReason) (catalog.ChannelHealth, error)
-	GetPricing(ctx context.Context, channelID int, modelName string) (catalog.PricingDTO, error)
+	GetPricing(ctx context.Context, channelID int, upstreamModel string) (catalog.PricingDTO, error)
 }

@@ -18,11 +18,28 @@ INSERT INTO channel_models (channel_id, model_name, upstream_model, enabled)
 VALUES (sqlc.arg(channel_id), sqlc.arg(model_name), sqlc.arg(upstream_model), sqlc.arg(enabled))
 RETURNING id, model_name, upstream_model, enabled;
 
+-- The upstream (real) model name is set by the upstream and cannot change;
+-- only the public alias and enabled flag are updated.
 -- name: UpdateChannelModel :one
 UPDATE channel_models
-SET upstream_model = sqlc.arg(upstream_model), enabled = sqlc.arg(enabled), updated_at = now()
+SET model_name = COALESCE(NULLIF(sqlc.arg(model_name), ''), model_name),
+    enabled = sqlc.arg(enabled),
+    updated_at = now()
 WHERE channel_id = sqlc.arg(channel_id) AND id = sqlc.arg(id)
 RETURNING id, model_name, upstream_model, enabled;
+
+-- name: GetChannelModelByID :one
+SELECT cm.id, cm.model_name, cm.upstream_model, cm.enabled
+FROM channel_models cm
+WHERE cm.channel_id = sqlc.arg(channel_id) AND cm.id = sqlc.arg(id);
+
+-- name: ChannelUpstreamExists :one
+SELECT 1 FROM channel_models cm
+JOIN channels c ON c.id = cm.channel_id
+WHERE cm.channel_id = sqlc.arg(channel_id)
+  AND cm.upstream_model = sqlc.arg(upstream_model)
+  AND c.owner_user_id = sqlc.arg(owner_user_id)
+LIMIT 1;
 
 -- name: DeleteChannelModel :execrows
 DELETE FROM channel_models WHERE channel_id = $1 AND id = $2;

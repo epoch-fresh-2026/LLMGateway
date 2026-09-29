@@ -127,6 +127,6 @@ func channelDTO(id int64, name, baseURL, authType string, status, weight, priori
 	return domain.ChannelDTO{ID: int(id), Name: name, BaseURL: baseURL, AuthType: authType, Status: int(status), Weight: int(weight), Priority: int(priority), Balance: optionalString(balance), ModelCount: int(modelCount)}
 }
 
-func pricingDTO(id, channelID int64, channelName, modelName, upstreamModel, inputPrice, outputPrice, cachedPrice, currency string) domain.PricingDTO {
-	return domain.PricingDTO{ID: int(id), ChannelID: int(channelID), ChannelName: channelName, ModelName: modelName, UpstreamModel: upstreamModel, InputPricePer1M: inputPrice, OutputPricePer1M: outputPrice, CachedInputPricePer1M: cachedPrice, Currency: currency}
+func pricingDTO(id, channelID int64, channelName, upstreamModel, inputPrice, outputPrice, cachedPrice, currency string) domain.PricingDTO {
+	return domain.PricingDTO{ID: int(id), ChannelID: int(channelID), ChannelName: channelName, UpstreamModel: upstreamModel, InputPricePer1M: inputPrice, OutputPricePer1M: outputPrice, CachedInputPricePer1M: cachedPrice, Currency: currency}
 }

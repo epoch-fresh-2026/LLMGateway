@@ -29,7 +29,7 @@ func (s *Store) ListRateLimits(ctx context.Context, ownerUserID int, enabled *bo
 
 	list := []domain.RateLimitRuleDTO{}
 	for _, row := range rows {
-		list = append(list, domain.RateLimitRuleToDTO(rateLimitRule(row.ID, row.RuleName, row.TargetType, row.TargetValue, row.Metric, row.LimitValue, row.WindowSeconds, row.Action, row.Priority, row.Enabled, row.Extras)))
+		list = append(list, domain.RateLimitRuleToDTO(rateLimitRule(row.ID, row.RuleName, row.TargetType, row.TargetValue, row.Metric, row.LimitValue, row.Action, row.Priority, row.Enabled, row.Extras)))
 	}
 	return domain.ListResponse[domain.RateLimitRuleDTO]{List: list, Total: int(total)}, nil
 }
@@ -39,22 +39,21 @@ func (s *Store) GetRateLimit(ctx context.Context, ownerUserID, id int) (domain.R
 	if err != nil {
 		return domain.RateLimitRule{}, mapError(err)
 	}
-	return rateLimitRule(row.ID, row.RuleName, row.TargetType, row.TargetValue, row.Metric, row.LimitValue, row.WindowSeconds, row.Action, row.Priority, row.Enabled, row.Extras), nil
+	return rateLimitRule(row.ID, row.RuleName, row.TargetType, row.TargetValue, row.Metric, row.LimitValue, row.Action, row.Priority, row.Enabled, row.Extras), nil
 }
 
 func (s *Store) InsertRateLimit(ctx context.Context, ownerUserID int, rule domain.RateLimitRule) (int, error) {
 	id, err := s.queries.CreateRateLimitRule(ctx, sqlc.CreateRateLimitRuleParams{
-		OwnerUserID:   int64(ownerUserID),
-		RuleName:      rule.RuleName,
-		TargetType:    rule.TargetType,
-		TargetValue:   rule.TargetValue,
-		Metric:        rule.Metric,
-		LimitValue:    rule.LimitValue,
-		WindowSeconds: int32(rule.WindowSeconds),
-		Action:        rule.Action,
-		Priority:      int32(rule.Priority),
-		Enabled:       rule.Enabled,
-		Extras:        rule.Extras,
+		OwnerUserID: int64(ownerUserID),
+		RuleName:    rule.RuleName,
+		TargetType:  rule.TargetType,
+		TargetValue: rule.TargetValue,
+		Metric:      rule.Metric,
+		LimitValue:  rule.LimitValue,
+		Action:      rule.Action,
+		Priority:    int32(rule.Priority),
+		Enabled:     rule.Enabled,
+		Extras:      rule.Extras,
 	})
 	if err != nil {
 		return 0, mapError(err)
@@ -64,18 +63,17 @@ func (s *Store) InsertRateLimit(ctx context.Context, ownerUserID int, rule domai
 
 func (s *Store) UpdateRateLimitRecord(ctx context.Context, ownerUserID, id int, rule domain.RateLimitRule) (bool, error) {
 	affected, err := s.queries.UpdateRateLimitRule(ctx, sqlc.UpdateRateLimitRuleParams{
-		RuleName:      rule.RuleName,
-		TargetType:    rule.TargetType,
-		TargetValue:   rule.TargetValue,
-		Metric:        rule.Metric,
-		LimitValue:    rule.LimitValue,
-		WindowSeconds: int32(rule.WindowSeconds),
-		Action:        rule.Action,
-		Priority:      int32(rule.Priority),
-		Enabled:       rule.Enabled,
-		Extras:        rule.Extras,
-		ID:            int64(id),
-		OwnerUserID:   int64(ownerUserID),
+		RuleName:    rule.RuleName,
+		TargetType:  rule.TargetType,
+		TargetValue: rule.TargetValue,
+		Metric:      rule.Metric,
+		LimitValue:  rule.LimitValue,
+		Action:      rule.Action,
+		Priority:    int32(rule.Priority),
+		Enabled:     rule.Enabled,
+		Extras:      rule.Extras,
+		ID:          int64(id),
+		OwnerUserID: int64(ownerUserID),
 	})
 	if err != nil {
 		return false, mapError(err)
@@ -127,6 +125,6 @@ func (s *Store) TargetOwnedByUser(ctx context.Context, ownerUserID int, targetTy
 	return exists, nil
 }
 
-func rateLimitRule(id int64, ruleName, targetType, targetValue, metric string, limitValue int64, windowSeconds int32, action string, priority int32, enabled bool, extras []byte) domain.RateLimitRule {
-	return domain.RateLimitRule{ID: int(id), RuleName: ruleName, TargetType: targetType, TargetValue: targetValue, Metric: metric, LimitValue: limitValue, WindowSeconds: int(windowSeconds), Action: action, Priority: int(priority), Enabled: enabled, Extras: extras}
+func rateLimitRule(id int64, ruleName, targetType, targetValue, metric string, limitValue int64, action string, priority int32, enabled bool, extras []byte) domain.RateLimitRule {
+	return domain.RateLimitRule{ID: int(id), RuleName: ruleName, TargetType: targetType, TargetValue: targetValue, Metric: metric, LimitValue: limitValue, Action: action, Priority: int(priority), Enabled: enabled, Extras: extras}
 }

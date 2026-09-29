@@ -42,7 +42,6 @@ const (
 	FailureUpstream5xx         = catalog.FailureUpstream5xx
 	FailureUpstreamProtocol    = catalog.FailureUpstreamProtocol
 	FailureUpstreamTimeout     = catalog.FailureUpstreamTimeout
-	MaxRateLimitWindowSeconds  = ratelimit.MaxRateLimitWindowSeconds
 	QuotaScopeUser             = quota.QuotaScopeUser
 	QuotaScopeAPIKey           = quota.QuotaScopeAPIKey
 	QuotaPeriodDay             = quota.QuotaPeriodDay

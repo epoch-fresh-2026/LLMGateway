@@ -24,7 +24,7 @@ export const BreakerConfigSchema = z.object({
 export const ChannelModelSchema = z.object({ id: z.number().int(), model_name: z.string(), upstream_model: z.string(), enabled: z.boolean() })
 export const ChannelModelListSchema = listSchema(ChannelModelSchema)
 export const PricingSchema = z.object({
-  id: z.number().int(), channel_id: z.number().int(), channel_name: z.string(), model_name: z.string(), upstream_model: z.string(),
+  id: z.number().int(), channel_id: z.number().int(), channel_name: z.string(), upstream_model: z.string(),
   input_price_per_1m: MoneySchema, output_price_per_1m: MoneySchema, cached_input_price_per_1m: MoneySchema, currency: z.string(),
 })
 export const PricingListSchema = listSchema(PricingSchema)

@@ -85,7 +85,7 @@ type ClientApiKey struct {
 type ModelPricing struct {
 	ID                    int64              `json:"id"`
 	ChannelID             int64              `json:"channel_id"`
-	ModelName             string             `json:"model_name"`
+	UpstreamModel         string             `json:"upstream_model"`
 	InputPricePer1m       pgtype.Numeric     `json:"input_price_per_1m"`
 	OutputPricePer1m      pgtype.Numeric     `json:"output_price_per_1m"`
 	CachedInputPricePer1m pgtype.Numeric     `json:"cached_input_price_per_1m"`
@@ -172,20 +172,19 @@ type RateLimitReservation struct {
 }
 
 type RateLimitRule struct {
-	ID            int64              `json:"id"`
-	OwnerUserID   int64              `json:"owner_user_id"`
-	RuleName      string             `json:"rule_name"`
-	TargetType    string             `json:"target_type"`
-	TargetValue   string             `json:"target_value"`
-	Metric        string             `json:"metric"`
-	LimitValue    int64              `json:"limit_value"`
-	WindowSeconds int32              `json:"window_seconds"`
-	Action        string             `json:"action"`
-	Priority      int32              `json:"priority"`
-	Enabled       bool               `json:"enabled"`
-	Extras        []byte             `json:"extras"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID          int64              `json:"id"`
+	OwnerUserID int64              `json:"owner_user_id"`
+	RuleName    string             `json:"rule_name"`
+	TargetType  string             `json:"target_type"`
+	TargetValue string             `json:"target_value"`
+	Metric      string             `json:"metric"`
+	LimitValue  int64              `json:"limit_value"`
+	Action      string             `json:"action"`
+	Priority    int32              `json:"priority"`
+	Enabled     bool               `json:"enabled"`
+	Extras      []byte             `json:"extras"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Session struct {

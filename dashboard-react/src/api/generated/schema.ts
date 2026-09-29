@@ -688,7 +688,8 @@ export interface components {
             enabled: boolean;
         };
         ChannelModelUpdate: {
-            upstream_model: string;
+            /** @description Renames the public alias; the upstream model name is upstream-owned and cannot change. */
+            model_name?: string;
             enabled: boolean;
         };
         Health: {
@@ -729,7 +730,6 @@ export interface components {
             id: number;
             channel_id: number;
             channel_name: string;
-            model_name: string;
             upstream_model: string;
             input_price_per_1m: components["schemas"]["Money"];
             output_price_per_1m: components["schemas"]["Money"];
@@ -738,7 +738,7 @@ export interface components {
         };
         PricingCreateInput: {
             channel_id: number;
-            model_name: string;
+            upstream_model: string;
             input_price_per_1m: components["schemas"]["Money"];
             output_price_per_1m: components["schemas"]["Money"];
             cached_input_price_per_1m?: components["schemas"]["Money"];
@@ -746,7 +746,7 @@ export interface components {
         };
         DeletePricingInput: {
             channel_id: number;
-            model_name: string;
+            upstream_model: string;
         };
         CatalogChannel: {
             channel_id: number;
@@ -882,7 +882,6 @@ export interface components {
             target_value: string;
             metric: string;
             limit_value: number;
-            window_seconds: number;
             /** @enum {string} */
             action: "reject";
             priority: number;
@@ -899,7 +898,6 @@ export interface components {
             /** @enum {string} */
             metric: "rpm" | "tpm" | "concurrency";
             limit_value: number;
-            window_seconds: number;
             /** @enum {string} */
             action?: "reject";
             priority?: number;
@@ -916,7 +914,6 @@ export interface components {
             /** @enum {string} */
             metric?: "rpm" | "tpm" | "concurrency";
             limit_value?: number;
-            window_seconds?: number;
             /** @enum {string} */
             action?: "reject";
             priority?: number;

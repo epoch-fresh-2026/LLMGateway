@@ -12,31 +12,29 @@ import "LLMGateway/server/internal/pagination"
 type ListResponse[T any] = pagination.List[T]
 
 type RateLimitRule struct {
-	ID            int
-	RuleName      string
-	TargetType    string
-	TargetValue   string
-	Metric        string
-	LimitValue    int64
-	WindowSeconds int
-	Action        string
-	Priority      int
-	Enabled       bool
-	Extras        json.RawMessage
+	ID          int
+	RuleName    string
+	TargetType  string
+	TargetValue string
+	Metric      string
+	LimitValue  int64
+	Action      string
+	Priority    int
+	Enabled     bool
+	Extras      json.RawMessage
 }
 
 type RateLimitRuleDTO struct {
-	ID            int             `json:"id"`
-	RuleName      string          `json:"rule_name"`
-	TargetType    string          `json:"target_type"`
-	TargetValue   string          `json:"target_value"`
-	Metric        string          `json:"metric"`
-	LimitValue    int64           `json:"limit_value"`
-	WindowSeconds int             `json:"window_seconds"`
-	Action        string          `json:"action"`
-	Priority      int             `json:"priority"`
-	Enabled       bool            `json:"enabled"`
-	Extras        json.RawMessage `json:"extras"`
+	ID          int             `json:"id"`
+	RuleName    string          `json:"rule_name"`
+	TargetType  string          `json:"target_type"`
+	TargetValue string          `json:"target_value"`
+	Metric      string          `json:"metric"`
+	LimitValue  int64           `json:"limit_value"`
+	Action      string          `json:"action"`
+	Priority    int             `json:"priority"`
+	Enabled     bool            `json:"enabled"`
+	Extras      json.RawMessage `json:"extras"`
 }
 
 var (
@@ -45,7 +43,9 @@ var (
 	validActions     = map[string]bool{"reject": true}
 )
 
-const MaxRateLimitWindowSeconds = 7 * 24 * 60 * 60
+// RateLimitWindowSeconds is the fixed measurement window for rpm/tpm. rpm and
+// tpm are per-minute rates; concurrency is instantaneous and ignores it.
+const RateLimitWindowSeconds = 60
 
 // NormalizeRateLimit merges a partial input over an existing rule (or defaults
 // for a new rule) and validates the result. It is shared by persistence code
@@ -70,9 +70,6 @@ func NormalizeRateLimit(in RateLimitInput, existing *RateLimitRule) (RateLimitRu
 	}
 	if in.LimitValue != nil {
 		rule.LimitValue = *in.LimitValue
-	}
-	if in.WindowSeconds != nil {
-		rule.WindowSeconds = *in.WindowSeconds
 	}
 	if in.Action != nil {
 		rule.Action = *in.Action
@@ -105,10 +102,6 @@ func NormalizeRateLimit(in RateLimitInput, existing *RateLimitRule) (RateLimitRu
 		return rule, fmt.Errorf("%w: invalid action", ErrInvalid)
 	case rule.LimitValue <= 0:
 		return rule, fmt.Errorf("%w: limit_value must be positive", ErrInvalid)
-	case rule.WindowSeconds <= 0:
-		return rule, fmt.Errorf("%w: window_seconds must be positive", ErrInvalid)
-	case rule.WindowSeconds > MaxRateLimitWindowSeconds:
-		return rule, fmt.Errorf("%w: window_seconds exceeds maximum", ErrInvalid)
 	}
 	return rule, nil
 }
@@ -116,16 +109,15 @@ func NormalizeRateLimit(in RateLimitInput, existing *RateLimitRule) (RateLimitRu
 // RateLimitInput uses pointers so a partial update (for example only
 // {"enabled": false}) can be distinguished from omitted fields.
 type RateLimitInput struct {
-	RuleName      *string         `json:"rule_name"`
-	TargetType    *string         `json:"target_type"`
-	TargetValue   *string         `json:"target_value"`
-	Metric        *string         `json:"metric"`
-	LimitValue    *int64          `json:"limit_value"`
-	WindowSeconds *int            `json:"window_seconds"`
-	Action        *string         `json:"action"`
-	Priority      *int            `json:"priority"`
-	Enabled       *bool           `json:"enabled"`
-	Extras        json.RawMessage `json:"extras"`
+	RuleName    *string         `json:"rule_name"`
+	TargetType  *string         `json:"target_type"`
+	TargetValue *string         `json:"target_value"`
+	Metric      *string         `json:"metric"`
+	LimitValue  *int64          `json:"limit_value"`
+	Action      *string         `json:"action"`
+	Priority    *int            `json:"priority"`
+	Enabled     *bool           `json:"enabled"`
+	Extras      json.RawMessage `json:"extras"`
 }
 
 type RateLimitReservationInput struct {

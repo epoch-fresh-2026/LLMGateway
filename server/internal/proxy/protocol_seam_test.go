@@ -35,7 +35,7 @@ func newProtocolSeamService(t *testing.T, transport http.RoundTripper, adapter P
 	if _, err := cat.CreateChannelModel(context.Background(), 1, channel.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: channel.ID, ModelName: "public-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: channel.ID, UpstreamModel: "configured-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -159,7 +159,7 @@ func TestChatCompletionsFailsOverAndSettlesOnlyFinalSuccess(t *testing.T) {
 	if _, err := cat.CreateChannelModel(context.Background(), 1, second.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: second.ID, ModelName: "public-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: second.ID, UpstreamModel: "configured-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 	response, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")

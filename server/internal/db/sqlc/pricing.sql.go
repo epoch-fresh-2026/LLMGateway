@@ -7,21 +7,19 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const deletePricing = `-- name: DeletePricing :exec
-DELETE FROM model_pricing WHERE channel_id = $1 AND model_name = $2
+DELETE FROM model_pricing WHERE channel_id = $1 AND upstream_model = $2
 `
 
 type DeletePricingParams struct {
-	ChannelID int64  `json:"channel_id"`
-	ModelName string `json:"model_name"`
+	ChannelID     int64  `json:"channel_id"`
+	UpstreamModel string `json:"upstream_model"`
 }
 
 func (q *Queries) DeletePricing(ctx context.Context, arg DeletePricingParams) error {
-	_, err := q.db.Exec(ctx, deletePricing, arg.ChannelID, arg.ModelName)
+	_, err := q.db.Exec(ctx, deletePricing, arg.ChannelID, arg.UpstreamModel)
 	return err
 }
 
@@ -30,29 +28,26 @@ SELECT
     p.id,
     p.channel_id,
     c.name AS channel_name,
-    p.model_name,
-    cm.upstream_model,
+    p.upstream_model,
     p.input_price_per_1m::text AS input_price_per_1m,
     p.output_price_per_1m::text AS output_price_per_1m,
     COALESCE(p.cached_input_price_per_1m::text, ''::text) AS cached_input_price_per_1m,
     p.currency
 FROM model_pricing p
 JOIN channels c ON c.id = p.channel_id
-LEFT JOIN channel_models cm ON cm.channel_id = p.channel_id AND cm.model_name = p.model_name
-WHERE p.channel_id = $1 AND p.model_name = $2
+WHERE p.channel_id = $1 AND p.upstream_model = $2
 `
 
 type GetPricingParams struct {
-	ChannelID int64  `json:"channel_id"`
-	ModelName string `json:"model_name"`
+	ChannelID     int64  `json:"channel_id"`
+	UpstreamModel string `json:"upstream_model"`
 }
 
 type GetPricingRow struct {
 	ID                    int64       `json:"id"`
 	ChannelID             int64       `json:"channel_id"`
 	ChannelName           string      `json:"channel_name"`
-	ModelName             string      `json:"model_name"`
-	UpstreamModel         pgtype.Text `json:"upstream_model"`
+	UpstreamModel         string      `json:"upstream_model"`
 	InputPricePer1m       string      `json:"input_price_per_1m"`
 	OutputPricePer1m      string      `json:"output_price_per_1m"`
 	CachedInputPricePer1m interface{} `json:"cached_input_price_per_1m"`
@@ -60,13 +55,12 @@ type GetPricingRow struct {
 }
 
 func (q *Queries) GetPricing(ctx context.Context, arg GetPricingParams) (GetPricingRow, error) {
-	row := q.db.QueryRow(ctx, getPricing, arg.ChannelID, arg.ModelName)
+	row := q.db.QueryRow(ctx, getPricing, arg.ChannelID, arg.UpstreamModel)
 	var i GetPricingRow
 	err := row.Scan(
 		&i.ID,
 		&i.ChannelID,
 		&i.ChannelName,
-		&i.ModelName,
 		&i.UpstreamModel,
 		&i.InputPricePer1m,
 		&i.OutputPricePer1m,
@@ -81,15 +75,13 @@ SELECT
     p.id,
     p.channel_id,
     c.name AS channel_name,
-    p.model_name,
-    cm.upstream_model,
+    p.upstream_model,
     p.input_price_per_1m::text AS input_price_per_1m,
     p.output_price_per_1m::text AS output_price_per_1m,
     COALESCE(p.cached_input_price_per_1m::text, ''::text) AS cached_input_price_per_1m,
     p.currency
 FROM model_pricing p
 JOIN channels c ON c.id = p.channel_id
-LEFT JOIN channel_models cm ON cm.channel_id = p.channel_id AND cm.model_name = p.model_name
 WHERE c.owner_user_id = $1
 ORDER BY p.id
 `
@@ -98,8 +90,7 @@ type ListPricingRow struct {
 	ID                    int64       `json:"id"`
 	ChannelID             int64       `json:"channel_id"`
 	ChannelName           string      `json:"channel_name"`
-	ModelName             string      `json:"model_name"`
-	UpstreamModel         pgtype.Text `json:"upstream_model"`
+	UpstreamModel         string      `json:"upstream_model"`
 	InputPricePer1m       string      `json:"input_price_per_1m"`
 	OutputPricePer1m      string      `json:"output_price_per_1m"`
 	CachedInputPricePer1m interface{} `json:"cached_input_price_per_1m"`
@@ -119,7 +110,6 @@ func (q *Queries) ListPricing(ctx context.Context, ownerUserID int64) ([]ListPri
 			&i.ID,
 			&i.ChannelID,
 			&i.ChannelName,
-			&i.ModelName,
 			&i.UpstreamModel,
 			&i.InputPricePer1m,
 			&i.OutputPricePer1m,
@@ -137,7 +127,7 @@ func (q *Queries) ListPricing(ctx context.Context, ownerUserID int64) ([]ListPri
 }
 
 const upsertPricing = `-- name: UpsertPricing :one
-INSERT INTO model_pricing (channel_id, model_name, input_price_per_1m, output_price_per_1m, cached_input_price_per_1m, currency)
+INSERT INTO model_pricing (channel_id, upstream_model, input_price_per_1m, output_price_per_1m, cached_input_price_per_1m, currency)
 VALUES (
     $1,
     $2,
@@ -146,7 +136,7 @@ VALUES (
     NULLIF($5, '')::numeric,
     $6
 )
-ON CONFLICT (channel_id, model_name)
+ON CONFLICT (channel_id, upstream_model)
 DO UPDATE SET
     input_price_per_1m = EXCLUDED.input_price_per_1m,
     output_price_per_1m = EXCLUDED.output_price_per_1m,
@@ -158,7 +148,7 @@ RETURNING id
 
 type UpsertPricingParams struct {
 	ChannelID             int64       `json:"channel_id"`
-	ModelName             string      `json:"model_name"`
+	UpstreamModel         string      `json:"upstream_model"`
 	InputPricePer1m       interface{} `json:"input_price_per_1m"`
 	OutputPricePer1m      interface{} `json:"output_price_per_1m"`
 	CachedInputPricePer1m interface{} `json:"cached_input_price_per_1m"`
@@ -168,7 +158,7 @@ type UpsertPricingParams struct {
 func (q *Queries) UpsertPricing(ctx context.Context, arg UpsertPricingParams) (int64, error) {
 	row := q.db.QueryRow(ctx, upsertPricing,
 		arg.ChannelID,
-		arg.ModelName,
+		arg.UpstreamModel,
 		arg.InputPricePer1m,
 		arg.OutputPricePer1m,
 		arg.CachedInputPricePer1m,

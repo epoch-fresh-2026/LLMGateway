@@ -9,6 +9,28 @@ import (
 	"context"
 )
 
+const channelUpstreamExists = `-- name: ChannelUpstreamExists :one
+SELECT 1 FROM channel_models cm
+JOIN channels c ON c.id = cm.channel_id
+WHERE cm.channel_id = $1
+  AND cm.upstream_model = $2
+  AND c.owner_user_id = $3
+LIMIT 1
+`
+
+type ChannelUpstreamExistsParams struct {
+	ChannelID     int64  `json:"channel_id"`
+	UpstreamModel string `json:"upstream_model"`
+	OwnerUserID   int64  `json:"owner_user_id"`
+}
+
+func (q *Queries) ChannelUpstreamExists(ctx context.Context, arg ChannelUpstreamExistsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, channelUpstreamExists, arg.ChannelID, arg.UpstreamModel, arg.OwnerUserID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createChannelModel = `-- name: CreateChannelModel :one
 INSERT INTO channel_models (channel_id, model_name, upstream_model, enabled)
 VALUES ($1, $2, $3, $4)
@@ -88,6 +110,36 @@ type GetChannelModelRow struct {
 func (q *Queries) GetChannelModel(ctx context.Context, arg GetChannelModelParams) (GetChannelModelRow, error) {
 	row := q.db.QueryRow(ctx, getChannelModel, arg.ChannelID, arg.ModelName, arg.OwnerUserID)
 	var i GetChannelModelRow
+	err := row.Scan(
+		&i.ID,
+		&i.ModelName,
+		&i.UpstreamModel,
+		&i.Enabled,
+	)
+	return i, err
+}
+
+const getChannelModelByID = `-- name: GetChannelModelByID :one
+SELECT cm.id, cm.model_name, cm.upstream_model, cm.enabled
+FROM channel_models cm
+WHERE cm.channel_id = $1 AND cm.id = $2
+`
+
+type GetChannelModelByIDParams struct {
+	ChannelID int64 `json:"channel_id"`
+	ID        int64 `json:"id"`
+}
+
+type GetChannelModelByIDRow struct {
+	ID            int64  `json:"id"`
+	ModelName     string `json:"model_name"`
+	UpstreamModel string `json:"upstream_model"`
+	Enabled       bool   `json:"enabled"`
+}
+
+func (q *Queries) GetChannelModelByID(ctx context.Context, arg GetChannelModelByIDParams) (GetChannelModelByIDRow, error) {
+	row := q.db.QueryRow(ctx, getChannelModelByID, arg.ChannelID, arg.ID)
+	var i GetChannelModelByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.ModelName,
@@ -266,16 +318,18 @@ func (q *Queries) ListRouteCandidates(ctx context.Context, arg ListRouteCandidat
 
 const updateChannelModel = `-- name: UpdateChannelModel :one
 UPDATE channel_models
-SET upstream_model = $1, enabled = $2, updated_at = now()
+SET model_name = COALESCE(NULLIF($1, ''), model_name),
+    enabled = $2,
+    updated_at = now()
 WHERE channel_id = $3 AND id = $4
 RETURNING id, model_name, upstream_model, enabled
 `
 
 type UpdateChannelModelParams struct {
-	UpstreamModel string `json:"upstream_model"`
-	Enabled       bool   `json:"enabled"`
-	ChannelID     int64  `json:"channel_id"`
-	ID            int64  `json:"id"`
+	ModelName interface{} `json:"model_name"`
+	Enabled   bool        `json:"enabled"`
+	ChannelID int64       `json:"channel_id"`
+	ID        int64       `json:"id"`
 }
 
 type UpdateChannelModelRow struct {
@@ -285,9 +339,11 @@ type UpdateChannelModelRow struct {
 	Enabled       bool   `json:"enabled"`
 }
 
+// The upstream (real) model name is set by the upstream and cannot change;
+// only the public alias and enabled flag are updated.
 func (q *Queries) UpdateChannelModel(ctx context.Context, arg UpdateChannelModelParams) (UpdateChannelModelRow, error) {
 	row := q.db.QueryRow(ctx, updateChannelModel,
-		arg.UpstreamModel,
+		arg.ModelName,
 		arg.Enabled,
 		arg.ChannelID,
 		arg.ID,

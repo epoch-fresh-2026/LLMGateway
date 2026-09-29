@@ -52,10 +52,10 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	if _, err := cat.CreateChannelModel(ctx, owner, created.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.UpsertPricing(ctx, owner, domain.PricingInput{ChannelID: created.ID, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", CachedInputPricePer1M: "0.05000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(ctx, owner, domain.PricingInput{ChannelID: created.ID, UpstreamModel: "up-gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", CachedInputPricePer1M: "0.05000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
-	pricing, err := st.GetPricing(ctx, created.ID, "gpt")
+	pricing, err := st.GetPricing(ctx, created.ID, "up-gpt")
 	if err != nil {
 		t.Fatalf("GetPricing: %v", err)
 	}

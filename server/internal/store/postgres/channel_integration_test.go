@@ -164,10 +164,10 @@ func TestPGModelMappingsCatalogAndCascade(t *testing.T) {
 		t.Fatalf("missing channel err = %v, want ErrNotFound", err)
 	}
 
-	if _, err := cat.UpdateChannelModel(context.Background(), owner, 1, mapping.ID, "gpt-4o-mini", true); err != nil {
+	if _, err := cat.UpdateChannelModel(context.Background(), owner, 1, mapping.ID, "", true); err != nil {
 		t.Fatalf("UpdateChannelModel: %v", err)
 	}
-	if _, err := cat.UpdateChannelModel(context.Background(), owner, 1, 404, "x", true); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.UpdateChannelModel(context.Background(), owner, 1, 404, "", true); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing mapping err = %v, want ErrNotFound", err)
 	}
 
@@ -188,7 +188,7 @@ func TestPGModelMappingsCatalogAndCascade(t *testing.T) {
 	}
 
 	// Pricing then cascade delete via channel.
-	if _, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 1, UpstreamModel: "gpt-4o-mini-up", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatalf("UpsertPricing: %v", err)
 	}
 	if err := cat.DeleteChannel(context.Background(), owner, 1); err != nil {
@@ -210,10 +210,10 @@ func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 	if _, err := cat.CreateChannel(context.Background(), owner, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 404, ModelName: "x", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 404, UpstreamModel: "x", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing channel err = %v, want ErrNotFound", err)
 	}
-	if _, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 1, ModelName: "missing", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 1, UpstreamModel: "missing", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("missing mapping err = %v, want ErrInvalid", err)
 	}
 
@@ -221,7 +221,7 @@ func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dto, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"})
+	dto, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 1, UpstreamModel: "gpt-4o-mini-up", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"})
 	if err != nil {
 		t.Fatalf("UpsertPricing: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 	}
 
 	// Overwrite (upsert) the same channel+model.
-	overwritten, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.20000000", OutputPricePer1M: "0.70000000", Currency: "USD"})
+	overwritten, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 1, UpstreamModel: "gpt-4o-mini-up", InputPricePer1M: "0.20000000", OutputPricePer1M: "0.70000000", Currency: "USD"})
 	if err != nil {
 		t.Fatalf("UpsertPricing overwrite: %v", err)
 	}
@@ -241,11 +241,11 @@ func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 		t.Fatalf("upsert did not overwrite: %+v", overwritten)
 	}
 
-	if _, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "bad", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpsertPricing(context.Background(), owner, domain.PricingInput{ChannelID: 1, UpstreamModel: "gpt-4o-mini-up", InputPricePer1M: "bad", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid price err = %v, want ErrInvalid", err)
 	}
 
-	if err := st.DeletePricing(context.Background(), domain.DeletePricingInput{ChannelID: 1, ModelName: "gpt-4o-mini"}); err != nil {
+	if err := st.DeletePricing(context.Background(), domain.DeletePricingInput{ChannelID: 1, UpstreamModel: "gpt-4o-mini-up"}); err != nil {
 		t.Fatalf("DeletePricing: %v", err)
 	}
 	if pricing, _ := st.ListPricing(context.Background(), owner); pricing.Total != 0 {

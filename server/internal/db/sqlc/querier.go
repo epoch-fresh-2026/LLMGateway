@@ -15,6 +15,7 @@ type Querier interface {
 	AggregateUsageByChannel(ctx context.Context, arg AggregateUsageByChannelParams) ([]AggregateUsageByChannelRow, error)
 	AggregateUsageByModel(ctx context.Context, arg AggregateUsageByModelParams) ([]AggregateUsageByModelRow, error)
 	AggregateUsageByUser(ctx context.Context, arg AggregateUsageByUserParams) ([]AggregateUsageByUserRow, error)
+	ChannelUpstreamExists(ctx context.Context, arg ChannelUpstreamExistsParams) (int32, error)
 	CountRateLimitRules(ctx context.Context, arg CountRateLimitRulesParams) (int32, error)
 	CountRequestsSince(ctx context.Context, arg CountRequestsSinceParams) (int32, error)
 	CountStatsDaily(ctx context.Context, arg CountStatsDailyParams) (int32, error)
@@ -47,6 +48,7 @@ type Querier interface {
 	GetChannelHealth(ctx context.Context, channelID int64) (ChannelHealth, error)
 	GetChannelHealthForUpdate(ctx context.Context, channelID int64) (ChannelHealth, error)
 	GetChannelModel(ctx context.Context, arg GetChannelModelParams) (GetChannelModelRow, error)
+	GetChannelModelByID(ctx context.Context, arg GetChannelModelByIDParams) (GetChannelModelByIDRow, error)
 	GetChannelOwner(ctx context.Context, id int64) (int64, error)
 	GetChannelSecret(ctx context.Context, arg GetChannelSecretParams) (GetChannelSecretRow, error)
 	GetKey(ctx context.Context, arg GetKeyParams) (GetKeyRow, error)
@@ -81,6 +83,8 @@ type Querier interface {
 	UpdateChannel(ctx context.Context, arg UpdateChannelParams) (int64, error)
 	UpdateChannelBalance(ctx context.Context, arg UpdateChannelBalanceParams) (int64, error)
 	UpdateChannelHealth(ctx context.Context, arg UpdateChannelHealthParams) (int64, error)
+	// The upstream (real) model name is set by the upstream and cannot change;
+	// only the public alias and enabled flag are updated.
 	UpdateChannelModel(ctx context.Context, arg UpdateChannelModelParams) (UpdateChannelModelRow, error)
 	UpdateChannelStatus(ctx context.Context, arg UpdateChannelStatusParams) (int64, error)
 	UpdateKeyActive(ctx context.Context, arg UpdateKeyActiveParams) (int64, error)

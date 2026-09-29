@@ -17,10 +17,7 @@ func (a *Service) checkRateLimit(ctx context.Context, auth *accounts.AuthContext
 	apiKeyOverrides := ratelimit.ParseOverrides(auth.RateLimitOverrides)
 
 	if override := apiKeyOverrides.RPM; override > 0 {
-		window := apiKeyOverrides.RPMWindowSeconds
-		if window <= 0 {
-			window = 60
-		}
+		window := ratelimit.RateLimitWindowSeconds
 		since := a.now().Add(-time.Duration(window) * time.Second).UTC().Format(time.RFC3339)
 		count, err := a.store.CountRequestsSince(ctx, usage.UsageCountFilter{APIKeyID: &auth.KeyID, Since: since})
 		if err != nil {
@@ -50,7 +47,7 @@ func (a *Service) checkRateLimit(ctx context.Context, auth *accounts.AuthContext
 		if limit <= 0 {
 			continue
 		}
-		filter := usage.UsageCountFilter{Since: ratelimit.MetricSince(a.now(), item.WindowSeconds).Format(time.RFC3339)}
+		filter := usage.UsageCountFilter{Since: ratelimit.MetricSince(a.now(), ratelimit.RateLimitWindowSeconds).Format(time.RFC3339)}
 		switch item.TargetType {
 		case "user":
 			filter.UserID = auth.UserID
@@ -68,18 +65,18 @@ func (a *Service) checkRateLimit(ctx context.Context, auth *accounts.AuthContext
 		}
 		var count int64
 		if item.Metric == "rpm" {
-			since := ratelimit.MetricSince(a.now(), item.WindowSeconds).Format(time.RFC3339)
+			since := ratelimit.MetricSince(a.now(), ratelimit.RateLimitWindowSeconds).Format(time.RFC3339)
 			filter.Since = since
 			current, countErr := a.store.CountRequestsSince(ctx, filter)
 			if countErr != nil {
 				return countErr
 			}
-			count = ratelimit.SlidingWindowCount(0, int64(current), int64(item.WindowSeconds), a.now(), ratelimit.RequestWindowStart(a.now(), item.WindowSeconds))
+			count = ratelimit.SlidingWindowCount(0, int64(current), int64(ratelimit.RateLimitWindowSeconds), a.now(), ratelimit.RequestWindowStart(a.now(), ratelimit.RateLimitWindowSeconds))
 		} else if item.Metric == "tpm" {
 			if estimatedTokens == nil {
 				return ErrRateLimited
 			}
-			since := ratelimit.MetricSince(a.now(), item.WindowSeconds).Format(time.RFC3339)
+			since := ratelimit.MetricSince(a.now(), ratelimit.RateLimitWindowSeconds).Format(time.RFC3339)
 			tokenFilter := usage.TokenCountFilter{APIKeyID: filter.APIKeyID, Model: filter.Model, Since: since}
 			tokenFilter.UserID = filter.UserID
 			tokenCount, countErr := a.store.CountTokensSince(ctx, tokenFilter)
@@ -122,11 +119,11 @@ func (a *Service) checkChannelRateLimit(ctx context.Context, auth *accounts.Auth
 		var count int64
 		var err error
 		if item.Metric == "rpm" {
-			current, countErr := a.store.CountRequestsSince(ctx, usage.UsageCountFilter{Since: ratelimit.MetricSince(a.now(), item.WindowSeconds).Format(time.RFC3339), ChannelID: &channelID})
+			current, countErr := a.store.CountRequestsSince(ctx, usage.UsageCountFilter{Since: ratelimit.MetricSince(a.now(), ratelimit.RateLimitWindowSeconds).Format(time.RFC3339), ChannelID: &channelID})
 			err = countErr
-			count = ratelimit.SlidingWindowCount(0, int64(current), int64(item.WindowSeconds), a.now(), ratelimit.RequestWindowStart(a.now(), item.WindowSeconds))
+			count = ratelimit.SlidingWindowCount(0, int64(current), int64(ratelimit.RateLimitWindowSeconds), a.now(), ratelimit.RequestWindowStart(a.now(), ratelimit.RateLimitWindowSeconds))
 		} else if item.Metric == "tpm" {
-			current, countErr := a.store.CountTokensSince(ctx, usage.TokenCountFilter{Since: ratelimit.MetricSince(a.now(), item.WindowSeconds).Format(time.RFC3339), Model: model, ChannelID: &channelID})
+			current, countErr := a.store.CountTokensSince(ctx, usage.TokenCountFilter{Since: ratelimit.MetricSince(a.now(), ratelimit.RateLimitWindowSeconds).Format(time.RFC3339), Model: model, ChannelID: &channelID})
 			err = countErr
 			count = current + estimatedTokens
 		} else if item.Metric == "concurrency" {

@@ -122,16 +122,15 @@ func (a *Server) CountActiveRateLimitReservations(ctx context.Context, userID in
 // RateLimitRuleToDTO maps a rule to its wire representation.
 func RateLimitRuleToDTO(rule RateLimitRule) RateLimitRuleDTO {
 	return RateLimitRuleDTO{
-		ID:            rule.ID,
-		RuleName:      rule.RuleName,
-		TargetType:    rule.TargetType,
-		TargetValue:   rule.TargetValue,
-		Metric:        rule.Metric,
-		LimitValue:    rule.LimitValue,
-		WindowSeconds: rule.WindowSeconds,
-		Action:        rule.Action,
-		Priority:      rule.Priority,
-		Enabled:       rule.Enabled,
-		Extras:        rule.Extras,
+		ID:          rule.ID,
+		RuleName:    rule.RuleName,
+		TargetType:  rule.TargetType,
+		TargetValue: rule.TargetValue,
+		Metric:      rule.Metric,
+		LimitValue:  rule.LimitValue,
+		Action:      rule.Action,
+		Priority:    rule.Priority,
+		Enabled:     rule.Enabled,
+		Extras:      rule.Extras,
 	}
 }

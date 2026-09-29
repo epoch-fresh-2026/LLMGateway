@@ -103,7 +103,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	if a.maxAttempts < len(candidates) {
 		candidates = candidates[:a.maxAttempts]
 	}
-	reservation, err := a.reserveQuota(ctx, requestID, auth, req, candidate.ChannelID)
+	reservation, err := a.reserveQuota(ctx, requestID, auth, req, candidate.ChannelID, candidate.UpstreamModel)
 	if err != nil {
 		if errors.Is(err, ErrQuotaExceeded) {
 			a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "quota_exceeded")
@@ -184,7 +184,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		return ChatResponse{}, ErrUpstream
 	}
 	a.recordChannelHealth(ctx, candidate.ChannelID, true, "")
-	cost, inputPrice, outputPrice, err := a.priceFor(ctx, candidate.ChannelID, req.Model, usage)
+	cost, inputPrice, outputPrice, err := a.priceFor(ctx, candidate.ChannelID, candidate.UpstreamModel, usage)
 	if err != nil {
 		return ChatResponse{}, err
 	}
@@ -211,13 +211,13 @@ func (a *Service) recordChannelHealth(ctx context.Context, channelID int, succes
 	_, _ = a.catalog.RecordChannelAttempt(detached, channelID, success, reason)
 }
 
-func (a *Service) priceFor(ctx context.Context, channelID int, model string, usage *Usage) (string, string, string, error) {
-	pricing, err := a.catalog.GetPricing(ctx, channelID, model)
+func (a *Service) priceFor(ctx context.Context, channelID int, upstreamModel string, usage *Usage) (string, string, string, error) {
+	pricing, err := a.catalog.GetPricing(ctx, channelID, upstreamModel)
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
-			// Known behaviour: a channel+model without pricing is served for
-			// free (cost 0). Documented in docs/backend-structure.md; operators
-			// should configure pricing for every routable model.
+			// Known behaviour: a channel+upstream model without pricing is served
+			// for free (cost 0). Documented in docs/backend-structure.md;
+			// operators should configure pricing for every routable model.
 			return "0.000000", "", "", nil
 		}
 		return "", "", "", err

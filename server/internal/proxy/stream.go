@@ -139,7 +139,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	}
 
 	durationMs := elapsedMs(s.start, s.service.now())
-	cost, inputPrice, outputPrice, err := s.service.priceFor(s.ctx, s.candidate.ChannelID, s.publicModel, usage)
+	cost, inputPrice, outputPrice, err := s.service.priceFor(s.ctx, s.candidate.ChannelID, s.candidate.UpstreamModel, usage)
 	if err != nil {
 		s.logError(usage, ttft, "pricing_error")
 		s.emitError(emit, "pricing_error", "unable to price completion")
@@ -191,7 +191,7 @@ func (s *completionStream) settlePartial(text string, ttft *int, code string) bo
 		CompletionTokens: completionTokens,
 		TotalTokens:      s.estimatedPromptTokens + completionTokens,
 	}
-	cost, inputPrice, outputPrice, err := s.service.priceFor(s.ctx, s.candidate.ChannelID, s.publicModel, usage)
+	cost, inputPrice, outputPrice, err := s.service.priceFor(s.ctx, s.candidate.ChannelID, s.candidate.UpstreamModel, usage)
 	if err != nil {
 		s.logError(usage, ttft, code)
 		return false

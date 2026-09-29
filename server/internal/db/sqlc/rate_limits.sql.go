@@ -31,7 +31,7 @@ func (q *Queries) CountRateLimitRules(ctx context.Context, arg CountRateLimitRul
 }
 
 const createRateLimitRule = `-- name: CreateRateLimitRule :one
-INSERT INTO rate_limit_rules (owner_user_id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras)
+INSERT INTO rate_limit_rules (owner_user_id, rule_name, target_type, target_value, metric, limit_value, action, priority, enabled, extras)
 VALUES (
     $1,
     $2,
@@ -42,24 +42,22 @@ VALUES (
     $7,
     $8,
     $9,
-    $10,
-    $11
+    $10
 )
 RETURNING id
 `
 
 type CreateRateLimitRuleParams struct {
-	OwnerUserID   int64  `json:"owner_user_id"`
-	RuleName      string `json:"rule_name"`
-	TargetType    string `json:"target_type"`
-	TargetValue   string `json:"target_value"`
-	Metric        string `json:"metric"`
-	LimitValue    int64  `json:"limit_value"`
-	WindowSeconds int32  `json:"window_seconds"`
-	Action        string `json:"action"`
-	Priority      int32  `json:"priority"`
-	Enabled       bool   `json:"enabled"`
-	Extras        []byte `json:"extras"`
+	OwnerUserID int64  `json:"owner_user_id"`
+	RuleName    string `json:"rule_name"`
+	TargetType  string `json:"target_type"`
+	TargetValue string `json:"target_value"`
+	Metric      string `json:"metric"`
+	LimitValue  int64  `json:"limit_value"`
+	Action      string `json:"action"`
+	Priority    int32  `json:"priority"`
+	Enabled     bool   `json:"enabled"`
+	Extras      []byte `json:"extras"`
 }
 
 func (q *Queries) CreateRateLimitRule(ctx context.Context, arg CreateRateLimitRuleParams) (int64, error) {
@@ -70,7 +68,6 @@ func (q *Queries) CreateRateLimitRule(ctx context.Context, arg CreateRateLimitRu
 		arg.TargetValue,
 		arg.Metric,
 		arg.LimitValue,
-		arg.WindowSeconds,
 		arg.Action,
 		arg.Priority,
 		arg.Enabled,
@@ -99,7 +96,7 @@ func (q *Queries) DeleteRateLimitRule(ctx context.Context, arg DeleteRateLimitRu
 }
 
 const getRateLimitRule = `-- name: GetRateLimitRule :one
-SELECT id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras
+SELECT id, rule_name, target_type, target_value, metric, limit_value, action, priority, enabled, extras
 FROM rate_limit_rules
 WHERE id = $1 AND owner_user_id = $2
 `
@@ -110,17 +107,16 @@ type GetRateLimitRuleParams struct {
 }
 
 type GetRateLimitRuleRow struct {
-	ID            int64  `json:"id"`
-	RuleName      string `json:"rule_name"`
-	TargetType    string `json:"target_type"`
-	TargetValue   string `json:"target_value"`
-	Metric        string `json:"metric"`
-	LimitValue    int64  `json:"limit_value"`
-	WindowSeconds int32  `json:"window_seconds"`
-	Action        string `json:"action"`
-	Priority      int32  `json:"priority"`
-	Enabled       bool   `json:"enabled"`
-	Extras        []byte `json:"extras"`
+	ID          int64  `json:"id"`
+	RuleName    string `json:"rule_name"`
+	TargetType  string `json:"target_type"`
+	TargetValue string `json:"target_value"`
+	Metric      string `json:"metric"`
+	LimitValue  int64  `json:"limit_value"`
+	Action      string `json:"action"`
+	Priority    int32  `json:"priority"`
+	Enabled     bool   `json:"enabled"`
+	Extras      []byte `json:"extras"`
 }
 
 func (q *Queries) GetRateLimitRule(ctx context.Context, arg GetRateLimitRuleParams) (GetRateLimitRuleRow, error) {
@@ -133,7 +129,6 @@ func (q *Queries) GetRateLimitRule(ctx context.Context, arg GetRateLimitRulePara
 		&i.TargetValue,
 		&i.Metric,
 		&i.LimitValue,
-		&i.WindowSeconds,
 		&i.Action,
 		&i.Priority,
 		&i.Enabled,
@@ -143,7 +138,7 @@ func (q *Queries) GetRateLimitRule(ctx context.Context, arg GetRateLimitRulePara
 }
 
 const listRateLimitRules = `-- name: ListRateLimitRules :many
-SELECT id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras
+SELECT id, rule_name, target_type, target_value, metric, limit_value, action, priority, enabled, extras
 FROM rate_limit_rules
 WHERE owner_user_id = $1
   AND ($2::boolean IS NULL OR enabled = $2::boolean)
@@ -159,17 +154,16 @@ type ListRateLimitRulesParams struct {
 }
 
 type ListRateLimitRulesRow struct {
-	ID            int64  `json:"id"`
-	RuleName      string `json:"rule_name"`
-	TargetType    string `json:"target_type"`
-	TargetValue   string `json:"target_value"`
-	Metric        string `json:"metric"`
-	LimitValue    int64  `json:"limit_value"`
-	WindowSeconds int32  `json:"window_seconds"`
-	Action        string `json:"action"`
-	Priority      int32  `json:"priority"`
-	Enabled       bool   `json:"enabled"`
-	Extras        []byte `json:"extras"`
+	ID          int64  `json:"id"`
+	RuleName    string `json:"rule_name"`
+	TargetType  string `json:"target_type"`
+	TargetValue string `json:"target_value"`
+	Metric      string `json:"metric"`
+	LimitValue  int64  `json:"limit_value"`
+	Action      string `json:"action"`
+	Priority    int32  `json:"priority"`
+	Enabled     bool   `json:"enabled"`
+	Extras      []byte `json:"extras"`
 }
 
 func (q *Queries) ListRateLimitRules(ctx context.Context, arg ListRateLimitRulesParams) ([]ListRateLimitRulesRow, error) {
@@ -193,7 +187,6 @@ func (q *Queries) ListRateLimitRules(ctx context.Context, arg ListRateLimitRules
 			&i.TargetValue,
 			&i.Metric,
 			&i.LimitValue,
-			&i.WindowSeconds,
 			&i.Action,
 			&i.Priority,
 			&i.Enabled,
@@ -216,28 +209,26 @@ SET rule_name = $1,
     target_value = $3,
     metric = $4,
     limit_value = $5,
-    window_seconds = $6,
-    action = $7,
-    priority = $8,
-    enabled = $9,
-    extras = $10,
+    action = $6,
+    priority = $7,
+    enabled = $8,
+    extras = $9,
     updated_at = now()
-WHERE id = $11 AND owner_user_id = $12
+WHERE id = $10 AND owner_user_id = $11
 `
 
 type UpdateRateLimitRuleParams struct {
-	RuleName      string `json:"rule_name"`
-	TargetType    string `json:"target_type"`
-	TargetValue   string `json:"target_value"`
-	Metric        string `json:"metric"`
-	LimitValue    int64  `json:"limit_value"`
-	WindowSeconds int32  `json:"window_seconds"`
-	Action        string `json:"action"`
-	Priority      int32  `json:"priority"`
-	Enabled       bool   `json:"enabled"`
-	Extras        []byte `json:"extras"`
-	ID            int64  `json:"id"`
-	OwnerUserID   int64  `json:"owner_user_id"`
+	RuleName    string `json:"rule_name"`
+	TargetType  string `json:"target_type"`
+	TargetValue string `json:"target_value"`
+	Metric      string `json:"metric"`
+	LimitValue  int64  `json:"limit_value"`
+	Action      string `json:"action"`
+	Priority    int32  `json:"priority"`
+	Enabled     bool   `json:"enabled"`
+	Extras      []byte `json:"extras"`
+	ID          int64  `json:"id"`
+	OwnerUserID int64  `json:"owner_user_id"`
 }
 
 func (q *Queries) UpdateRateLimitRule(ctx context.Context, arg UpdateRateLimitRuleParams) (int64, error) {
@@ -247,7 +238,6 @@ func (q *Queries) UpdateRateLimitRule(ctx context.Context, arg UpdateRateLimitRu
 		arg.TargetValue,
 		arg.Metric,
 		arg.LimitValue,
-		arg.WindowSeconds,
 		arg.Action,
 		arg.Priority,
 		arg.Enabled,

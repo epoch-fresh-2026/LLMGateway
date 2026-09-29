@@ -40,7 +40,7 @@ func addSeamFallback(t *testing.T, st *storefake.Store, name, baseURL string) in
 	if _, err := cat.CreateChannelModel(context.Background(), 1, channel.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: channel.ID, ModelName: "public-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(context.Background(), 1, domain.PricingInput{ChannelID: channel.ID, UpstreamModel: "configured-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 	return channel.ID
@@ -61,7 +61,7 @@ func TestChatCompletionsChannelRateLimitFailsOverToNextCandidate(t *testing.T) {
 	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "prior-channel", UserID: &one, APIKeyID: &one, ChannelID: &one, Model: "public-model", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newTestRateLimit(st, nil).CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strPtr("channel rpm"), TargetType: strPtr("channel"), TargetValue: strPtr("1"), Metric: strPtr("rpm"), LimitValue: int64Ptr(1), WindowSeconds: intPtr(60), Action: strPtr("reject")}); err != nil {
+	if _, err := newTestRateLimit(st, nil).CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: strPtr("channel rpm"), TargetType: strPtr("channel"), TargetValue: strPtr("1"), Metric: strPtr("rpm"), LimitValue: int64Ptr(1), Action: strPtr("reject")}); err != nil {
 		t.Fatal(err)
 	}
 

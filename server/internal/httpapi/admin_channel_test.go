@@ -62,7 +62,7 @@ func TestModelMappingsCatalogPricingAndCascadeDelete(t *testing.T) {
 	mapping := adminDo(t, handler, http.MethodPost, "/admin/channels/1/models", map[string]any{"model_name": "gpt-4o-mini", "upstream_model": "gpt-4o-mini-up", "enabled": true})
 	modelID := int(mapping["data"].(map[string]any)["id"].(float64))
 
-	adminDo(t, handler, http.MethodPut, "/admin/channels/1/models/"+itoa(modelID), map[string]any{"upstream_model": "gpt-4o-mini", "enabled": true})
+	adminDo(t, handler, http.MethodPut, "/admin/channels/1/models/"+itoa(modelID), map[string]any{"model_name": "gpt-4o-mini", "enabled": true})
 	catalog := adminDo(t, handler, http.MethodGet, "/admin/models?status=1", nil)
 	models := catalog["data"].(map[string]any)["list"].([]any)
 	if len(models) != 1 || models[0].(map[string]any)["model_name"] != "gpt-4o-mini" {
@@ -73,18 +73,18 @@ func TestModelMappingsCatalogPricingAndCascadeDelete(t *testing.T) {
 		t.Fatalf("unexpected catalog channels: %+v", channels)
 	}
 
-	price := adminDo(t, handler, http.MethodPost, "/admin/pricing", map[string]any{"channel_id": 1, "model_name": "gpt-4o-mini", "input_price_per_1m": "0.15000000", "output_price_per_1m": "0.60000000", "currency": "USD"})
-	if price["data"].(map[string]any)["upstream_model"] != "gpt-4o-mini" {
+	price := adminDo(t, handler, http.MethodPost, "/admin/pricing", map[string]any{"channel_id": 1, "upstream_model": "gpt-4o-mini-up", "input_price_per_1m": "0.15000000", "output_price_per_1m": "0.60000000", "currency": "USD"})
+	if price["data"].(map[string]any)["upstream_model"] != "gpt-4o-mini-up" {
 		t.Fatalf("pricing upstream model mismatch: %+v", price)
 	}
 
-	adminDo(t, handler, http.MethodDelete, "/admin/pricing", map[string]any{"channel_id": 1, "model_name": "gpt-4o-mini"})
+	adminDo(t, handler, http.MethodDelete, "/admin/pricing", map[string]any{"channel_id": 1, "upstream_model": "gpt-4o-mini-up"})
 	pricingList := adminDo(t, handler, http.MethodGet, "/admin/pricing", nil)
 	if pricingList["data"].(map[string]any)["total"].(float64) != 0 {
 		t.Fatalf("pricing delete failed: %+v", pricingList)
 	}
 
-	adminDo(t, handler, http.MethodPost, "/admin/pricing", map[string]any{"channel_id": 1, "model_name": "gpt-4o-mini", "input_price_per_1m": "0.15000000", "output_price_per_1m": "0.60000000", "currency": "USD"})
+	adminDo(t, handler, http.MethodPost, "/admin/pricing", map[string]any{"channel_id": 1, "upstream_model": "gpt-4o-mini-up", "input_price_per_1m": "0.15000000", "output_price_per_1m": "0.60000000", "currency": "USD"})
 	adminDo(t, handler, http.MethodDelete, "/admin/channels/1", nil)
 	if res := adminRaw(t, handler, http.MethodGet, "/admin/channels/1/models", nil); res.Code != http.StatusNotFound {
 		t.Fatalf("model mappings should be gone with the channel, status = %d", res.Code)

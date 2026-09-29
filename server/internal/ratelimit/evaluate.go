@@ -10,7 +10,6 @@ import (
 // rate_limit_overrides JSON. Zero values mean "not overridden".
 type Overrides struct {
 	RPM, TPM, Concurrency int64
-	RPMWindowSeconds      int
 }
 
 // ParseOverrides decodes raw gateway-key override JSON. Malformed input yields
@@ -18,10 +17,9 @@ type Overrides struct {
 func ParseOverrides(raw json.RawMessage) Overrides {
 	var value struct {
 		RPM, TPM, Concurrency int64
-		RPMWindowSeconds      int `json:"rpm_window_seconds"`
 	}
 	_ = json.Unmarshal(raw, &value)
-	return Overrides{RPM: value.RPM, TPM: value.TPM, Concurrency: value.Concurrency, RPMWindowSeconds: value.RPMWindowSeconds}
+	return Overrides{RPM: value.RPM, TPM: value.TPM, Concurrency: value.Concurrency}
 }
 
 // ForRule returns the override value that replaces a matching rule's limit.

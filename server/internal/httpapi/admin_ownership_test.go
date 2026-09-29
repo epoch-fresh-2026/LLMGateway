@@ -9,7 +9,7 @@ func TestRateLimitAndQuotaOwnershipIsolation(t *testing.T) {
 	handler := newTestServer()
 
 	rule := adminRawAs(t, handler, 1, http.MethodPost, "/admin/rate-limits", map[string]any{
-		"rule_name": "mine", "target_type": "user", "target_value": "1", "metric": "rpm", "limit_value": 10, "window_seconds": 60, "action": "reject",
+		"rule_name": "mine", "target_type": "user", "target_value": "1", "metric": "rpm", "limit_value": 10, "action": "reject",
 	})
 	if rule.Code != http.StatusOK {
 		t.Fatalf("create rule status = %d; body=%s", rule.Code, rule.Body.String())

@@ -85,13 +85,13 @@ func (a *Server) channelModel(r *http.Request) httpcommon.AdminResult {
 	switch r.Method {
 	case http.MethodPut:
 		var req struct {
-			UpstreamModel string `json:"upstream_model"`
-			Enabled       bool   `json:"enabled"`
+			ModelName string `json:"model_name"`
+			Enabled   bool   `json:"enabled"`
 		}
 		if err := httpcommon.ReadJSON(r, &req); err != nil {
 			return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 		}
-		return httpcommon.Result(a.UpdateChannelModel(r.Context(), ownerUserID, id, modelID, req.UpstreamModel, req.Enabled))
+		return httpcommon.Result(a.UpdateChannelModel(r.Context(), ownerUserID, id, modelID, req.ModelName, req.Enabled))
 	case http.MethodDelete:
 		return httpcommon.NoBody(a.DeleteChannelModel(r.Context(), ownerUserID, id, modelID))
 	default:
