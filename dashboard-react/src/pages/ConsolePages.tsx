@@ -2,9 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { createRateLimit, deleteRateLimit, listRateLimits, updateRateLimit } from '../api/ratelimit'
 import { createQuotaPolicy, deleteQuotaPolicy, listQuotaPolicies, listQuotaUsage } from '../api/quota'
-import { createPricing, deletePricing, listPricing } from '../api/catalog'
+import { createPricing, deletePricing, listChannels, listModels, listPricing } from '../api/catalog'
+import { listKeys } from '../api/accounts'
+import { useSession } from '../auth/AuthProvider'
 import { Modal } from '../components/feedback/Modal'
-import type { PricingCreateInput, QuotaPolicyCreateInput, RateLimitCreateInput } from '../types/api'
+import type { PricingCreateInput, QuotaPolicy, QuotaPolicyCreateInput, RateLimit, RateLimitCreateInput } from '../types/api'
 
 function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   return <label><span>{label}</span><input {...props} /></label>
@@ -12,8 +14,31 @@ function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> 
 
 export function LimitsPage() {
   const query = useQuery({ queryKey: ['rate-limits'], queryFn: () => listRateLimits() })
+  const keys = useQuery({ queryKey: ['keys'], queryFn: () => listKeys({ page: 1, page_size: 1000 }) })
+  const channels = useQuery({ queryKey: ['channels'], queryFn: () => listChannels({ page: 1, page_size: 1000 }) })
+  const models = useQuery({ queryKey: ['models'], queryFn: () => listModels({ status: 1, page: 1, page_size: 1000 }) })
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  const [targetType, setTargetType] = useState<RateLimitCreateInput['target_type']>('user')
+  const [targetValue, setTargetValue] = useState('*')
+
+  const keyNames = new Map((keys.data?.list || []).map(key => [key.id, key.key_name]))
+  const channelNames = new Map((channels.data?.list || []).map(channel => [channel.id, channel.name]))
+  const targetLabel = (rule: RateLimit) => {
+    if (rule.target_type === 'user') return '本人'
+    if (rule.target_type === 'api_key') return rule.target_value === '*' ? '全部密钥' : `密钥 ${keyNames.get(Number(rule.target_value)) ?? `#${rule.target_value}`}`
+    if (rule.target_type === 'model') return rule.target_value === '*' ? '全部模型' : `模型 ${rule.target_value}`
+    if (rule.target_type === 'channel') return rule.target_value === '*' ? '全部渠道' : `渠道 ${channelNames.get(Number(rule.target_value)) ?? `#${rule.target_value}`}`
+    return rule.target_value
+  }
+
+  const changeTarget = (value: string) => {
+    setTargetType(value as RateLimitCreateInput['target_type'])
+    if (value === 'api_key') setTargetValue(keys.data?.list[0] ? String(keys.data.list[0].id) : '*')
+    else if (value === 'model') setTargetValue(models.data?.list[0] ? models.data.list[0].model_name : '*')
+    else if (value === 'channel') setTargetValue(channels.data?.list[0] ? String(channels.data.list[0].id) : '*')
+    else setTargetValue('*')
+  }
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -22,8 +47,8 @@ export function LimitsPage() {
       setError('')
       await createRateLimit({
         rule_name: String(form.get('rule_name') || ''),
-        target_type: String(form.get('target_type') || 'user') as RateLimitCreateInput['target_type'],
-        target_value: String(form.get('target_value') || ''),
+        target_type: targetType,
+        target_value: targetType === 'user' ? '*' : targetValue,
         metric: String(form.get('metric') || 'rpm') as RateLimitCreateInput['metric'],
         limit_value: Number(form.get('limit_value')),
         window_seconds: Number(form.get('window_seconds')),
@@ -39,18 +64,32 @@ export function LimitsPage() {
   }
 
   return <section className="panel">
-    <div className="panel-head"><div><h3>限流规则</h3><p className="muted">rate_limit_rules · 短窗口速率控制</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void query.refetch()}>刷新</button><button className="button primary" onClick={() => { setError(''); setCreating(true) }}>新建</button></div></div>
+    <div className="panel-head"><div><h3>限流规则</h3><p className="muted">rate_limit_rules · 短窗口速率控制</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void query.refetch()}>刷新</button><button className="button primary" onClick={() => { setError(''); setTargetType('user'); setTargetValue('*'); setCreating(true) }}>新建</button></div></div>
     {error && !creating && <p className="error">{error}</p>}
-    {query.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>规则名</th><th>作用域</th><th>指标</th><th>限额</th><th>状态</th><th /></tr></thead><tbody>{query.data?.list.map(rule => <tr key={rule.id}><td>{rule.rule_name}</td><td>{rule.target_type}</td><td>{rule.metric}</td><td>{rule.limit_value} / {rule.window_seconds}s</td><td>{rule.enabled ? '启用' : '停用'}</td><td><button className="button ghost" onClick={() => void updateRateLimit(rule.id, { enabled: !rule.enabled }).then(() => query.refetch())}>切换</button><button className="button delete" onClick={() => void deleteRateLimit(rule.id).then(() => query.refetch())}>删除</button></td></tr>)}</tbody></table></div>}
-    {creating && <Modal title="新建限流规则" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">{error && <p className="error">{error}</p>}<Field label="规则名" name="rule_name" required /><label><span>作用域</span><select name="target_type" defaultValue="user"><option value="user">user</option><option value="api_key">api_key</option><option value="model">model</option><option value="channel">channel</option></select></label><Field label="目标值（可选）" name="target_value" /><label><span>指标</span><select name="metric" defaultValue="rpm"><option value="rpm">rpm</option><option value="tpm">tpm</option><option value="concurrency">concurrency</option></select></label><Field label="限额" name="limit_value" type="number" min={1} required /><Field label="窗口秒数" name="window_seconds" type="number" min={1} required /><Field label="优先级" name="priority" type="number" defaultValue={0} /><label className="checkbox"><input name="enabled" type="checkbox" defaultChecked /> 启用</label></div></Modal>}
+    {query.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>规则名</th><th>作用域</th><th>目标</th><th>指标</th><th>限额</th><th>状态</th><th /></tr></thead><tbody>{query.data?.list.map(rule => <tr key={rule.id}><td>{rule.rule_name}</td><td>{rule.target_type}</td><td>{targetLabel(rule)}</td><td>{rule.metric}</td><td>{rule.limit_value} / {rule.window_seconds}s</td><td>{rule.enabled ? '启用' : '停用'}</td><td><button className="button ghost" onClick={() => void updateRateLimit(rule.id, { enabled: !rule.enabled }).then(() => query.refetch())}>切换</button><button className="button delete" onClick={() => void deleteRateLimit(rule.id).then(() => query.refetch())}>删除</button></td></tr>)}</tbody></table></div>}
+    {creating && <Modal title="新建限流规则" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">{error && <p className="error">{error}</p>}<Field label="规则名" name="rule_name" required /><label><span>作用域</span><select value={targetType} onChange={event => changeTarget(event.target.value)}><option value="user">user（当前用户）</option><option value="api_key">api_key（指定密钥）</option><option value="model">model（指定模型）</option><option value="channel">channel（指定渠道）</option></select></label><label><span>目标值</span>{targetType === 'user' ? <input value="本人（当前用户全部请求）" readOnly disabled /> : targetType === 'api_key' ? <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部密钥（*）</option>{keys.data?.list.map(key => <option key={key.id} value={String(key.id)}>{key.key_name} #{key.id}</option>)}</select> : targetType === 'model' ? <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部模型（*）</option>{models.data?.list.map(model => <option key={model.model_name} value={model.model_name}>{model.model_name}</option>)}</select> : <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部渠道（*）</option>{channels.data?.list.map(channel => <option key={channel.id} value={String(channel.id)}>{channel.name}</option>)}</select>}</label><label><span>指标</span><select name="metric" defaultValue="rpm"><option value="rpm">rpm</option><option value="tpm">tpm</option><option value="concurrency">concurrency</option></select></label><Field label="限额" name="limit_value" type="number" min={1} required /><Field label="窗口秒数" name="window_seconds" type="number" min={1} required /><Field label="优先级" name="priority" type="number" defaultValue={0} /><label className="checkbox"><input name="enabled" type="checkbox" defaultChecked /> 启用</label></div></Modal>}
   </section>
 }
 
 export function QuotasPage() {
+  const { account } = useSession()
   const policies = useQuery({ queryKey: ['quota-policies'], queryFn: () => listQuotaPolicies() })
   const usage = useQuery({ queryKey: ['quota-usage'], queryFn: () => listQuotaUsage() })
+  const keys = useQuery({ queryKey: ['keys'], queryFn: () => listKeys({ page: 1, page_size: 1000 }) })
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  const [scopeType, setScopeType] = useState<QuotaPolicyCreateInput['scope_type']>('user')
+  const [scopeKeyId, setScopeKeyId] = useState('')
+
+  const keyNames = new Map((keys.data?.list || []).map(key => [key.id, key.key_name]))
+  const scopeLabel = (policy: QuotaPolicy) => policy.scope_type === 'user'
+    ? `用户 ${account?.username ?? `#${policy.scope_id}`}`
+    : `密钥 ${keyNames.get(policy.scope_id) ?? `#${policy.scope_id}`}`
+
+  const changeScope = (value: string) => {
+    setScopeType(value as QuotaPolicyCreateInput['scope_type'])
+    setScopeKeyId(value === 'api_key' ? String(keys.data?.list[0]?.id ?? '') : '')
+  }
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -60,10 +99,12 @@ export function QuotasPage() {
     try {
       setError('')
       if (tokenLimit === undefined && !costLimit) throw new Error('token 限额与费用限额至少填写一项')
+      const scopeId = scopeType === 'user' ? account?.id : Number(scopeKeyId)
+      if (!scopeId) throw new Error(scopeType === 'user' ? '当前用户信息缺失' : '请选择密钥')
       const base = {
         policy_name: String(form.get('policy_name') || ''),
-        scope_type: String(form.get('scope_type') || 'user') as QuotaPolicyCreateInput['scope_type'],
-        scope_id: Number(form.get('scope_id')),
+        scope_type: scopeType,
+        scope_id: scopeId,
         period_type: String(form.get('period_type') || 'day') as QuotaPolicyCreateInput['period_type'],
         enabled: form.get('enabled') === 'on',
       }
@@ -79,10 +120,10 @@ export function QuotasPage() {
   }
 
   return <section className="panel">
-    <div className="panel-head"><div><h3>周期配额</h3><p className="muted">UTC 日/月 token 与费用额度</p></div><div className="panel-actions"><button className="button ghost" onClick={() => { void policies.refetch(); void usage.refetch() }}>刷新</button><button className="button primary" onClick={() => { setError(''); setCreating(true) }}>新建</button></div></div>
+    <div className="panel-head"><div><h3>周期配额</h3><p className="muted">UTC 日/月 token 与费用额度</p></div><div className="panel-actions"><button className="button ghost" onClick={() => { void policies.refetch(); void usage.refetch() }}>刷新</button><button className="button primary" onClick={() => { setError(''); setScopeType('user'); setScopeKeyId(''); setCreating(true) }}>新建</button></div></div>
     {error && !creating && <p className="error">{error}</p>}
-    {policies.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>策略</th><th>作用域</th><th>周期</th><th>状态</th><th /></tr></thead><tbody>{policies.data?.list.map(policy => <tr key={policy.id}><td>{policy.policy_name}</td><td>{policy.scope_type} #{policy.scope_id}</td><td>{policy.period_type}</td><td>{policy.enabled ? '启用' : '停用'}</td><td><button className="button delete" onClick={() => void deleteQuotaPolicy(policy.id).then(() => policies.refetch())}>删除</button></td></tr>)}</tbody></table></div>}
-    {creating && <Modal title="新建周期配额" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">{error && <p className="error">{error}</p>}<Field label="策略名" name="policy_name" required /><label><span>作用域</span><select name="scope_type" defaultValue="user"><option value="user">user</option><option value="api_key">api_key</option></select></label><Field label="作用域 ID" name="scope_id" type="number" min={1} required /><label><span>周期</span><select name="period_type" defaultValue="day"><option value="day">day</option><option value="month">month</option></select></label><Field label="Token 限额（可选）" name="token_limit" type="number" min={1} /><Field label="费用限额（可选）" name="cost_limit" /><label className="checkbox"><input name="enabled" type="checkbox" defaultChecked /> 启用</label></div></Modal>}
+    {policies.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>策略</th><th>作用域</th><th>周期</th><th>状态</th><th /></tr></thead><tbody>{policies.data?.list.map(policy => <tr key={policy.id}><td>{policy.policy_name}</td><td>{scopeLabel(policy)}</td><td>{policy.period_type}</td><td>{policy.enabled ? '启用' : '停用'}</td><td><button className="button delete" onClick={() => void deleteQuotaPolicy(policy.id).then(() => policies.refetch())}>删除</button></td></tr>)}</tbody></table></div>}
+    {creating && <Modal title="新建周期配额" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">{error && <p className="error">{error}</p>}<Field label="策略名" name="policy_name" required /><label><span>作用域</span><select value={scopeType} onChange={event => changeScope(event.target.value)}><option value="user">user（当前用户）</option><option value="api_key">api_key（指定密钥）</option></select></label><label><span>作用域对象</span>{scopeType === 'user' ? <input value={`当前用户 #${account?.id ?? '—'} ${account?.username ?? ''}`} readOnly disabled /> : <select value={scopeKeyId} onChange={event => setScopeKeyId(event.target.value)}>{keys.data?.list.length ? keys.data.list.map(key => <option key={key.id} value={String(key.id)}>{key.key_name} #{key.id}</option>) : <option value="">（暂无可选密钥）</option>}</select>}</label><label><span>周期</span><select name="period_type" defaultValue="day"><option value="day">day</option><option value="month">month</option></select></label><Field label="Token 限额（可选）" name="token_limit" type="number" min={1} /><Field label="费用限额（可选）" name="cost_limit" /><label className="checkbox"><input name="enabled" type="checkbox" defaultChecked /> 启用</label></div></Modal>}
   </section>
 }
 

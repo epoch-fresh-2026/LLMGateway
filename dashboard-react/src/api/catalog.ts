@@ -1,9 +1,10 @@
 import { adminGet, adminSend } from './client'
 import { apiPaths } from './paths'
-import { ChannelBreakerConfigSchema, ChannelListSchema, ChannelModelListSchema, ChannelModelSchema, ChannelSchema, ChannelTestSchema, HealthListSchema, PricingListSchema, PricingSchema, RemoteModelsSchema, DeletedSchema } from './runtime/catalog'
+import { ChannelBreakerConfigSchema, ChannelListSchema, ChannelModelListSchema, ChannelModelSchema, ChannelSchema, CatalogModelListSchema, ChannelTestSchema, HealthListSchema, PricingListSchema, PricingSchema, RemoteModelsSchema, DeletedSchema } from './runtime/catalog'
 import type { Channel, ChannelBalanceInput, ChannelBreakerConfigInput, ChannelCreateInput, ChannelModel, ChannelModelInput, ChannelModelUpdate, ChannelStatusInput, ChannelTestItem, Deleted, Health, ListResponse, Pricing, PricingCreateInput, RemoteModelsResult, ChannelUpdateInput, DeletePricingInput } from '../types/api'
 
 export type ListParams = { page?: number; page_size?: number }
+export type ListModelsParams = ListParams & { status?: number }
 
 export const listChannels = (params: ListParams = {}) => adminGet(apiPaths.channels(), { page: 1, page_size: 100, ...params }, ChannelListSchema)
 export const listChannelHealth = () => adminGet(apiPaths.channelHealthList(), HealthListSchema)
@@ -22,6 +23,7 @@ export const updateChannelModel = (channelId: number, modelId: number, input: Ch
 export const deleteChannelModel = (channelId: number, modelId: number) => adminSend('DELETE', apiPaths.channelModel(channelId, modelId), DeletedSchema)
 export const loadRemoteModels = (channelId: number) => adminSend('POST', apiPaths.channelRemoteModels(channelId), RemoteModelsSchema)
 export const testChannel = (channelId: number, checkAll: boolean) => adminSend('POST', apiPaths.channelTest(channelId), { check_all: checkAll }, ChannelTestSchema)
+export const listModels = (params: ListModelsParams = {}) => adminGet(apiPaths.models(), { status: 1, ...params }, CatalogModelListSchema)
 export const listPricing = (params: ListParams = {}) => adminGet(apiPaths.pricing(), { page: 1, page_size: 100, ...params }, PricingListSchema)
 export const createPricing = (input: PricingCreateInput) => adminSend('POST', apiPaths.pricing(), input, PricingSchema)
 export const deletePricing = (input: DeletePricingInput) => adminSend('DELETE', apiPaths.pricing(), input, DeletedSchema)
