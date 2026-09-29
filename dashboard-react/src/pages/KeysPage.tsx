@@ -11,7 +11,7 @@ function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> 
 
 export function KeysPage() {
   const queryClient = useQueryClient()
-  const keys = useQuery({ queryKey: ['keys'], queryFn: () => listKeys() })
+  const keys = useQuery({ queryKey: ['keys'], queryFn: () => listKeys({ page: 1, page_size: 1000 }) })
 
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
@@ -58,8 +58,9 @@ export function KeysPage() {
       {fullKey && <div className="secret"><code>{fullKey}</code><button className="button ghost" type="button" onClick={() => setFullKey('')}>隐藏</button></div>}
       <AsyncState loading={keys.isLoading} error={keys.error} hasData={Boolean(keys.data)} onRetry={() => void keys.refetch()} />
       {keys.data && <div className="table-wrap"><table>
-        <thead><tr><th>名称</th><th>前缀</th><th>状态</th><th>最近使用</th><th /></tr></thead>
-        <tbody>{keys.data.list.map(key => <tr key={key.id}>
+        <thead><tr><th>序号</th><th>名称</th><th>前缀</th><th>状态</th><th>最近使用</th><th /></tr></thead>
+        <tbody>{keys.data.list.map((key, index) => <tr key={key.id}>
+          <td className="mono">#{index + 1}</td>
           <td>{key.key_name}</td>
           <td className="mono">{key.prefix}</td>
           <td>{key.is_active ? '启用' : '停用'}</td>
