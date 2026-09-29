@@ -90,3 +90,6 @@ WHERE id = sqlc.arg(id) AND owner_user_id = sqlc.arg(owner_user_id);
 
 -- name: DeleteChannel :execrows
 DELETE FROM channels WHERE id = sqlc.arg(id) AND owner_user_id = sqlc.arg(owner_user_id);
+
+-- name: GetChannelOwner :one
+SELECT owner_user_id FROM channels WHERE id = sqlc.arg(id);

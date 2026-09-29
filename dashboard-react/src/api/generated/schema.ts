@@ -170,6 +170,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/breaker-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getUserBreakerConfig"];
+        put: operations["updateUserBreakerConfig"];
+        post?: never;
+        delete: operations["deleteUserBreakerConfig"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/channels/{id}/health": {
         parameters: {
             query?: never;
@@ -695,6 +711,13 @@ export interface components {
             timeout_rate_percent: number;
             cooldown_seconds: number;
         };
+        BreakerConfig: {
+            window_seconds: number;
+            minimum_samples: number;
+            error_rate_percent: number;
+            timeout_rate_percent: number;
+            cooldown_seconds: number;
+        };
         ChannelBreakerConfigInput: {
             window_seconds: number;
             minimum_samples: number;
@@ -999,6 +1022,9 @@ export interface components {
         AdminResponseChannelBreakerConfig: {
             data?: components["schemas"]["ChannelBreakerConfig"];
         } & components["schemas"]["AdminResponse"];
+        AdminResponseBreakerConfig: {
+            data?: components["schemas"]["BreakerConfig"];
+        } & components["schemas"]["AdminResponse"];
         AdminResponseChannelModel: {
             data?: components["schemas"]["ChannelModel"];
         } & components["schemas"]["AdminResponse"];
@@ -1177,6 +1203,15 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["AdminResponseChannelBreakerConfig"];
+            };
+        };
+        /** @description Owner breaker config */
+        BreakerConfig: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["AdminResponseBreakerConfig"];
             };
         };
         /** @description Channel model */
@@ -1576,6 +1611,47 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["HealthList"];
+        };
+    };
+    getUserBreakerConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["BreakerConfig"];
+        };
+    };
+    updateUserBreakerConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelBreakerConfigInput"];
+            };
+        };
+        responses: {
+            200: components["responses"]["BreakerConfig"];
+            400: components["responses"]["Error"];
+        };
+    };
+    deleteUserBreakerConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["Deleted"];
         };
     };
     getChannelHealth: {

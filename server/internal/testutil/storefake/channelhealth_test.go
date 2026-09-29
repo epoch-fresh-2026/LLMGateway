@@ -275,6 +275,53 @@ func TestChannelBreakerConfigAdminLifecycle(t *testing.T) {
 	}
 }
 
+func TestUserBreakerConfigInheritedByChannel(t *testing.T) {
+	st, clock := newHealthTestStore()
+	cat := newHealthCatalog(st, clock)
+	created, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := created.ID
+
+	initial, err := cat.GetUserBreakerConfig(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initial.WindowSeconds != 60 || initial.CooldownSeconds != 30 {
+		t.Fatalf("process defaults = %+v", initial)
+	}
+
+	if _, err := cat.UpdateUserBreakerConfig(context.Background(), 1, catalog.ChannelBreakerConfigInput{WindowSeconds: 120, MinimumSamples: 20, ErrorRatePercent: 30, TimeoutRatePercent: 40, CooldownSeconds: 15}); err != nil {
+		t.Fatal(err)
+	}
+	inherited, err := cat.GetChannelBreakerConfig(context.Background(), 1, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inherited.WindowSeconds != 120 || inherited.CooldownSeconds != 15 {
+		t.Fatalf("inherited = %+v, want user defaults", inherited)
+	}
+
+	// A per-channel override still wins over the user default.
+	if _, err := cat.UpdateChannelBreakerConfig(context.Background(), 1, id, catalog.ChannelBreakerConfigInput{WindowSeconds: 300, MinimumSamples: 50, ErrorRatePercent: 20, TimeoutRatePercent: 25, CooldownSeconds: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := cat.GetChannelBreakerConfig(context.Background(), 1, id); got.WindowSeconds != 300 || got.CooldownSeconds != 5 {
+		t.Fatalf("overridden = %+v, want channel override", got)
+	}
+
+	if err := cat.DeleteUserBreakerConfig(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := cat.DeleteChannelBreakerConfig(context.Background(), 1, id); err != nil {
+		t.Fatal(err)
+	}
+	if back, _ := cat.GetChannelBreakerConfig(context.Background(), 1, id); back.WindowSeconds != 60 || back.CooldownSeconds != 30 {
+		t.Fatalf("after deletes = %+v, want process defaults", back)
+	}
+}
+
 func TestReapChannelHealthBuckets(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)

@@ -78,3 +78,22 @@ SET window_seconds = EXCLUDED.window_seconds,
 
 -- name: DeleteChannelBreakerConfig :execrows
 DELETE FROM channel_breaker_configs WHERE channel_id = $1;
+
+-- name: GetUserBreakerConfig :one
+SELECT window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds
+FROM user_breaker_configs
+WHERE owner_user_id = $1;
+
+-- name: UpsertUserBreakerConfig :exec
+INSERT INTO user_breaker_configs (owner_user_id, window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds, updated_at)
+VALUES (sqlc.arg(owner_user_id), sqlc.arg(window_seconds), sqlc.arg(minimum_samples), sqlc.arg(error_rate_percent), sqlc.arg(timeout_rate_percent), sqlc.arg(cooldown_seconds), now())
+ON CONFLICT (owner_user_id) DO UPDATE
+SET window_seconds = EXCLUDED.window_seconds,
+    minimum_samples = EXCLUDED.minimum_samples,
+    error_rate_percent = EXCLUDED.error_rate_percent,
+    timeout_rate_percent = EXCLUDED.timeout_rate_percent,
+    cooldown_seconds = EXCLUDED.cooldown_seconds,
+    updated_at = now();
+
+-- name: DeleteUserBreakerConfig :execrows
+DELETE FROM user_breaker_configs WHERE owner_user_id = $1;

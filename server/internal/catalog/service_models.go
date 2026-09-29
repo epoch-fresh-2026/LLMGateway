@@ -46,5 +46,5 @@ func (a *Server) ListCatalogModels(ctx context.Context, ownerUserID int, enabled
 }
 
 func (a *Server) RouteCandidates(ctx context.Context, ownerUserID int, modelName string) (ListResponse[RouteCandidate], error) {
-	return a.store.RouteCandidates(ctx, ownerUserID, modelName, int(a.breaker.Cooldown.Seconds()))
+	return a.store.RouteCandidates(ctx, ownerUserID, modelName, int(a.baseBreakerFor(ctx, ownerUserID).Cooldown.Seconds()))
 }

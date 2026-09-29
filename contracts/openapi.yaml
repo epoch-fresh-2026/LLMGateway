@@ -69,6 +69,17 @@ paths:
     get:
       operationId: listChannelHealth
       responses: { '200': { $ref: '#/components/responses/HealthList' } }
+  /admin/breaker-config:
+    get:
+      operationId: getUserBreakerConfig
+      responses: { '200': { $ref: '#/components/responses/BreakerConfig' } }
+    put:
+      operationId: updateUserBreakerConfig
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ChannelBreakerConfigInput' } } } }
+      responses: { '200': { $ref: '#/components/responses/BreakerConfig' }, '400': { $ref: '#/components/responses/Error' } }
+    delete:
+      operationId: deleteUserBreakerConfig
+      responses: { '200': { $ref: '#/components/responses/Deleted' } }
   /admin/channels/{id}/health:
     parameters: [$ref: '#/components/parameters/Id']
     get:
@@ -270,6 +281,7 @@ components:
     HealthList: { description: Health, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseHealthList' } } } }
     Health: { description: Channel health, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseHealth' } } } }
     ChannelBreakerConfig: { description: Channel breaker config, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseChannelBreakerConfig' } } } }
+    BreakerConfig: { description: Owner breaker config, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseBreakerConfig' } } } }
     ChannelModel: { description: Channel model, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseChannelModel' } } } }
     ChannelModelList: { description: Channel models, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseChannelModelList' } } } }
     RemoteModels: { description: Remote models, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResponseRemoteModels' } } } }
@@ -305,6 +317,7 @@ components:
     ChannelModelUpdate: { type: object, required: [upstream_model, enabled], properties: { upstream_model: { type: string }, enabled: { type: boolean } } }
     Health: { type: object, required: [channel_id, state, consecutive_failures, success_count, failure_count, opened_at, updated_at], properties: { channel_id: { type: integer }, state: { type: string, enum: [closed, open, half-open] }, consecutive_failures: { type: integer }, success_count: { type: integer }, failure_count: { type: integer }, opened_at: { type: [string, 'null'], format: date-time }, updated_at: { type: string, format: date-time } } }
     ChannelBreakerConfig: { type: object, required: [channel_id, window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds], properties: { channel_id: { type: integer }, window_seconds: { type: integer }, minimum_samples: { type: integer }, error_rate_percent: { type: integer }, timeout_rate_percent: { type: integer }, cooldown_seconds: { type: integer } } }
+    BreakerConfig: { type: object, required: [window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds], properties: { window_seconds: { type: integer }, minimum_samples: { type: integer }, error_rate_percent: { type: integer }, timeout_rate_percent: { type: integer }, cooldown_seconds: { type: integer } } }
     ChannelBreakerConfigInput: { type: object, required: [window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds], properties: { window_seconds: { type: integer, minimum: 1 }, minimum_samples: { type: integer, minimum: 1 }, error_rate_percent: { type: integer, minimum: 1, maximum: 100 }, timeout_rate_percent: { type: integer, minimum: 1, maximum: 100 }, cooldown_seconds: { type: integer, minimum: 1 } } }
     Pricing: { type: object, required: [id, channel_id, channel_name, model_name, upstream_model, input_price_per_1m, output_price_per_1m, cached_input_price_per_1m, currency], properties: { id: { type: integer }, channel_id: { type: integer }, channel_name: { type: string }, model_name: { type: string }, upstream_model: { type: string }, input_price_per_1m: { $ref: '#/components/schemas/Money' }, output_price_per_1m: { $ref: '#/components/schemas/Money' }, cached_input_price_per_1m: { $ref: '#/components/schemas/Money' }, currency: { type: string } } }
     PricingCreateInput: { type: object, required: [channel_id, model_name, input_price_per_1m, output_price_per_1m, currency], properties: { channel_id: { type: integer }, model_name: { type: string }, input_price_per_1m: { $ref: '#/components/schemas/Money' }, output_price_per_1m: { $ref: '#/components/schemas/Money' }, cached_input_price_per_1m: { $ref: '#/components/schemas/Money' }, currency: { type: string } } }
@@ -343,6 +356,7 @@ components:
     AdminResponseHealthList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/Health' } } } } } }
     AdminResponseHealth: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/Health' } } }
     AdminResponseChannelBreakerConfig: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/ChannelBreakerConfig' } } }
+    AdminResponseBreakerConfig: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/BreakerConfig' } } }
     AdminResponseChannelModel: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { $ref: '#/components/schemas/ChannelModel' } } }
     AdminResponseChannelModelList: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { allOf: [{ $ref: '#/components/schemas/List' }], properties: { list: { type: array, items: { $ref: '#/components/schemas/ChannelModel' } } } } } }
     AdminResponseRemoteModels: { allOf: [{ $ref: '#/components/schemas/AdminResponse' }], properties: { data: { type: object, properties: { ok: { type: boolean }, models: { type: array, items: { $ref: '#/components/schemas/RemoteModel' } }, error: { type: string } } } } }

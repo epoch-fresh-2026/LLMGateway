@@ -47,6 +47,18 @@ func (q *Queries) DeleteStaleChannelHealthBuckets(ctx context.Context, before pg
 	return result.RowsAffected(), nil
 }
 
+const deleteUserBreakerConfig = `-- name: DeleteUserBreakerConfig :execrows
+DELETE FROM user_breaker_configs WHERE owner_user_id = $1
+`
+
+func (q *Queries) DeleteUserBreakerConfig(ctx context.Context, ownerUserID int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUserBreakerConfig, ownerUserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const ensureChannelHealth = `-- name: EnsureChannelHealth :exec
 INSERT INTO channel_health (channel_id)
 VALUES ($1)
@@ -126,6 +138,33 @@ func (q *Queries) GetChannelHealthForUpdate(ctx context.Context, channelID int64
 		&i.FailureCount,
 		&i.OpenedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserBreakerConfig = `-- name: GetUserBreakerConfig :one
+SELECT window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds
+FROM user_breaker_configs
+WHERE owner_user_id = $1
+`
+
+type GetUserBreakerConfigRow struct {
+	WindowSeconds      int32 `json:"window_seconds"`
+	MinimumSamples     int32 `json:"minimum_samples"`
+	ErrorRatePercent   int32 `json:"error_rate_percent"`
+	TimeoutRatePercent int32 `json:"timeout_rate_percent"`
+	CooldownSeconds    int32 `json:"cooldown_seconds"`
+}
+
+func (q *Queries) GetUserBreakerConfig(ctx context.Context, ownerUserID int64) (GetUserBreakerConfigRow, error) {
+	row := q.db.QueryRow(ctx, getUserBreakerConfig, ownerUserID)
+	var i GetUserBreakerConfigRow
+	err := row.Scan(
+		&i.WindowSeconds,
+		&i.MinimumSamples,
+		&i.ErrorRatePercent,
+		&i.TimeoutRatePercent,
+		&i.CooldownSeconds,
 	)
 	return i, err
 }
@@ -329,6 +368,39 @@ func (q *Queries) UpsertChannelHealthBucket(ctx context.Context, arg UpsertChann
 		arg.Requests,
 		arg.Errors,
 		arg.Timeouts,
+	)
+	return err
+}
+
+const upsertUserBreakerConfig = `-- name: UpsertUserBreakerConfig :exec
+INSERT INTO user_breaker_configs (owner_user_id, window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, now())
+ON CONFLICT (owner_user_id) DO UPDATE
+SET window_seconds = EXCLUDED.window_seconds,
+    minimum_samples = EXCLUDED.minimum_samples,
+    error_rate_percent = EXCLUDED.error_rate_percent,
+    timeout_rate_percent = EXCLUDED.timeout_rate_percent,
+    cooldown_seconds = EXCLUDED.cooldown_seconds,
+    updated_at = now()
+`
+
+type UpsertUserBreakerConfigParams struct {
+	OwnerUserID        int64 `json:"owner_user_id"`
+	WindowSeconds      int32 `json:"window_seconds"`
+	MinimumSamples     int32 `json:"minimum_samples"`
+	ErrorRatePercent   int32 `json:"error_rate_percent"`
+	TimeoutRatePercent int32 `json:"timeout_rate_percent"`
+	CooldownSeconds    int32 `json:"cooldown_seconds"`
+}
+
+func (q *Queries) UpsertUserBreakerConfig(ctx context.Context, arg UpsertUserBreakerConfigParams) error {
+	_, err := q.db.Exec(ctx, upsertUserBreakerConfig,
+		arg.OwnerUserID,
+		arg.WindowSeconds,
+		arg.MinimumSamples,
+		arg.ErrorRatePercent,
+		arg.TimeoutRatePercent,
+		arg.CooldownSeconds,
 	)
 	return err
 }

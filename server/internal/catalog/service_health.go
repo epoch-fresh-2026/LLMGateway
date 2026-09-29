@@ -54,11 +54,12 @@ func (a *Server) ListChannelHealth(ctx context.Context, ownerUserID int) (ListRe
 	if err != nil {
 		return ListResponse[ChannelHealthDTO]{}, err
 	}
+	base := a.baseBreakerFor(ctx, ownerUserID)
 	list := []ChannelHealthDTO{}
 	for i := range rows {
-		cfg := a.breaker
+		cfg := base
 		if override, ok := overrides[rows[i].ChannelID]; ok {
-			cfg = ResolveChannelBreakerConfig(a.breaker, &override)
+			cfg = ResolveChannelBreakerConfig(base, &override)
 		}
 		health := EvaluateChannelHealth(rows[i], a.now(), cfg)
 		list = append(list, channelHealthDTO(&health))
@@ -108,7 +109,7 @@ func (a *Server) UpdateChannelBreakerConfig(ctx context.Context, ownerUserID, ch
 		return ChannelBreakerConfigDTO{}, err
 	}
 	a.invalidateBreakerConfig(channelID)
-	return breakerConfigDTO(channelID, ResolveChannelBreakerConfig(a.breaker, &cfg)), nil
+	return breakerConfigDTO(channelID, ResolveChannelBreakerConfig(a.baseBreakerFor(ctx, ownerUserID), &cfg)), nil
 }
 
 // DeleteChannelBreakerConfig removes the override so the channel inherits the
@@ -124,6 +125,50 @@ func (a *Server) DeleteChannelBreakerConfig(ctx context.Context, ownerUserID, ch
 	}
 	a.invalidateBreakerConfig(channelID)
 	return nil
+}
+
+// GetUserBreakerConfig returns the owner-level breaker default, falling back to
+// the process default when the owner has not set one.
+func (a *Server) GetUserBreakerConfig(ctx context.Context, ownerUserID int) (UserBreakerConfigDTO, error) {
+	return userBreakerConfigDTO(a.baseBreakerFor(ctx, ownerUserID)), nil
+}
+
+// UpdateUserBreakerConfig stores the owner-level default and clears the breaker
+// cache so every channel of the owner re-resolves on the next attempt.
+func (a *Server) UpdateUserBreakerConfig(ctx context.Context, ownerUserID int, in ChannelBreakerConfigInput) (UserBreakerConfigDTO, error) {
+	cfg, err := validateBreakerConfig(in)
+	if err != nil {
+		return UserBreakerConfigDTO{}, err
+	}
+	if err := a.tx.InTx(ctx, func(tx Tx) error {
+		return tx.UpsertUserBreakerConfig(ownerUserID, cfg)
+	}); err != nil {
+		return UserBreakerConfigDTO{}, err
+	}
+	a.invalidateAllBreakerConfigs()
+	return userBreakerConfigDTO(cfg), nil
+}
+
+// DeleteUserBreakerConfig removes the owner-level default so the owner inherits
+// the process default again.
+func (a *Server) DeleteUserBreakerConfig(ctx context.Context, ownerUserID int) error {
+	if err := a.tx.InTx(ctx, func(tx Tx) error {
+		return tx.DeleteUserBreakerConfig(ownerUserID)
+	}); err != nil {
+		return err
+	}
+	a.invalidateAllBreakerConfigs()
+	return nil
+}
+
+func userBreakerConfigDTO(cfg ChannelBreakerConfig) UserBreakerConfigDTO {
+	return UserBreakerConfigDTO{
+		WindowSeconds:      cfg.WindowSeconds,
+		MinimumSamples:     cfg.MinimumSamples,
+		ErrorRatePercent:   cfg.ErrorRatePercent,
+		TimeoutRatePercent: cfg.TimeoutRatePercent,
+		CooldownSeconds:    int(cfg.Cooldown.Seconds()),
+	}
 }
 
 func validateBreakerConfig(in ChannelBreakerConfigInput) (ChannelBreakerConfig, error) {

@@ -51,7 +51,7 @@ func testStore(t *testing.T) *Store {
 	// CASCADE clears dependent tables (channel_models, model_pricing,
 	// client_api_keys, user_balances, balance_transactions, usage_logs) so the
 	// fixture is reusable across domains.
-	if _, err := pool.Exec(ctx, "TRUNCATE channel_breaker_probes, channel_breaker_configs, channel_health_buckets, channel_health, rate_limit_reservations, rate_limit_counters, quota_reservation_items, quota_reservations, quota_buckets, quota_policies, users, channels, rate_limit_rules RESTART IDENTITY CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "TRUNCATE channel_breaker_probes, channel_breaker_configs, user_breaker_configs, channel_health_buckets, channel_health, rate_limit_reservations, rate_limit_counters, quota_reservation_items, quota_reservations, quota_buckets, quota_policies, users, channels, rate_limit_rules RESTART IDENTITY CASCADE"); err != nil {
 		t.Fatalf("truncate business tables: %v", err)
 	}
 

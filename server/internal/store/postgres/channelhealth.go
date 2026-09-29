@@ -78,6 +78,17 @@ func (s *Store) GetChannelBreakerConfigRow(ctx context.Context, channelID int) (
 	return channelBreakerConfig(row.WindowSeconds, row.MinimumSamples, row.ErrorRatePercent, row.TimeoutRatePercent, row.CooldownSeconds), true, nil
 }
 
+func (s *Store) GetUserBreakerConfigRow(ctx context.Context, ownerUserID int) (domain.ChannelBreakerConfig, bool, error) {
+	row, err := s.queries.GetUserBreakerConfig(ctx, int64(ownerUserID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ChannelBreakerConfig{}, false, nil
+		}
+		return domain.ChannelBreakerConfig{}, false, mapError(err)
+	}
+	return channelBreakerConfig(row.WindowSeconds, row.MinimumSamples, row.ErrorRatePercent, row.TimeoutRatePercent, row.CooldownSeconds), true, nil
+}
+
 func (s *Store) ListChannelBreakerConfigRows(ctx context.Context, ownerUserID int) (map[int]domain.ChannelBreakerConfig, error) {
 	rows, err := s.queries.ListChannelBreakerConfigs(ctx, int64(ownerUserID))
 	if err != nil {
@@ -132,6 +143,22 @@ func (t *Tx) UpsertChannelBreakerConfig(channelID int, cfg domain.ChannelBreaker
 
 func (t *Tx) DeleteChannelBreakerConfig(channelID int) error {
 	_, err := t.queries.DeleteChannelBreakerConfig(t.ctx, int64(channelID))
+	return mapError(err)
+}
+
+func (t *Tx) UpsertUserBreakerConfig(ownerUserID int, cfg domain.ChannelBreakerConfig) error {
+	return mapError(t.queries.UpsertUserBreakerConfig(t.ctx, sqlc.UpsertUserBreakerConfigParams{
+		OwnerUserID:        int64(ownerUserID),
+		WindowSeconds:      int32(cfg.WindowSeconds),
+		MinimumSamples:     int32(cfg.MinimumSamples),
+		ErrorRatePercent:   int32(cfg.ErrorRatePercent),
+		TimeoutRatePercent: int32(cfg.TimeoutRatePercent),
+		CooldownSeconds:    int32(cfg.Cooldown.Seconds()),
+	}))
+}
+
+func (t *Tx) DeleteUserBreakerConfig(ownerUserID int) error {
+	_, err := t.queries.DeleteUserBreakerConfig(t.ctx, int64(ownerUserID))
 	return mapError(err)
 }
 

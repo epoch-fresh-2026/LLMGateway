@@ -122,6 +122,17 @@ func (q *Queries) GetChannel(ctx context.Context, arg GetChannelParams) (GetChan
 	return i, err
 }
 
+const getChannelOwner = `-- name: GetChannelOwner :one
+SELECT owner_user_id FROM channels WHERE id = $1
+`
+
+func (q *Queries) GetChannelOwner(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, getChannelOwner, id)
+	var owner_user_id int64
+	err := row.Scan(&owner_user_id)
+	return owner_user_id, err
+}
+
 const getChannelSecret = `-- name: GetChannelSecret :one
 SELECT
     id,

@@ -227,3 +227,13 @@ type User struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
+
+type UserBreakerConfig struct {
+	OwnerUserID        int64              `json:"owner_user_id"`
+	WindowSeconds      int32              `json:"window_seconds"`
+	MinimumSamples     int32              `json:"minimum_samples"`
+	ErrorRatePercent   int32              `json:"error_rate_percent"`
+	TimeoutRatePercent int32              `json:"timeout_rate_percent"`
+	CooldownSeconds    int32              `json:"cooldown_seconds"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}

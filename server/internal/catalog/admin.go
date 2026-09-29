@@ -22,6 +22,7 @@ func (a *Server) RegisterAdminRoutes(mux *http.ServeMux) {
 	httpcommon.HandleAdmin(mux, "/admin/channels/{id}/models", a.channelModels)
 	httpcommon.HandleAdmin(mux, "/admin/channels/{id}/models/{model_id}", a.channelModel)
 	httpcommon.HandleAdmin(mux, "/admin/channels/health", a.channelHealthList)
+	httpcommon.HandleAdmin(mux, "/admin/breaker-config", a.userBreakerConfig)
 	httpcommon.HandleAdmin(mux, "/admin/pricing", a.pricingData)
 }
 

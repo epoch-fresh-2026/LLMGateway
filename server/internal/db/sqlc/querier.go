@@ -38,6 +38,7 @@ type Querier interface {
 	DeleteRateLimitRule(ctx context.Context, arg DeleteRateLimitRuleParams) (int64, error)
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) (int64, error)
 	DeleteStaleChannelHealthBuckets(ctx context.Context, before pgtype.Timestamptz) (int64, error)
+	DeleteUserBreakerConfig(ctx context.Context, ownerUserID int64) (int64, error)
 	EnsureChannelHealth(ctx context.Context, channelID int64) error
 	GetAccountByID(ctx context.Context, id int64) (GetAccountByIDRow, error)
 	GetAuthContextByKeyHash(ctx context.Context, keyHash string) (GetAuthContextByKeyHashRow, error)
@@ -46,6 +47,7 @@ type Querier interface {
 	GetChannelHealth(ctx context.Context, channelID int64) (ChannelHealth, error)
 	GetChannelHealthForUpdate(ctx context.Context, channelID int64) (ChannelHealth, error)
 	GetChannelModel(ctx context.Context, arg GetChannelModelParams) (GetChannelModelRow, error)
+	GetChannelOwner(ctx context.Context, id int64) (int64, error)
 	GetChannelSecret(ctx context.Context, arg GetChannelSecretParams) (GetChannelSecretRow, error)
 	GetKey(ctx context.Context, arg GetKeyParams) (GetKeyRow, error)
 	GetPricing(ctx context.Context, arg GetPricingParams) (GetPricingRow, error)
@@ -56,6 +58,7 @@ type Querier interface {
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (GetSessionByTokenHashRow, error)
 	GetUsageLog(ctx context.Context, arg GetUsageLogParams) (GetUsageLogRow, error)
 	GetUser(ctx context.Context, id int64) (GetUserRow, error)
+	GetUserBreakerConfig(ctx context.Context, ownerUserID int64) (GetUserBreakerConfigRow, error)
 	GetUserCredentialsByID(ctx context.Context, id int64) (GetUserCredentialsByIDRow, error)
 	GetUserCredentialsByUsername(ctx context.Context, username string) (GetUserCredentialsByUsernameRow, error)
 	InsertUsageLog(ctx context.Context, arg InsertUsageLogParams) (int64, error)
@@ -91,6 +94,7 @@ type Querier interface {
 	UpsertChannelBreakerConfig(ctx context.Context, arg UpsertChannelBreakerConfigParams) error
 	UpsertChannelHealthBucket(ctx context.Context, arg UpsertChannelHealthBucketParams) error
 	UpsertPricing(ctx context.Context, arg UpsertPricingParams) (int64, error)
+	UpsertUserBreakerConfig(ctx context.Context, arg UpsertUserBreakerConfigParams) error
 }
 
 var _ Querier = (*Queries)(nil)

@@ -75,6 +75,13 @@ func (s *Store) GetChannelBreakerConfigRow(_ context.Context, channelID int) (do
 	return cfg, ok, nil
 }
 
+func (s *Store) GetUserBreakerConfigRow(_ context.Context, ownerUserID int) (domain.ChannelBreakerConfig, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, ok := s.userBreakerConfigs[ownerUserID]
+	return cfg, ok, nil
+}
+
 func (s *Store) ListChannelBreakerConfigRows(_ context.Context, ownerUserID int) (map[int]domain.ChannelBreakerConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -203,6 +210,16 @@ func (t *catalogTx) UpsertChannelBreakerConfig(channelID int, cfg domain.Channel
 
 func (t *catalogTx) DeleteChannelBreakerConfig(channelID int) error {
 	delete(t.s.breakerConfigs, channelID)
+	return nil
+}
+
+func (t *catalogTx) UpsertUserBreakerConfig(ownerUserID int, cfg domain.ChannelBreakerConfig) error {
+	t.s.userBreakerConfigs[ownerUserID] = cfg
+	return nil
+}
+
+func (t *catalogTx) DeleteUserBreakerConfig(ownerUserID int) error {
+	delete(t.s.userBreakerConfigs, ownerUserID)
 	return nil
 }
 

@@ -68,9 +68,22 @@ func New(d Deps) *Server {
 	}
 }
 
-// breakerFor resolves the effective breaker config for a channel: the global
-// default overlaid with any per-channel override. Overrides are cached briefly
-// because recording runs on the proxy request path.
+// baseBreakerFor resolves the base breaker config for an owner: the owner-level
+// default overlaid on the process default when present. FailureThreshold has no
+// owner-level column, so it always comes from the process default.
+func (a *Server) baseBreakerFor(ctx context.Context, ownerUserID int) ChannelBreakerConfig {
+	userCfg, found, err := a.health.GetUserBreakerConfigRow(ctx, ownerUserID)
+	if err == nil && found {
+		return ResolveChannelBreakerConfig(a.breaker, &userCfg)
+	}
+	return a.breaker
+}
+
+// breakerFor resolves the effective breaker config for a channel: the process
+// default, overlaid with the channel owner's default and then any per-channel
+// override. The owner is looked up from the channel so the proxy request path
+// can resolve the owner-level default without an extra parameter. Results are
+// cached briefly because recording runs on that path.
 func (a *Server) breakerFor(ctx context.Context, channelID int) ChannelBreakerConfig {
 	now := a.now()
 	a.breakerMu.RLock()
@@ -80,10 +93,14 @@ func (a *Server) breakerFor(ctx context.Context, channelID int) ChannelBreakerCo
 		return entry.config
 	}
 
-	resolved := a.breaker
+	base := a.breaker
+	if ownerUserID, err := a.store.GetChannelOwner(ctx, channelID); err == nil {
+		base = a.baseBreakerFor(ctx, ownerUserID)
+	}
+	resolved := base
 	override, found, err := a.health.GetChannelBreakerConfigRow(ctx, channelID)
 	if err == nil && found {
-		resolved = ResolveChannelBreakerConfig(a.breaker, &override)
+		resolved = ResolveChannelBreakerConfig(base, &override)
 	}
 	a.breakerMu.Lock()
 	a.breakerCache[channelID] = breakerConfigCacheEntry{config: resolved, expires: now.Add(breakerConfigCacheTTL)}
@@ -95,5 +112,13 @@ func (a *Server) breakerFor(ctx context.Context, channelID int) ChannelBreakerCo
 func (a *Server) invalidateBreakerConfig(channelID int) {
 	a.breakerMu.Lock()
 	delete(a.breakerCache, channelID)
+	a.breakerMu.Unlock()
+}
+
+// invalidateAllBreakerConfigs clears the cache after an owner-level default
+// change so every channel of that owner re-resolves on the next attempt.
+func (a *Server) invalidateAllBreakerConfigs() {
+	a.breakerMu.Lock()
+	a.breakerCache = map[int]breakerConfigCacheEntry{}
 	a.breakerMu.Unlock()
 }

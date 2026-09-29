@@ -43,6 +43,7 @@ type Store struct {
 	channelHealth              map[int]*catalog.ChannelHealth
 	healthBuckets              map[int]map[int64]*fakeHealthBucket
 	breakerConfigs             map[int]catalog.ChannelBreakerConfig
+	userBreakerConfigs         map[int]catalog.ChannelBreakerConfig
 	nextQuotaPolicyID          int
 	nextQuotaReservationID     int64
 	quotaPolicies              map[int]*quota.QuotaPolicy
@@ -137,6 +138,7 @@ func New() *Store {
 		channelHealth:              map[int]*catalog.ChannelHealth{},
 		healthBuckets:              map[int]map[int64]*fakeHealthBucket{},
 		breakerConfigs:             map[int]catalog.ChannelBreakerConfig{},
+		userBreakerConfigs:         map[int]catalog.ChannelBreakerConfig{},
 		breaker:                    catalog.DefaultChannelBreakerConfig(),
 		now:                        time.Now,
 		nextProbeLeaseID:           1,

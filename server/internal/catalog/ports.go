@@ -11,6 +11,10 @@ import (
 type Port interface {
 	ListChannels(ctx context.Context, ownerUserID int) (ListResponse[ChannelDTO], error)
 	GetChannelDTO(ctx context.Context, ownerUserID, id int) (ChannelDTO, error)
+	// GetChannelOwner returns the owner of a channel by id; used to resolve the
+	// owner-level breaker default on the request path where only the channel is
+	// known.
+	GetChannelOwner(ctx context.Context, channelID int) (int, error)
 	GetChannelRecord(ctx context.Context, ownerUserID, id int) (ChannelRecord, error)
 	InsertChannel(ctx context.Context, in ChannelInsert) (int, error)
 	UpdateChannelRecord(ctx context.Context, ownerUserID, id int, in ChannelUpdate) (bool, error)
@@ -53,6 +57,8 @@ type Tx interface {
 
 	UpsertChannelBreakerConfig(channelID int, cfg ChannelBreakerConfig) error
 	DeleteChannelBreakerConfig(channelID int) error
+	UpsertUserBreakerConfig(ownerUserID int, cfg ChannelBreakerConfig) error
+	DeleteUserBreakerConfig(ownerUserID int) error
 
 	LockChannel(ownerUserID, channelID int) error
 	GetChannelBalanceText(ownerUserID, channelID int) (string, error)

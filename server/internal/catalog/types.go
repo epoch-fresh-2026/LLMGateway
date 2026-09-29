@@ -130,3 +130,13 @@ type ChannelBreakerConfigInput struct {
 	TimeoutRatePercent int `json:"timeout_rate_percent"`
 	CooldownSeconds    int `json:"cooldown_seconds"`
 }
+
+// UserBreakerConfigDTO is the owner-level breaker default returned by
+// /admin/breaker-config. It is not channel-scoped, so it carries no channel id.
+type UserBreakerConfigDTO struct {
+	WindowSeconds      int `json:"window_seconds"`
+	MinimumSamples     int `json:"minimum_samples"`
+	ErrorRatePercent   int `json:"error_rate_percent"`
+	TimeoutRatePercent int `json:"timeout_rate_percent"`
+	CooldownSeconds    int `json:"cooldown_seconds"`
+}

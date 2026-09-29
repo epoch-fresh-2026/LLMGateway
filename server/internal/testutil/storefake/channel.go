@@ -24,6 +24,16 @@ func (s *Store) ListChannels(_ context.Context, ownerUserID int) (domain.ListRes
 	return domain.ListResponse[domain.ChannelDTO]{List: list, Total: len(list)}, nil
 }
 
+func (s *Store) GetChannelOwner(_ context.Context, channelID int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ch, ok := s.channels[channelID]
+	if !ok {
+		return 0, store.ErrNotFound
+	}
+	return ch.OwnerUserID, nil
+}
+
 func (s *Store) GetChannelDTO(_ context.Context, ownerUserID, id int) (domain.ChannelDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

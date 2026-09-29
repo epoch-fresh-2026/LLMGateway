@@ -349,7 +349,7 @@ page_size=20
 
 ### GET /admin/channels/:id/breaker
 
-读取渠道熔断配置。返回全局默认值与渠道覆盖合并后的生效值：
+读取渠道熔断配置。返回进程默认值、用户级默认值与渠道覆盖逐层合并后的生效值：
 
 ```json
 {
@@ -364,7 +364,7 @@ page_size=20
 
 ### PUT /admin/channels/:id/breaker
 
-写入渠道级熔断覆盖，覆盖全局默认值。
+写入渠道级熔断覆盖，覆盖用户级默认值与进程默认值。
 
 ```json
 {
@@ -380,11 +380,33 @@ page_size=20
 
 - `window_seconds`、`minimum_samples`、`cooldown_seconds` 必须为正整数。
 - `error_rate_percent`、`timeout_rate_percent` 取值 1–100。
-- 连续失败阈值（`CHANNEL_BREAKER_FAILURE_THRESHOLD`）不可按渠道覆盖。
+- 连续失败阈值（`CHANNEL_BREAKER_FAILURE_THRESHOLD`）不可按渠道或用户覆盖。
 
 ### DELETE /admin/channels/:id/breaker
 
-删除渠道覆盖，恢复继承全局默认值。
+删除渠道覆盖，恢复继承用户级默认值；用户未配置默认值时回退进程默认值。
+
+### GET /admin/breaker-config
+
+读取当前用户的熔断默认值；未配置时返回进程默认值：
+
+```json
+{
+  "window_seconds": 60,
+  "minimum_samples": 10,
+  "error_rate_percent": 50,
+  "timeout_rate_percent": 50,
+  "cooldown_seconds": 30
+}
+```
+
+### PUT /admin/breaker-config
+
+写入当前用户的熔断默认值，请求体字段与渠道覆盖一致。未单独配置的渠道（含新建渠道）都继承该默认值；校验规则同渠道覆盖。
+
+### DELETE /admin/breaker-config
+
+删除用户级默认值，恢复继承进程默认值。
 
 ### POST /admin/channels/:id/test
 

@@ -22,6 +22,14 @@ func (s *Store) ListChannels(ctx context.Context, ownerUserID int) (domain.ListR
 	return domain.ListResponse[domain.ChannelDTO]{List: list, Total: len(list)}, nil
 }
 
+func (s *Store) GetChannelOwner(ctx context.Context, channelID int) (int, error) {
+	ownerUserID, err := s.queries.GetChannelOwner(ctx, int64(channelID))
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(ownerUserID), nil
+}
+
 func (s *Store) GetChannelDTO(ctx context.Context, ownerUserID, id int) (domain.ChannelDTO, error) {
 	row, err := s.queries.GetChannel(ctx, sqlc.GetChannelParams{ID: int64(id), OwnerUserID: int64(ownerUserID)})
 	if err != nil {
