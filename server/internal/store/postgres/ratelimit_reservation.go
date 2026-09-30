@@ -41,7 +41,10 @@ func (s *Store) ReapRateLimitReservations(ctx context.Context, limit int) (int, 
 
 func (s *Store) CountActiveRateLimitReservations(ctx context.Context, userID int, apiKeyID *int, model string, channelID *int) (int64, error) {
 	var count int64
-	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM rate_limit_reservations WHERE status='pending' AND user_id=$1 AND ($2=0 OR api_key_id=$2) AND ($3='' OR model=$3) AND ($4=0 OR channel_id=$4)`, userID, optionalID(apiKeyID), model, optionalID(channelID)).Scan(&count)
+	// Only non-expired pending reservations count as in-flight. Expired rows may
+	// linger until the reaper runs, and counting them would keep rejecting new
+	// requests after the reservation's lease already passed.
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM rate_limit_reservations WHERE status='pending' AND expires_at > now() AND user_id=$1 AND ($2=0 OR api_key_id=$2) AND ($3='' OR model=$3) AND ($4=0 OR channel_id=$4)`, userID, optionalID(apiKeyID), model, optionalID(channelID)).Scan(&count)
 	if err != nil {
 		return 0, mapError(err)
 	}

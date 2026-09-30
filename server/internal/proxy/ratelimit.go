@@ -85,11 +85,14 @@ func (a *Service) checkRateLimit(ctx context.Context, auth *accounts.AuthContext
 			}
 			count = tokenCount + *estimatedTokens
 		} else if item.Metric == "concurrency" {
+			// The current request has not reserved a slot yet (the reservation
+			// is created after this check), so admit it while the number of
+			// other in-flight requests is below the limit.
 			current, countErr := a.ratelimit.CountActiveRateLimitReservations(ctx, auth.UserID, &auth.KeyID, filter.Model, nil)
 			if countErr != nil {
 				return countErr
 			}
-			count = current + 1
+			count = current
 		} else {
 			continue
 		}
@@ -127,9 +130,12 @@ func (a *Service) checkChannelRateLimit(ctx context.Context, auth *accounts.Auth
 			err = countErr
 			count = current + estimatedTokens
 		} else if item.Metric == "concurrency" {
+			// See checkRateLimit: the current request's reservation does not
+			// exist yet, so only reject when other in-flight requests already
+			// reached the limit.
 			current, countErr := a.ratelimit.CountActiveRateLimitReservations(ctx, auth.UserID, &auth.KeyID, model, &channelID)
 			err = countErr
-			count = current + 1
+			count = current
 		} else {
 			continue
 		}

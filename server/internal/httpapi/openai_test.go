@@ -492,6 +492,40 @@ func TestChatCompletionsTokenRateLimitRejectsConservatively(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsConcurrencyLimitAllowsOneAtATime(t *testing.T) {
+	st := storefake.New()
+	f := newProxyFixtureWithStore(t, upstreamSuccess(), st)
+	metric, target, action := "concurrency", "user", "reject"
+	limit, priority := int64(1), 1
+	if _, err := f.ratelimit.CreateRateLimit(context.Background(), 1, domain.RateLimitInput{RuleName: stringPointer("one at a time"), TargetType: &target, TargetValue: stringPointer("1"), Metric: &metric, LimitValue: &limit, Action: &action, Priority: &priority}); err != nil {
+		t.Fatal(err)
+	}
+
+	// No other in-flight request, so the limit of 1 must admit this one.
+	first := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first request status = %d, want 200; body=%s", first.Code, first.Body.String())
+	}
+
+	// An expired pending reservation (leaked and not yet reaped) must not count.
+	if _, err := st.InsertRateLimitReservation(context.Background(), domain.RateLimitReservationInput{RequestID: "expired", UserID: 1, APIKeyID: 1, Model: "gpt", EstimatedTokens: 1, ExpiresAt: time.Now().Add(-time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	stillAllowed := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
+	if stillAllowed.Code != http.StatusOK {
+		t.Fatalf("request with expired reservation status = %d, want 200; body=%s", stillAllowed.Code, stillAllowed.Body.String())
+	}
+
+	// Simulate one in-flight request holding the only slot: the next is rejected.
+	if _, err := st.InsertRateLimitReservation(context.Background(), domain.RateLimitReservationInput{RequestID: "in-flight", UserID: 1, APIKeyID: 1, Model: "gpt", EstimatedTokens: 1, ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	second := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
+	if second.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request status = %d, want 429; body=%s", second.Code, second.Body.String())
+	}
+}
+
 func TestChatCompletionsNoChannel(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"unknown-model","messages":[]}`)

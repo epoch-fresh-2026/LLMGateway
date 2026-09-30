@@ -55,8 +55,12 @@ func (s *Store) ReapRateLimitReservations(_ context.Context, limit int) (int, er
 func (s *Store) CountActiveRateLimitReservations(_ context.Context, userID int, apiKeyID *int, model string, channelID *int) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := s.now()
 	var count int64
 	for _, in := range s.rateLimitReservations {
+		if !in.ExpiresAt.After(now) {
+			continue
+		}
 		if in.UserID != userID || (apiKeyID != nil && in.APIKeyID != *apiKeyID) || (model != "" && in.Model != model) || (channelID != nil && (in.ChannelID == nil || *in.ChannelID != *channelID)) {
 			continue
 		}
