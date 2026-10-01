@@ -20,6 +20,7 @@ export function ChannelsPage() {
   const [selected, setSelected] = useState<Channel | null>(null)
   const [breaker, setBreaker] = useState<Channel | null>(null)
   const [globalBreaker, setGlobalBreaker] = useState(false)
+  const [testing, setTesting] = useState<Channel | null>(null)
   const [error, setError] = useState('')
   const rows = channels.data?.list || []
   const healthMap = new Map((health.data?.list || []).map(row => [row.channel_id, row]))
@@ -28,12 +29,38 @@ export function ChannelsPage() {
 
   return <>
     <AsyncState loading={channels.isLoading || health.isLoading} error={channels.error || health.error} hasData={Boolean(channels.data || health.data)} onRetry={() => { void refresh() }} />
-    <section className="panel"><div className="panel-head"><div><h3>渠道管理</h3><p className="muted">上游渠道 · 状态 / 权重 / 优先级 / 余额</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void refresh()}>刷新</button><button className="button ghost" onClick={() => setGlobalBreaker(true)}>全局熔断配置</button><button className="button primary" onClick={() => setEditor(null)}>新建渠道</button></div></div>{error && <p className="error">{error}</p>}<div className="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>Base URL</th><th>状态</th><th>权重/优先级</th><th>余额</th><th>模型</th><th>熔断</th><th>操作</th></tr></thead><tbody>{rows.map(channel => { const state = healthMap.get(channel.id)?.state || 'closed'; return <tr key={channel.id}><td className="mono">#{channel.id}</td><td><b>{channel.name}</b></td><td className="mono channel-url">{channel.base_url}</td><td><span className={`badge ${channel.status === 1 ? 'ok-bg' : 'danger-bg'}`}>{channel.status === 1 ? '启用' : '停用'}</span></td><td className="mono">{channel.weight} / {channel.priority}</td><td className="mono">{channel.balance == null ? '不限' : `$${channel.balance}`}</td><td>{channel.model_count}</td><td><span className={`badge ${state === 'open' ? 'danger-bg' : state === 'half-open' ? 'warn-bg' : 'ok-bg'}`}>{state === 'open' ? '熔断' : state === 'half-open' ? '半开' : '正常'}</span></td><td className="table-actions"><button className="button ghost" onClick={() => setEditor(channel)}>编辑</button><button className="button ghost" onClick={() => setSelected(channel)}>模型映射</button><button className="button ghost" onClick={() => void action(() => updateChannelStatus(channel.id, { status: channel.status === 1 ? 0 : 1 }))}>切换状态</button><button className="button ghost" onClick={() => setBreaker(channel)}>熔断配置</button><button className="button ghost" disabled={state === 'closed'} onClick={() => void action(() => resetChannelHealth(channel.id))}>解除熔断</button><button className="button delete" onClick={() => { if (window.confirm(`确认删除渠道「${channel.name}」？`)) void action(() => deleteChannel(channel.id)) }}>删除</button></td></tr> })}</tbody></table>{!rows.length && <div className="empty">暂无渠道</div>}</div></section>
+    <section className="panel"><div className="panel-head"><div><h3>渠道管理</h3><p className="muted">上游渠道 · 状态 / 权重 / 优先级 / 余额</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void refresh()}>刷新</button><button className="button ghost" onClick={() => setGlobalBreaker(true)}>全局熔断配置</button><button className="button primary" onClick={() => setEditor(null)}>新建渠道</button></div></div>{error && <p className="error">{error}</p>}<div className="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>Base URL</th><th>状态</th><th>权重/优先级</th><th>余额</th><th>模型</th><th>熔断</th><th>操作</th></tr></thead><tbody>{rows.map(channel => { const state = healthMap.get(channel.id)?.state || 'closed'; return <tr key={channel.id}><td className="mono">#{channel.id}</td><td><b>{channel.name}</b></td><td className="mono channel-url">{channel.base_url}</td><td><span className={`badge ${channel.status === 1 ? 'ok-bg' : 'danger-bg'}`}>{channel.status === 1 ? '启用' : '停用'}</span></td><td className="mono">{channel.weight} / {channel.priority}</td><td className="mono">{channel.balance == null ? '不限' : `$${channel.balance}`}</td><td>{channel.model_count}</td><td><span className={`badge ${state === 'open' ? 'danger-bg' : state === 'half-open' ? 'warn-bg' : 'ok-bg'}`}>{state === 'open' ? '熔断' : state === 'half-open' ? '半开' : '正常'}</span></td><td className="table-actions"><button className="button ghost" onClick={() => setEditor(channel)}>编辑</button><button className="button ghost" onClick={() => setSelected(channel)}>模型映射</button><button className="button ghost" onClick={() => void action(() => updateChannelStatus(channel.id, { status: channel.status === 1 ? 0 : 1 }))}>切换状态</button><button className="button ghost" onClick={() => setBreaker(channel)}>熔断配置</button><button className="button ghost" onClick={() => setTesting(channel)}>测试</button><button className="button ghost" disabled={state === 'closed'} onClick={() => void action(() => resetChannelHealth(channel.id))}>解除熔断</button><button className="button delete" onClick={() => { if (window.confirm(`确认删除渠道「${channel.name}」？`)) void action(() => deleteChannel(channel.id)) }}>删除</button></td></tr> })}</tbody></table>{!rows.length && <div className="empty">暂无渠道</div>}</div></section>
     {editor !== undefined && <ChannelEditor channel={editor} onClose={() => setEditor(undefined)} onSaved={() => { setEditor(undefined); void refresh() }} />}
     {selected && <Mappings channel={selected} onClose={() => setSelected(null)} onChanged={() => void client.invalidateQueries({ queryKey: ['channels'] })} />}
     {breaker && <BreakerConfig channel={breaker} onClose={() => setBreaker(null)} />}
     {globalBreaker && <UserBreakerConfig onClose={() => setGlobalBreaker(false)} onChanged={() => void refresh()} />}
+    {testing && <ChannelTest channel={testing} onClose={() => setTesting(null)} />}
   </>
+}
+
+// ChannelTest probes the channel's upstream models and reports per-model status.
+function ChannelTest({ channel, onClose }: { channel: Channel; onClose: () => void }) {
+  const [items, setItems] = useState<ChannelTestItem[] | null>(null)
+  const [error, setError] = useState('')
+  const [running, setRunning] = useState(false)
+  const run = async (checkAll: boolean) => {
+    setRunning(true)
+    setError('')
+    try {
+      const result = await testChannel(channel.id, checkAll)
+      setItems(result.list)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '测试失败')
+    } finally {
+      setRunning(false)
+    }
+  }
+  useEffect(() => { void run(true) }, [])
+  return <Modal title={`渠道测试 · ${channel.name}`} onClose={onClose}>
+    <div className="modal-toolbar"><button type="button" className="button ghost" disabled={running} onClick={() => void run(true)}>测试全部模型</button><button type="button" className="button ghost" disabled={running} onClick={() => void run(false)}>测试单个模型</button></div>
+    {error && <p className="error">{error}</p>}
+    {running ? <div className="empty">测试中…</div> : items && (items.length ? <div className="table-wrap"><table><thead><tr><th>对外模型</th><th>上游模型</th><th>HTTP</th><th>耗时</th><th>结果</th></tr></thead><tbody>{items.map(item => <tr key={`${item.model_alias}:${item.upstream_model}`}><td>{item.model_alias}</td><td className="mono">{item.upstream_model}</td><td className="mono">{item.http_status}</td><td className="mono">{item.latency_ms}ms</td><td><span className={`badge ${item.ok ? 'ok-bg' : 'danger-bg'}`}>{item.ok ? '成功' : item.error || '失败'}</span></td></tr>)}</tbody></table></div> : <div className="empty">暂无模型映射可测试</div>)}
+  </Modal>
 }
 
 // UserBreakerConfig edits the owner-level breaker default that channels inherit
