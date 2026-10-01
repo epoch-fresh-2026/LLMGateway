@@ -54,6 +54,25 @@ export function pointChange(currentRate: number, previousRate: number | null): s
 export const compact = (value: number): string =>
   value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : value.toLocaleString()
 
+export type TokenTrendPoint = { date: string; input: number; output: number; cacheRead: number; cacheHitRate: number }
+
+// tokenTrend shapes daily rows into the token-usage line chart points. Cache
+// hit rate is cached input over prompt input (input includes cached), and a day
+// with no input reports 0%.
+export function tokenTrend(rows: { stat_date: string; input_tokens: number; output_tokens: number; cached_input_tokens: number }[]): TokenTrendPoint[] {
+  return rows.map(row => {
+    const input = Number(row.input_tokens || 0)
+    const cacheRead = Number(row.cached_input_tokens || 0)
+    return {
+      date: row.stat_date,
+      input,
+      output: Number(row.output_tokens || 0),
+      cacheRead,
+      cacheHitRate: input > 0 ? cacheRead / input * 100 : 0,
+    }
+  })
+}
+
 export type ModelSlice = { name: string; requests: number; tokens: number; cost: string }
 
 export const MODEL_TOP_N = 6

@@ -198,12 +198,17 @@ page_size=100
       "success_count": 0,
       "error_count": 0,
       "total_tokens": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cached_input_tokens": 0,
       "total_cost": "0.000000"
     }
   ],
   "total": 1
 }
 ```
+
+`input_tokens` 为 prompt token 总量(含缓存命中部分),`cached_input_tokens` 是其中子集;缓存命中率 = `cached_input_tokens / input_tokens`。
 
 ### GET /admin/stats/channels
 

@@ -165,7 +165,7 @@ func (s *Store) StatsDaily(ctx context.Context, ownerUserID int, dateFrom, dateT
 
 	list := []domain.StatsDailyDTO{}
 	for _, row := range rows {
-		list = append(list, domain.StatsDailyDTO{StatDate: row.StatDate.Time.UTC().Format("2006-01-02"), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost})
+		list = append(list, domain.StatsDailyDTO{StatDate: row.StatDate.Time.UTC().Format("2006-01-02"), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, CachedInputTokens: row.CachedInputTokens, TotalCost: row.TotalCost})
 	}
 	return domain.ListResponse[domain.StatsDailyDTO]{List: list, Total: int(total)}, nil
 }

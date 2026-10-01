@@ -828,6 +828,9 @@ export interface components {
             success_count: number;
             error_count: number;
             total_tokens: number;
+            input_tokens: number;
+            output_tokens: number;
+            cached_input_tokens: number;
             total_cost: components["schemas"]["Money"];
         };
         ChannelStats: {

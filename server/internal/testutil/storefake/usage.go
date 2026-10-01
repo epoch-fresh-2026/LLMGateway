@@ -209,6 +209,7 @@ func (s *Store) StatsDaily(_ context.Context, ownerUserID int, dateFrom, dateTo 
 
 	type bucket struct {
 		requests, success, errors, tokens int
+		input, output, cached             int
 		cost                              money.Amount
 	}
 	byDate := map[string]*bucket{}
@@ -232,6 +233,9 @@ func (s *Store) StatsDaily(_ context.Context, ownerUserID int, dateFrom, dateTo 
 			entry.errors++
 		}
 		entry.tokens += log.TotalTokens
+		entry.input += log.InputTokens
+		entry.output += log.OutputTokens
+		entry.cached += log.CachedInputTokens
 		if parsed, err := money.Parse6(log.TotalCost); err == nil {
 			entry.cost = entry.cost.Add(parsed)
 		}
@@ -247,7 +251,7 @@ func (s *Store) StatsDaily(_ context.Context, ownerUserID int, dateFrom, dateTo 
 	list := []domain.StatsDailyDTO{}
 	for _, date := range dates[start:end] {
 		entry := byDate[date]
-		list = append(list, domain.StatsDailyDTO{StatDate: date, RequestCount: int64(entry.requests), SuccessCount: int64(entry.success), ErrorCount: int64(entry.errors), TotalTokens: int64(entry.tokens), TotalCost: money.Format6(entry.cost)})
+		list = append(list, domain.StatsDailyDTO{StatDate: date, RequestCount: int64(entry.requests), SuccessCount: int64(entry.success), ErrorCount: int64(entry.errors), TotalTokens: int64(entry.tokens), InputTokens: int64(entry.input), OutputTokens: int64(entry.output), CachedInputTokens: int64(entry.cached), TotalCost: money.Format6(entry.cost)})
 	}
 	return domain.ListResponse[domain.StatsDailyDTO]{List: list, Total: len(dates)}, nil
 }

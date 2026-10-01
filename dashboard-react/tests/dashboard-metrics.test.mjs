@@ -64,6 +64,24 @@ test('trend direction drives arrow and color independently of text', () => {
   assert.equal(trendDirection(10, null), 'none')
 })
 
+const tokenTrend = (rows) => rows.map(row => {
+  const input = Number(row.input_tokens || 0)
+  const cacheRead = Number(row.cached_input_tokens || 0)
+  return { date: row.stat_date, input, output: Number(row.output_tokens || 0), cacheRead, cacheHitRate: input > 0 ? cacheRead / input * 100 : 0 }
+})
+
+test('token trend computes cache hit rate over input and zero on empty input', () => {
+  const [filled, empty] = tokenTrend([
+    { stat_date: '2025-10-01', input_tokens: 1000, output_tokens: 500, cached_input_tokens: 250 },
+    { stat_date: '2025-10-02', input_tokens: 0, output_tokens: 0, cached_input_tokens: 0 },
+  ])
+  assert.equal(filled.input, 1000)
+  assert.equal(filled.output, 500)
+  assert.equal(filled.cacheRead, 250)
+  assert.equal(filled.cacheHitRate, 25)
+  assert.equal(empty.cacheHitRate, 0)
+})
+
 test('model distribution keeps top N and aggregates the rest into 其他', () => {
   const rows = Array.from({ length: 9 }, (_, index) => ({ model: `m${index}`, request_count: index + 1, total_tokens: (index + 1) * 100, total_cost: '0.100000' }))
   const { slices, total } = modelDistribution(rows)

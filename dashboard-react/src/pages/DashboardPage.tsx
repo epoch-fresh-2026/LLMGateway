@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listChannels, listChannelHealth, resetChannelHealth } from '../api/catalog'
 import { daily, logs, overview, ttft, usageStats } from '../api/usage'
 import { AsyncState } from '../components/feedback/AsyncState'
-import { compact, modelDistribution, pointChange, ratioChange, recentUtcDays, trendDirection, type ModelSlice, type TrendDirection } from './dashboardMetrics'
+import { compact, modelDistribution, pointChange, ratioChange, recentUtcDays, tokenTrend, trendDirection, type ModelSlice, type TrendDirection } from './dashboardMetrics'
+import { TokenTrendChart } from '../components/charts/TokenTrendChart'
 import type { Channel, DailyStats, UsageLog } from '../types/api'
 
 const n = (value: unknown) => Number(value || 0)
@@ -18,7 +19,7 @@ const RANGE_OPTIONS = [
 ] as const
 type RangeKey = typeof RANGE_OPTIONS[number]['key']
 const LIVE_WINDOW_MS = 60_000
-const emptyDay = (key: string): DailyStats => ({ stat_date: key, request_count: 0, success_count: 0, error_count: 0, total_tokens: 0, total_cost: '0' })
+const emptyDay = (key: string): DailyStats => ({ stat_date: key, request_count: 0, success_count: 0, error_count: 0, total_tokens: 0, input_tokens: 0, output_tokens: 0, cached_input_tokens: 0, total_cost: '0' })
 
 function Panel({ title, desc, children, className = '' }: { title: string; desc: string; children: React.ReactNode; className?: string }) {
   return <section className={`panel ${className}`}><div className="panel-head"><div><h3>{title}</h3><p className="muted">{desc}</p></div></div>{children}</section>
@@ -104,10 +105,8 @@ export function DashboardPage() {
   const logRows = logsQuery.data?.list || []
   const healthMap = new Map(healthRows.map(item => [item.channel_id, item]))
   const channelUsageMap = new Map((channelUsage.data?.list || []).map(row => [row.channel_id ?? 0, row]))
-  const successRate = stats ? stats.success_count / Math.max(stats.request_count, 1) * 100 : 0
   const dailyByDate = new Map(dailyRows.map(row => [row.stat_date, row]))
   const trend = windowDays.map(key => dailyByDate.get(key) ?? emptyDay(key))
-  const max = Math.max(1, ...trend.map(row => n(row.request_count)))
   const today = dailyByDate.get(windowTo)
   const yesterday = dailyByDate.get(windowDays[windowDays.length - 2])
   const todayRequests = n(today?.request_count)
@@ -142,7 +141,7 @@ export function DashboardPage() {
      </div>
      <div className="metric-grid">{overviewQuery.error && <AsyncState loading={false} error={overviewQuery.error} hasData={Boolean(overviewQuery.data)} onRetry={() => void overviewQuery.refetch()} />}{metrics.map(metric => <TrendCard key={metric.label} {...metric} />)}</div>
     <div className="bento-grid">
-      <Panel title="请求趋势（近 14 天）" desc="按 user_daily_stats 自然日汇总 · 含成功 / 失败" className="span-12"><AsyncState loading={dailyQuery.isLoading} error={dailyQuery.error} hasData={Boolean(dailyQuery.data)} onRetry={() => void dailyQuery.refetch()} />{dailyQuery.data && <><div className="trend-meta"><span>今日 <b>{n(trend.at(-1)?.request_count).toLocaleString()}</b> 次</span><span>成功率 <b>{successRate.toFixed(1)}%</b></span><span>错误 <b>{(stats?.error_count || 0).toLocaleString()}</b> 次</span></div><div className="chart trend-chart">{trend.map((row, index) => <div className="bar" key={String(row.stat_date || index)}><i style={{ '--h': `${n(row.request_count) / max * 100}%` } as React.CSSProperties} /><small>{String(row.stat_date || '').slice(5)}</small></div>)}</div></>}</Panel>
+      <Panel title="Token 使用趋势（近 14 天）" desc="按 user_daily_stats 自然日汇总 · Input / Output / Cache Read / Cache Hit Rate" className="span-12"><AsyncState loading={dailyQuery.isLoading} error={dailyQuery.error} hasData={Boolean(dailyQuery.data)} onRetry={() => void dailyQuery.refetch()} />{dailyQuery.data && <TokenTrendChart points={tokenTrend(trend)} />}</Panel>
       <div className="range-bar span-12"><span className="muted filter-caption">时间范围</span>{RANGE_OPTIONS.map(item => <button key={item.key} className={`button ${item.key === rangeKey ? 'primary' : 'ghost'}`} onClick={() => applyRange(item.key)}>{item.label}</button>)}<label>开始<input type="date" value={rangeFrom} max={rangeTo} onChange={event => { setRangeFrom(event.target.value); setRangeKey('custom') }} /></label><label>结束<input type="date" value={rangeTo} min={rangeFrom} onChange={event => { setRangeTo(event.target.value); setRangeKey('custom') }} /></label></div>
       <Panel title="模型用量分布" desc={`按对外模型名聚合 · ${rangeFrom} 至 ${rangeTo}`} className="span-6">{modelStats.total > 0 ? <div className="distribution"><ModelDonut slices={modelStats.slices} total={modelStats.total} /><div className="table-wrap model-table"><table><thead><tr><th>模型</th><th>请求</th><th>Token</th><th>费用</th></tr></thead><tbody>{modelStats.slices.map(row => <tr key={row.name}><td>{row.name}</td><td className="mono">{row.requests.toLocaleString()}</td><td className="mono">{compact(row.tokens)}</td><td className="mono">${money(row.cost)}</td></tr>)}</tbody></table></div></div> : <div className="empty">暂无数据</div>}</Panel>
       <Panel title="渠道健康状态" desc={`路由 · 熔断 · ${rangeFrom} 至 ${rangeTo}`} className="span-6"><AsyncState loading={channelsQuery.isLoading || healthQuery.isLoading || channelUsage.isLoading} error={channelsQuery.error || healthQuery.error || channelUsage.error} hasData={Boolean(channelsQuery.data || healthQuery.data || channelUsage.data)} onRetry={() => { void channelsQuery.refetch(); void healthQuery.refetch(); void channelUsage.refetch() }} />{(channelsQuery.data || healthQuery.data) && <div className="channel-list">{channelRows.slice(0, 6).map(channel => { const health = healthMap.get(channel.id); const open = health?.state === 'open'; const usage = channelUsageMap.get(channel.id); return <div className="channel-row" key={channel.id}><i className={`dot ${open ? 'danger' : 'ok'}`} /><b>{channel.name}</b><span className="url">{healthQuery.error ? '状态未知' : open ? '熔断中' : `${n(usage?.success_count)} 成功 / ${n(usage?.error_count)} 失败`}</span>{open && <button className="button ghost" onClick={() => void reset(channel)}>恢复</button>}</div> })}{!channelRows.length && <div className="empty">暂无渠道</div>}</div>}</Panel>

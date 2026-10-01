@@ -133,6 +133,9 @@ SELECT
     count(*) FILTER (WHERE l.status = 'success')::bigint AS success_count,
     count(*) FILTER (WHERE l.status <> 'success')::bigint AS error_count,
     coalesce(sum(l.total_tokens), 0)::bigint AS total_tokens,
+    coalesce(sum(l.input_tokens), 0)::bigint AS input_tokens,
+    coalesce(sum(l.output_tokens), 0)::bigint AS output_tokens,
+    coalesce(sum(l.cached_input_tokens), 0)::bigint AS cached_input_tokens,
     coalesce(sum(l.total_cost), 0)::numeric(20, 6)::text AS total_cost
 FROM usage_logs l
 WHERE l.user_id = sqlc.arg(owner_user_id)

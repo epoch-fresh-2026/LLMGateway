@@ -126,12 +126,15 @@ type TTFTStatsDTO struct {
 }
 
 type StatsDailyDTO struct {
-	StatDate     string `json:"stat_date"`
-	RequestCount int64  `json:"request_count"`
-	SuccessCount int64  `json:"success_count"`
-	ErrorCount   int64  `json:"error_count"`
-	TotalTokens  int64  `json:"total_tokens"`
-	TotalCost    string `json:"total_cost"`
+	StatDate          string `json:"stat_date"`
+	RequestCount      int64  `json:"request_count"`
+	SuccessCount      int64  `json:"success_count"`
+	ErrorCount        int64  `json:"error_count"`
+	TotalTokens       int64  `json:"total_tokens"`
+	InputTokens       int64  `json:"input_tokens"`
+	OutputTokens      int64  `json:"output_tokens"`
+	CachedInputTokens int64  `json:"cached_input_tokens"`
+	TotalCost         string `json:"total_cost"`
 }
 
 type StatsChannelDTO struct {

@@ -4,7 +4,7 @@ import { listSchema, MoneySchema } from './common'
 const Counts = { request_count: z.number().int(), success_count: z.number().int(), error_count: z.number().int(), total_tokens: z.number().int(), total_cost: MoneySchema }
 export const StatsSchema = z.object({ ...Counts, active_key_count: z.number().int() })
 export const TTFTStatsSchema = z.object({ sample_count: z.number().int(), average_ms: z.number().int(), p50_ms: z.number().int(), p95_ms: z.number().int(), p99_ms: z.number().int() })
-export const DailyStatsSchema = z.object({ stat_date: z.string().date(), ...Counts })
+export const DailyStatsSchema = z.object({ stat_date: z.string().date(), ...Counts, input_tokens: z.number().int(), output_tokens: z.number().int(), cached_input_tokens: z.number().int() })
 export const DailyStatsListSchema = listSchema(DailyStatsSchema)
 export const ChannelStatsSchema = z.object({ channel_id: z.number().int(), channel_name: z.string(), ...Counts })
 export const ChannelStatsListSchema = listSchema(ChannelStatsSchema)

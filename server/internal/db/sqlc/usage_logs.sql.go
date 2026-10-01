@@ -753,6 +753,9 @@ SELECT
     count(*) FILTER (WHERE l.status = 'success')::bigint AS success_count,
     count(*) FILTER (WHERE l.status <> 'success')::bigint AS error_count,
     coalesce(sum(l.total_tokens), 0)::bigint AS total_tokens,
+    coalesce(sum(l.input_tokens), 0)::bigint AS input_tokens,
+    coalesce(sum(l.output_tokens), 0)::bigint AS output_tokens,
+    coalesce(sum(l.cached_input_tokens), 0)::bigint AS cached_input_tokens,
     coalesce(sum(l.total_cost), 0)::numeric(20, 6)::text AS total_cost
 FROM usage_logs l
 WHERE l.user_id = $1
@@ -772,12 +775,15 @@ type StatsDailyParams struct {
 }
 
 type StatsDailyRow struct {
-	StatDate     pgtype.Date `json:"stat_date"`
-	RequestCount int64       `json:"request_count"`
-	SuccessCount int64       `json:"success_count"`
-	ErrorCount   int64       `json:"error_count"`
-	TotalTokens  int64       `json:"total_tokens"`
-	TotalCost    string      `json:"total_cost"`
+	StatDate          pgtype.Date `json:"stat_date"`
+	RequestCount      int64       `json:"request_count"`
+	SuccessCount      int64       `json:"success_count"`
+	ErrorCount        int64       `json:"error_count"`
+	TotalTokens       int64       `json:"total_tokens"`
+	InputTokens       int64       `json:"input_tokens"`
+	OutputTokens      int64       `json:"output_tokens"`
+	CachedInputTokens int64       `json:"cached_input_tokens"`
+	TotalCost         string      `json:"total_cost"`
 }
 
 func (q *Queries) StatsDaily(ctx context.Context, arg StatsDailyParams) ([]StatsDailyRow, error) {
@@ -801,6 +807,9 @@ func (q *Queries) StatsDaily(ctx context.Context, arg StatsDailyParams) ([]Stats
 			&i.SuccessCount,
 			&i.ErrorCount,
 			&i.TotalTokens,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CachedInputTokens,
 			&i.TotalCost,
 		); err != nil {
 			return nil, err
