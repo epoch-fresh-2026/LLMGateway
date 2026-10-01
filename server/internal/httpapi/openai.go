@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"LLMGateway/server/internal/proxy"
 	openaiwire "LLMGateway/server/internal/proxy/openai"
 )
+
+const maxChatRequestBodyBytes = 32 << 20
 
 // OpenAI dispatches the OpenAI-compatible downstream endpoints.
 func (a *Server) OpenAI(w http.ResponseWriter, r *http.Request) {
@@ -56,8 +59,13 @@ func (a *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeProxyError(w, err)
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxChatRequestBodyBytes))
 	if err != nil {
+		var sizeErr *http.MaxBytesError
+		if errors.As(err, &sizeErr) {
+			writeOpenAIError(w, http.StatusRequestEntityTooLarge, "request_body_too_large", fmt.Sprintf("request body exceeds the %d byte (32 MiB) limit", maxChatRequestBodyBytes))
+			return
+		}
 		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "unable to read request body")
 		return
 	}

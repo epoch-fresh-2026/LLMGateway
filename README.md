@@ -32,6 +32,8 @@
 
 3. 打开 `http://localhost:8080/`，注册账户后即可在控制台里创建渠道、创建网关 Key，并调用 `/v1/chat/completions`。
 
+`/v1` 请求体上限为 32 MiB，Go 网关与 HTTP/HTTPS nginx 配置保持一致。更新此限制后需重新构建并启动 Go 与前端容器（运行上面的 `up -d --build` 命令）；若 nginx 配置通过挂载提供，更新后需执行 `nginx -t` 并重载 nginx。超过上限时返回 HTTP 413；Go 入口返回 `request_body_too_large`，nginx 提前拒绝时返回默认 413 页面。这是请求体字节限制，不代表模型上下文 token 上限。
+
 查看日志：
 
 ```powershell

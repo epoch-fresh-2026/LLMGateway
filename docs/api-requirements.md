@@ -862,6 +862,7 @@ Authorization: Bearer <gateway-key>
 
 核心行为要求：
 
+- `POST /v1/chat/completions` 的请求体上限为 32 MiB（33554432 字节），与 nginx `/v1` 入口一致；允许范围内完整读取，不截断。Go 入口超限返回 HTTP 413，OpenAI 错误的 `code` 和 `type` 均为 `request_body_too_large`，消息明确说明字节上限；nginx 提前拒绝的超限请求使用其默认 413 响应。该字节限制与模型上下文 token 限制、TPM 和业务配额独立。
 - 校验网关 Key 是否存在、启用、未过期；不再校验用户状态或余额。
 - 只使用该 Key 所属用户自己的渠道与限流规则。
 - 按模型映射选择可用渠道。
