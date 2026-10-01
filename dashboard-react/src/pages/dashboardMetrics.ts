@@ -48,3 +48,33 @@ export function pointChange(currentRate: number, previousRate: number | null): s
   const points = currentRate - previousRate
   return `${points >= 0 ? '+' : ''}${points.toFixed(1)}pp`
 }
+
+// compact renders large token/request counts as K/M for statistics surfaces.
+// Request-log detail views intentionally keep exact counts instead.
+export const compact = (value: number): string =>
+  value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : value.toLocaleString()
+
+export type ModelSlice = { name: string; requests: number; tokens: number; cost: string }
+
+export const MODEL_TOP_N = 6
+
+// modelDistribution shapes the ranged model aggregate into donut slices/table
+// rows: the top MODEL_TOP_N models by tokens plus an aggregated "其他" row. It
+// only uses the ranged aggregate, so an empty range yields no rows.
+export function modelDistribution(rows: { model: string; request_count: number; total_tokens: number; total_cost: string }[]): { slices: ModelSlice[]; total: number } {
+  const sorted = rows
+    .map(row => ({ name: row.model || 'unknown', requests: Number(row.request_count || 0), tokens: Number(row.total_tokens || 0), cost: row.total_cost || '0' }))
+    .sort((a, b) => b.tokens - a.tokens)
+  const total = sorted.reduce((sum, row) => sum + row.tokens, 0)
+  const top = sorted.slice(0, MODEL_TOP_N)
+  const rest = sorted.slice(MODEL_TOP_N)
+  if (rest.length > 0) {
+    top.push(rest.reduce((acc, row) => ({
+      name: '其他',
+      requests: acc.requests + row.requests,
+      tokens: acc.tokens + row.tokens,
+      cost: (Number(acc.cost || 0) + Number(row.cost || 0)).toFixed(6),
+    }), { name: '其他', requests: 0, tokens: 0, cost: '0' }))
+  }
+  return { slices: top, total }
+}

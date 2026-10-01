@@ -3,12 +3,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listChannels, listChannelHealth, resetChannelHealth } from '../api/catalog'
 import { daily, logs, overview, ttft, usageStats } from '../api/usage'
 import { AsyncState } from '../components/feedback/AsyncState'
-import { pointChange, ratioChange, recentUtcDays, trendDirection, type TrendDirection } from './dashboardMetrics'
+import { compact, modelDistribution, pointChange, ratioChange, recentUtcDays, trendDirection, type ModelSlice, type TrendDirection } from './dashboardMetrics'
 import type { Channel, DailyStats, UsageLog } from '../types/api'
 
 const n = (value: unknown) => Number(value || 0)
 const money = (value: unknown) => Number(value || 0).toFixed(2)
-const compact = (value: number) => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : value.toLocaleString()
 const TREND_DAYS = 14
 // Range options drive the model distribution and channel health panels below.
 const RANGE_OPTIONS = [
@@ -35,6 +34,33 @@ function TrendCard({ label, value, delta, direction }: { label: string; value: s
 // StatCard renders a point-in-time value with a plain caption (no trend arrow).
 function StatCard({ label, value, hint }: { label: string; value: string; hint: string }) {
   return <section className="metric"><span>{label}</span><strong>{value}</strong><small>{hint}</small></section>
+}
+
+const DONUT_COLORS = ['#22d3ee', '#3b82f6', '#34d399', '#fbbf24', '#fb7185', '#a78bfa', '#71717a']
+const DONUT_RADIUS = 15.9155
+const DONUT_LENGTH = 100
+
+// ModelDonut renders a proportional SVG donut: one sector per slice (by tokens)
+// with a custom hover tooltip showing the model name and its token count.
+function ModelDonut({ slices, total }: { slices: ModelSlice[]; total: number }) {
+  const [hovered, setHovered] = useState<{ index: number; x: number; y: number } | null>(null)
+  const scale = Math.max(total, 1)
+  let offset = 0
+  const arcs = slices.map((slice, index) => {
+    const dash = slice.tokens / scale * DONUT_LENGTH
+    const arc = { slice, index, dash, offset }
+    offset += dash
+    return arc
+  })
+  const active = hovered ? slices[hovered.index] : null
+  return <div className="donut-wrap">
+    <svg className="donut-svg" viewBox="0 0 42 42" role="img" aria-label="模型用量分布">
+      <circle className="donut-track" cx="21" cy="21" r={DONUT_RADIUS} fill="none" />
+      {arcs.map(arc => <circle key={arc.slice.name} className="donut-arc" cx="21" cy="21" r={DONUT_RADIUS} fill="none" stroke={DONUT_COLORS[arc.index % DONUT_COLORS.length]} strokeDasharray={`${arc.dash} ${DONUT_LENGTH - arc.dash}`} strokeDashoffset={-arc.offset} transform="rotate(-90 21 21)" onMouseEnter={() => setHovered({ index: arc.index, x: 0, y: 0 })} onMouseMove={event => { const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect(); if (rect) setHovered({ index: arc.index, x: event.clientX - rect.left, y: event.clientY - rect.top }) }} onMouseLeave={() => setHovered(null)} />)}
+    </svg>
+    <div className="donut-center"><strong>{compact(total)}</strong><small>tokens</small></div>
+    {active && hovered && <div className="donut-tooltip" style={{ left: hovered.x, top: hovered.y }}><b>{active.name}</b><span>{compact(active.tokens)} tokens</span></div>}
+  </div>
 }
 
 export function DashboardPage() {
@@ -104,11 +130,7 @@ export function DashboardPage() {
   const liveRequests = liveRows.reduce((sum, row) => sum + n(row.request_count), 0)
   const liveTokens = liveRows.reduce((sum, row) => sum + n(row.total_tokens), 0)
   const liveLatency = liveQuery.data?.latency
-  const dist = new Map<string, number>()
-  logRows.forEach(row => dist.set(row.model || 'unknown', (dist.get(row.model || 'unknown') || 0) + row.total_tokens))
-  const modelRows = modelUsage.data?.list?.length ? modelUsage.data.list.map(row => ({ name: row.model || 'unknown', value: n(row.total_tokens || row.request_count) })) : [...dist.entries()].map(([name, value]) => ({ name, value }))
-  const modelTotal = modelRows.reduce((sum, row) => sum + row.value, 0)
-  const modelScale = Math.max(1, modelTotal)
+  const modelStats = modelDistribution(modelUsage.data?.list || [])
   const reset = async (channel: Channel) => { if (!window.confirm(`确认恢复渠道「${channel.name}」的熔断状态？`)) return; try { await resetChannelHealth(channel.id); await client.invalidateQueries({ queryKey: ['channel-health'] }) } catch (error) { setActionError(error instanceof Error ? error.message : '操作失败') } }
   return <>
     {actionError && <div className="error action-error">{actionError}</div>}
@@ -122,7 +144,7 @@ export function DashboardPage() {
     <div className="bento-grid">
       <Panel title="请求趋势（近 14 天）" desc="按 user_daily_stats 自然日汇总 · 含成功 / 失败" className="span-12"><AsyncState loading={dailyQuery.isLoading} error={dailyQuery.error} hasData={Boolean(dailyQuery.data)} onRetry={() => void dailyQuery.refetch()} />{dailyQuery.data && <><div className="trend-meta"><span>今日 <b>{n(trend.at(-1)?.request_count).toLocaleString()}</b> 次</span><span>成功率 <b>{successRate.toFixed(1)}%</b></span><span>错误 <b>{(stats?.error_count || 0).toLocaleString()}</b> 次</span></div><div className="chart trend-chart">{trend.map((row, index) => <div className="bar" key={String(row.stat_date || index)}><i style={{ '--h': `${n(row.request_count) / max * 100}%` } as React.CSSProperties} /><small>{String(row.stat_date || '').slice(5)}</small></div>)}</div></>}</Panel>
       <div className="range-bar span-12"><span className="muted filter-caption">时间范围</span>{RANGE_OPTIONS.map(item => <button key={item.key} className={`button ${item.key === rangeKey ? 'primary' : 'ghost'}`} onClick={() => applyRange(item.key)}>{item.label}</button>)}<label>开始<input type="date" value={rangeFrom} max={rangeTo} onChange={event => { setRangeFrom(event.target.value); setRangeKey('custom') }} /></label><label>结束<input type="date" value={rangeTo} min={rangeFrom} onChange={event => { setRangeTo(event.target.value); setRangeKey('custom') }} /></label></div>
-      <Panel title="模型用量分布" desc={`按对外模型名聚合 · ${rangeFrom} 至 ${rangeTo}`} className="span-6">{modelTotal > 0 ? <div className="distribution"><div className="donut"><strong>{compact(modelTotal)}</strong><small>tokens</small></div><div className="distribution-list">{modelRows.slice(0, 6).map(row => <div key={row.name}><span>{row.name}</span><b>{(row.value / modelScale * 100).toFixed(1)}%</b></div>)}</div></div> : <div className="empty">暂无数据</div>}</Panel>
+      <Panel title="模型用量分布" desc={`按对外模型名聚合 · ${rangeFrom} 至 ${rangeTo}`} className="span-6">{modelStats.total > 0 ? <div className="distribution"><ModelDonut slices={modelStats.slices} total={modelStats.total} /><div className="table-wrap model-table"><table><thead><tr><th>模型</th><th>请求</th><th>Token</th><th>费用</th></tr></thead><tbody>{modelStats.slices.map(row => <tr key={row.name}><td>{row.name}</td><td className="mono">{row.requests.toLocaleString()}</td><td className="mono">{compact(row.tokens)}</td><td className="mono">${money(row.cost)}</td></tr>)}</tbody></table></div></div> : <div className="empty">暂无数据</div>}</Panel>
       <Panel title="渠道健康状态" desc={`路由 · 熔断 · ${rangeFrom} 至 ${rangeTo}`} className="span-6"><AsyncState loading={channelsQuery.isLoading || healthQuery.isLoading || channelUsage.isLoading} error={channelsQuery.error || healthQuery.error || channelUsage.error} hasData={Boolean(channelsQuery.data || healthQuery.data || channelUsage.data)} onRetry={() => { void channelsQuery.refetch(); void healthQuery.refetch(); void channelUsage.refetch() }} />{(channelsQuery.data || healthQuery.data) && <div className="channel-list">{channelRows.slice(0, 6).map(channel => { const health = healthMap.get(channel.id); const open = health?.state === 'open'; const usage = channelUsageMap.get(channel.id); return <div className="channel-row" key={channel.id}><i className={`dot ${open ? 'danger' : 'ok'}`} /><b>{channel.name}</b><span className="url">{healthQuery.error ? '状态未知' : open ? '熔断中' : `${n(usage?.success_count)} 成功 / ${n(usage?.error_count)} 失败`}</span>{open && <button className="button ghost" onClick={() => void reset(channel)}>恢复</button>}</div> })}{!channelRows.length && <div className="empty">暂无渠道</div>}</div>}</Panel>
       <Panel title="实时请求日志" desc="usage_logs · 预冻结 → 按实际 usage 结算" className="span-12"><AsyncState loading={logsQuery.isLoading} error={logsQuery.error} hasData={Boolean(logsQuery.data)} onRetry={() => void logsQuery.refetch()} />{logsQuery.data && <LogTable logs={logRows} />}</Panel>
     </div>
