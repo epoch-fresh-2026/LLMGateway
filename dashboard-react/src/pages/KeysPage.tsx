@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createKey, deleteKey, listKeys, resetKey, updateKey } from '../api/accounts'
+import { Check, Copy, Plus, Trash2 } from 'lucide-react'
+import { createKey, deleteKey, listKeys } from '../api/accounts'
 import { AsyncState } from '../components/feedback/AsyncState'
 import { Modal } from '../components/feedback/Modal'
 import type { ClientKey } from '../types/api'
@@ -16,6 +17,9 @@ export function KeysPage() {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const [fullKey, setFullKey] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState('')
 
   const run = async (action: () => Promise<void>) => {
     setError('')
@@ -28,24 +32,34 @@ export function KeysPage() {
 
   const addKey = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (submitting) return
     const form = new FormData(event.currentTarget)
-    await run(async () => {
-      const created = await createKey({ key_name: String(form.get('key_name') || '') || 'default', prefix: 'sk-' })
-      setFullKey(created.full_key)
-      await queryClient.invalidateQueries({ queryKey: ['keys'] })
-      setCreating(false)
-    })
+    setSubmitting(true)
+    try {
+      await run(async () => {
+        const created = await createKey({ key_name: String(form.get('key_name') || '').trim() || 'default', prefix: 'sk-' })
+        setCreating(false)
+        setCopied(false)
+        setCopyError('')
+        setFullKey(created.full_key)
+        await queryClient.invalidateQueries({ queryKey: ['keys'] })
+      })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const toggleKey = (key: ClientKey) => run(async () => {
-    await updateKey(key.id, { is_active: !key.is_active })
-    await queryClient.invalidateQueries({ queryKey: ['keys'] })
-  })
+  const copyKey = async () => {
+    setCopyError('')
+    try {
+      await navigator.clipboard.writeText(fullKey)
+      setCopied(true)
+    } catch {
+      setCopyError('复制失败，请选中密钥后手动复制。')
+    }
+  }
 
-  const rotateKey = (key: ClientKey) => run(async () => {
-    const rotated = await resetKey(key.id)
-    setFullKey(rotated.full_key)
-  })
+  const closeSecret = () => { setFullKey(''); setCopied(false); setCopyError('') }
 
   const removeKey = (key: ClientKey) => run(async () => {
     await deleteKey(key.id)
@@ -53,27 +67,30 @@ export function KeysPage() {
   })
 
   return <div className="bento-grid">
-    <section className="panel span-12">
-      <div className="panel-head"><div><h3>API 密钥</h3><p className="muted">仅本账号可用，创建/重置只显示一次明文</p></div><div className="panel-actions"><button className="button primary" onClick={() => { setError(''); setCreating(true) }}>新建</button></div></div>
-      {fullKey && <div className="secret"><code>{fullKey}</code><button className="button ghost" type="button" onClick={() => setFullKey('')}>隐藏</button></div>}
+    <section className="panel span-12 keys-panel">
+      <div className="panel-head"><div><h3>API 密钥</h3><p className="muted">API 密钥仅在创建时可查看，请妥善保存。</p></div><div className="panel-actions"><button className="button primary key-create-button" onClick={() => { setError(''); setCreating(true) }}><Plus size={14} aria-hidden="true" />新建</button></div></div>
       <AsyncState loading={keys.isLoading} error={keys.error} hasData={Boolean(keys.data)} onRetry={() => void keys.refetch()} />
       {keys.data && <div className="table-wrap"><table>
-        <thead><tr><th>序号</th><th>名称</th><th>前缀</th><th>状态</th><th>最近使用</th><th /></tr></thead>
+        <thead><tr><th>序号</th><th>名称</th><th>Key</th><th>创建日期</th><th>最近使用</th><th aria-label="操作" /></tr></thead>
         <tbody>{keys.data.list.map((key, index) => <tr key={key.id}>
           <td className="mono">#{index + 1}</td>
           <td>{key.key_name}</td>
-          <td className="mono">{key.prefix}</td>
-          <td>{key.is_active ? '启用' : '停用'}</td>
+          <td className="mono">{key.prefix}{key.key_suffix.substring(0, 5)}*****{key.key_suffix.substring(5)}</td>
+          <td className="mono">{new Date(key.created_at).toLocaleDateString('sv-SE')}</td>
           <td className="mono">{key.last_used_at ? new Date(key.last_used_at).toLocaleString('zh-CN', { hour12: false }) : '—'}</td>
           <td className="table-actions">
-            <button className="button ghost" onClick={() => void toggleKey(key)}>{key.is_active ? '停用' : '启用'}</button>
-            <button className="button ghost" onClick={() => void rotateKey(key)}>重置</button>
-            <button className="button delete" onClick={() => void removeKey(key)}>删除</button>
+            <button className="icon-button key-delete-button" title="删除密钥" aria-label={`删除密钥 ${key.key_name}`} onClick={() => void removeKey(key)}><Trash2 size={15} aria-hidden="true" /></button>
           </td>
         </tr>)}</tbody>
       </table>{!keys.data.list.length && <div className="empty">暂无 Key</div>}</div>}
       {error && !creating && <div className="error action-error">{error}</div>}
-      {creating && <Modal title="新建 Key" submitText="创建" onClose={() => setCreating(false)} onSubmit={addKey}><div className="form-grid">{error && <p className="error">{error}</p>}<Field label="名称" name="key_name" placeholder="default" /></div></Modal>}
+      {creating && <Modal title="创建 API key" submitText="创建" submitting={submitting} onClose={() => { if (!submitting) setCreating(false) }} onSubmit={addKey}><div className="form-grid">{error && <p className="error" role="alert">{error}</p>}<Field label="名称" name="key_name" placeholder="default" maxLength={100} /></div></Modal>}
+      {fullKey && <Modal title="创建 API key" className="key-secret-modal" showActions={false} onClose={closeSecret}>
+        <p className="key-secret-description">请将此 API key 保存在安全且易于访问的地方。出于安全原因，你将无法再次查看它。如果丢失了这个 key，需要重新创建。</p>
+        <div className="key-secret-value"><input aria-label="新创建的 API key" value={fullKey} readOnly spellCheck={false} onFocus={event => event.currentTarget.select()} /><button type="button" className="key-copy-button" onClick={() => void copyKey()}>{copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}{copied ? '已复制' : '复制'}</button></div>
+        <div className="key-copy-feedback" aria-live="polite">{copyError ? <span className="error">{copyError}</span> : copied ? 'API key 已复制' : ''}</div>
+        <p className="key-secret-warning">提示：不要与他人共享你的 API key，或将其暴露在浏览器或其他客户端代码中。</p>
+      </Modal>}
     </section>
   </div>
 }

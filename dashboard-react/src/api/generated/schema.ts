@@ -780,7 +780,10 @@ export interface components {
             id: number;
             key_name: string;
             prefix: string;
+            key_suffix: string;
             is_active: boolean;
+            /** Format: date-time */
+            created_at: string;
             /** Format: date-time */
             last_used_at: string | null;
             /** Format: date-time */

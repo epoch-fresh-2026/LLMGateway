@@ -23,7 +23,7 @@ func (q *Queries) CountUserKeys(ctx context.Context, userID int64) (int32, error
 }
 
 const createKey = `-- name: CreateKey :one
-INSERT INTO client_api_keys (user_id, key_name, prefix, key_hash, permissions, rate_limit_overrides, expires_at, is_active)
+INSERT INTO client_api_keys (user_id, key_name, prefix, key_hash, key_suffix, permissions, rate_limit_overrides, expires_at, is_active)
 VALUES (
     $1,
     $2,
@@ -31,8 +31,9 @@ VALUES (
     $4,
     $5,
     $6,
-    NULLIF($7, '')::timestamptz,
-    $8
+    $7,
+    NULLIF($8, '')::timestamptz,
+    $9
 )
 RETURNING id
 `
@@ -42,6 +43,7 @@ type CreateKeyParams struct {
 	KeyName            string      `json:"key_name"`
 	Prefix             string      `json:"prefix"`
 	KeyHash            string      `json:"key_hash"`
+	KeySuffix          string      `json:"key_suffix"`
 	Permissions        []byte      `json:"permissions"`
 	RateLimitOverrides []byte      `json:"rate_limit_overrides"`
 	ExpiresAt          interface{} `json:"expires_at"`
@@ -54,6 +56,7 @@ func (q *Queries) CreateKey(ctx context.Context, arg CreateKeyParams) (int64, er
 		arg.KeyName,
 		arg.Prefix,
 		arg.KeyHash,
+		arg.KeySuffix,
 		arg.Permissions,
 		arg.RateLimitOverrides,
 		arg.ExpiresAt,
@@ -204,7 +207,7 @@ func (q *Queries) GetAuthContextByKeyHash(ctx context.Context, keyHash string) (
 }
 
 const getKey = `-- name: GetKey :one
-SELECT id, user_id, key_name, prefix, is_active, last_used_at, expires_at
+SELECT id, user_id, key_name, prefix, key_suffix, is_active, created_at, last_used_at, expires_at
 FROM client_api_keys
 WHERE id = $1 AND user_id = $2
 `
@@ -219,7 +222,9 @@ type GetKeyRow struct {
 	UserID     int64              `json:"user_id"`
 	KeyName    string             `json:"key_name"`
 	Prefix     string             `json:"prefix"`
+	KeySuffix  string             `json:"key_suffix"`
 	IsActive   bool               `json:"is_active"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 }
@@ -232,7 +237,9 @@ func (q *Queries) GetKey(ctx context.Context, arg GetKeyParams) (GetKeyRow, erro
 		&i.UserID,
 		&i.KeyName,
 		&i.Prefix,
+		&i.KeySuffix,
 		&i.IsActive,
+		&i.CreatedAt,
 		&i.LastUsedAt,
 		&i.ExpiresAt,
 	)
@@ -336,7 +343,7 @@ func (q *Queries) GetUserCredentialsByUsername(ctx context.Context, username str
 }
 
 const listUserKeys = `-- name: ListUserKeys :many
-SELECT id, user_id, key_name, prefix, is_active, last_used_at, expires_at
+SELECT id, user_id, key_name, prefix, key_suffix, is_active, created_at, last_used_at, expires_at
 FROM client_api_keys
 WHERE user_id = $1
 ORDER BY id
@@ -354,7 +361,9 @@ type ListUserKeysRow struct {
 	UserID     int64              `json:"user_id"`
 	KeyName    string             `json:"key_name"`
 	Prefix     string             `json:"prefix"`
+	KeySuffix  string             `json:"key_suffix"`
 	IsActive   bool               `json:"is_active"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 }
@@ -373,7 +382,9 @@ func (q *Queries) ListUserKeys(ctx context.Context, arg ListUserKeysParams) ([]L
 			&i.UserID,
 			&i.KeyName,
 			&i.Prefix,
+			&i.KeySuffix,
 			&i.IsActive,
+			&i.CreatedAt,
 			&i.LastUsedAt,
 			&i.ExpiresAt,
 		); err != nil {
@@ -423,21 +434,23 @@ func (q *Queries) UpdateKeyLastUsed(ctx context.Context, id int64) (int64, error
 
 const updateKeySecret = `-- name: UpdateKeySecret :execrows
 UPDATE client_api_keys
-SET key_hash = $1, prefix = $2, updated_at = now()
-WHERE id = $3 AND user_id = $4
+SET key_hash = $1, prefix = $2, key_suffix = $3, updated_at = now()
+WHERE id = $4 AND user_id = $5
 `
 
 type UpdateKeySecretParams struct {
-	KeyHash string `json:"key_hash"`
-	Prefix  string `json:"prefix"`
-	ID      int64  `json:"id"`
-	UserID  int64  `json:"user_id"`
+	KeyHash   string `json:"key_hash"`
+	Prefix    string `json:"prefix"`
+	KeySuffix string `json:"key_suffix"`
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
 }
 
 func (q *Queries) UpdateKeySecret(ctx context.Context, arg UpdateKeySecretParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateKeySecret,
 		arg.KeyHash,
 		arg.Prefix,
+		arg.KeySuffix,
 		arg.ID,
 		arg.UserID,
 	)

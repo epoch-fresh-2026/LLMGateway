@@ -21,7 +21,9 @@ type ClientKey struct {
 	UserID     int     `json:"user_id"`
 	KeyName    string  `json:"key_name"`
 	Prefix     string  `json:"prefix"`
+	KeySuffix  string  `json:"key_suffix"`
 	IsActive   bool    `json:"is_active"`
+	CreatedAt  string  `json:"created_at"`
 	LastUsedAt *string `json:"last_used_at"`
 	ExpiresAt  *string `json:"expires_at"`
 }
@@ -30,7 +32,9 @@ type ClientKeyDTO struct {
 	ID         int     `json:"id"`
 	KeyName    string  `json:"key_name"`
 	Prefix     string  `json:"prefix"`
+	KeySuffix  string  `json:"key_suffix"`
 	IsActive   bool    `json:"is_active"`
+	CreatedAt  string  `json:"created_at"`
 	LastUsedAt *string `json:"last_used_at"`
 	ExpiresAt  *string `json:"expires_at"`
 }

@@ -226,10 +226,12 @@ func (t *accountsTx) InsertKey(in domain.KeyInsert) (int, error) {
 		userID:             in.UserID,
 		keyName:            in.KeyName,
 		prefix:             in.Prefix,
+		keySuffix:          in.KeySuffix,
 		keyHash:            in.KeyHash,
 		permissions:        canonicalJSON(normalizeJSON(in.Permissions, defaultPermissions)),
 		rateLimitOverrides: canonicalJSON(normalizeJSON(in.RateLimitOverrides, "")),
 		isActive:           in.IsActive,
+		createdAt:          t.s.now().UTC().Format(time.RFC3339),
 		expiresAt:          normalizeTimestampPtr(in.ExpiresAt),
 	}
 	t.s.nextKeyID++
@@ -246,13 +248,14 @@ func (t *accountsTx) UpdateKeyActive(keyID, userID int, active bool) (domain.Cli
 	return clientKey(key), true, nil
 }
 
-func (t *accountsTx) UpdateKeySecret(keyID, userID int, keyHash, prefix string) (bool, error) {
+func (t *accountsTx) UpdateKeySecret(keyID, userID int, keyHash, prefix, keySuffix string) (bool, error) {
 	key, ok := t.s.keys[keyID]
 	if !ok || key.userID != userID {
 		return false, nil
 	}
 	key.keyHash = keyHash
 	key.prefix = prefix
+	key.keySuffix = keySuffix
 	return true, nil
 }
 
@@ -291,11 +294,11 @@ func (s *Store) SeedUser(username, passwordHash string) int {
 // --- mappings ---
 
 func keyDTO(key *memoryKey) domain.ClientKeyDTO {
-	return domain.ClientKeyDTO{ID: key.id, KeyName: key.keyName, Prefix: key.prefix, IsActive: key.isActive, LastUsedAt: key.lastUsedAt, ExpiresAt: key.expiresAt}
+	return domain.ClientKeyDTO{ID: key.id, KeyName: key.keyName, Prefix: key.prefix, KeySuffix: key.keySuffix, IsActive: key.isActive, CreatedAt: key.createdAt, LastUsedAt: key.lastUsedAt, ExpiresAt: key.expiresAt}
 }
 
 func clientKey(key *memoryKey) domain.ClientKey {
-	return domain.ClientKey{ID: key.id, UserID: key.userID, KeyName: key.keyName, Prefix: key.prefix, IsActive: key.isActive, LastUsedAt: key.lastUsedAt, ExpiresAt: key.expiresAt}
+	return domain.ClientKey{ID: key.id, UserID: key.userID, KeyName: key.keyName, Prefix: key.prefix, KeySuffix: key.keySuffix, IsActive: key.isActive, CreatedAt: key.createdAt, LastUsedAt: key.lastUsedAt, ExpiresAt: key.expiresAt}
 }
 
 func (s *Store) sortedKeysLocked(userID int) []*memoryKey {

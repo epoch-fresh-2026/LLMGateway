@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	domain "LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/db/sqlc"
@@ -28,7 +29,7 @@ func (s *Store) ListKeys(ctx context.Context, userID, page, pageSize int) (domai
 
 	list := []domain.ClientKeyDTO{}
 	for _, row := range rows {
-		list = append(list, keyDTO(row.ID, row.KeyName, row.Prefix, row.IsActive, row.LastUsedAt, row.ExpiresAt))
+		list = append(list, keyDTO(row.ID, row.KeyName, row.Prefix, row.KeySuffix, row.IsActive, row.CreatedAt, row.LastUsedAt, row.ExpiresAt))
 	}
 	return domain.ListResponse[domain.ClientKeyDTO]{List: list, Total: int(total)}, nil
 }
@@ -96,7 +97,9 @@ func (t *Tx) GetKey(keyID, userID int) (domain.ClientKey, error) {
 		UserID:     int(row.UserID),
 		KeyName:    row.KeyName,
 		Prefix:     row.Prefix,
+		KeySuffix:  row.KeySuffix,
 		IsActive:   row.IsActive,
+		CreatedAt:  row.CreatedAt.Time.UTC().Format(time.RFC3339),
 		LastUsedAt: optionalTimestamp(row.LastUsedAt),
 		ExpiresAt:  optionalTimestamp(row.ExpiresAt),
 	}, nil
@@ -108,6 +111,7 @@ func (t *Tx) InsertKey(in domain.KeyInsert) (int, error) {
 		KeyName:            in.KeyName,
 		Prefix:             in.Prefix,
 		KeyHash:            in.KeyHash,
+		KeySuffix:          in.KeySuffix,
 		Permissions:        []byte(in.Permissions),
 		RateLimitOverrides: rawJSON(in.RateLimitOverrides),
 		ExpiresAt:          in.ExpiresAt,
@@ -134,8 +138,8 @@ func (t *Tx) UpdateKeyActive(keyID, userID int, active bool) (domain.ClientKey, 
 	return key, true, nil
 }
 
-func (t *Tx) UpdateKeySecret(keyID, userID int, keyHash, prefix string) (bool, error) {
-	affected, err := t.queries.UpdateKeySecret(t.ctx, sqlc.UpdateKeySecretParams{KeyHash: keyHash, Prefix: prefix, ID: int64(keyID), UserID: int64(userID)})
+func (t *Tx) UpdateKeySecret(keyID, userID int, keyHash, prefix, keySuffix string) (bool, error) {
+	affected, err := t.queries.UpdateKeySecret(t.ctx, sqlc.UpdateKeySecretParams{KeyHash: keyHash, Prefix: prefix, KeySuffix: keySuffix, ID: int64(keyID), UserID: int64(userID)})
 	if err != nil {
 		return false, mapError(err)
 	}
@@ -160,8 +164,8 @@ func (t *Tx) DeleteQuotaReservationsForKey(userID, keyID int) error {
 
 // --- mappings ---
 
-func keyDTO(id int64, keyName, prefix string, isActive bool, lastUsedAt, expiresAt pgtype.Timestamptz) domain.ClientKeyDTO {
-	return domain.ClientKeyDTO{ID: int(id), KeyName: keyName, Prefix: prefix, IsActive: isActive, LastUsedAt: optionalTimestamp(lastUsedAt), ExpiresAt: optionalTimestamp(expiresAt)}
+func keyDTO(id int64, keyName, prefix, keySuffix string, isActive bool, createdAt, lastUsedAt, expiresAt pgtype.Timestamptz) domain.ClientKeyDTO {
+	return domain.ClientKeyDTO{ID: int(id), KeyName: keyName, Prefix: prefix, KeySuffix: keySuffix, IsActive: isActive, CreatedAt: createdAt.Time.UTC().Format(time.RFC3339), LastUsedAt: optionalTimestamp(lastUsedAt), ExpiresAt: optionalTimestamp(expiresAt)}
 }
 
 func limitOffset(page, pageSize int) (int32, int32) {

@@ -80,6 +80,7 @@ type ClientApiKey struct {
 	LastUsedAt         pgtype.Timestamptz `json:"last_used_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	KeySuffix          string             `json:"key_suffix"`
 }
 
 type ModelPricing struct {

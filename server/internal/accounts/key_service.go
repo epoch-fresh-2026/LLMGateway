@@ -13,8 +13,25 @@ import (
 const (
 	defaultKeyName     = "default"
 	defaultKeyPrefix   = "sk-"
+	keyPrefixBodyLen   = 5
+	keySuffixLen       = 4
 	defaultPermissions = `{"models":["*"]}`
 )
+
+// extractKeySuffix extracts the first 5 chars after prefix and last 4 chars
+// for masked display (e.g., "sk-580cf*****0e89"). Returns "prefixBody+suffix"
+// format for storage.
+func extractKeySuffix(fullKey string) string {
+	// Need at least prefix + 5 chars + 4 chars
+	minLen := len(defaultKeyPrefix) + keyPrefixBodyLen + keySuffixLen
+	if len(fullKey) < minLen {
+		return fullKey
+	}
+	afterPrefix := fullKey[len(defaultKeyPrefix):]
+	prefixBody := afterPrefix[:keyPrefixBodyLen]
+	suffix := fullKey[len(fullKey)-keySuffixLen:]
+	return prefixBody + suffix
+}
 
 // CreateKey generates a gateway key, stores only its hash, and returns the
 // plaintext once.
@@ -47,6 +64,7 @@ func (a *Server) CreateKey(ctx context.Context, userID int, in KeyInput) (KeySec
 			KeyName:            keyName,
 			Prefix:             prefix,
 			KeyHash:            crypto.HashKey(fullKey),
+			KeySuffix:          extractKeySuffix(fullKey),
 			Permissions:        normalizePermissions(in.Permissions),
 			RateLimitOverrides: in.RateLimitOverrides,
 			ExpiresAt:          in.ExpiresAt,
@@ -85,7 +103,7 @@ func (a *Server) UpdateKey(ctx context.Context, userID, keyID int, in KeyUpdateI
 	if err != nil {
 		return ClientKeyDTO{}, err
 	}
-	return ClientKeyDTO{ID: updated.ID, KeyName: updated.KeyName, Prefix: updated.Prefix, IsActive: updated.IsActive, LastUsedAt: updated.LastUsedAt, ExpiresAt: updated.ExpiresAt}, nil
+	return ClientKeyDTO{ID: updated.ID, KeyName: updated.KeyName, Prefix: updated.Prefix, KeySuffix: updated.KeySuffix, IsActive: updated.IsActive, CreatedAt: updated.CreatedAt, LastUsedAt: updated.LastUsedAt, ExpiresAt: updated.ExpiresAt}, nil
 }
 
 // DeleteKey releases the key's quota reservations and removes the key in one
@@ -118,7 +136,7 @@ func (a *Server) ResetKey(ctx context.Context, userID, keyID int) (KeySecretDTO,
 		if err != nil {
 			return err
 		}
-		ok, err := tx.UpdateKeySecret(keyID, userID, crypto.HashKey(generated), key.Prefix)
+		ok, err := tx.UpdateKeySecret(keyID, userID, crypto.HashKey(generated), key.Prefix, extractKeySuffix(generated))
 		if err != nil {
 			return err
 		}

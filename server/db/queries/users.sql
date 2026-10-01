@@ -55,7 +55,7 @@ WHERE id IN (
 );
 
 -- name: ListUserKeys :many
-SELECT id, user_id, key_name, prefix, is_active, last_used_at, expires_at
+SELECT id, user_id, key_name, prefix, key_suffix, is_active, created_at, last_used_at, expires_at
 FROM client_api_keys
 WHERE user_id = $1
 ORDER BY id
@@ -65,17 +65,18 @@ LIMIT $2 OFFSET $3;
 SELECT count(*)::int FROM client_api_keys WHERE user_id = $1;
 
 -- name: GetKey :one
-SELECT id, user_id, key_name, prefix, is_active, last_used_at, expires_at
+SELECT id, user_id, key_name, prefix, key_suffix, is_active, created_at, last_used_at, expires_at
 FROM client_api_keys
 WHERE id = $1 AND user_id = $2;
 
 -- name: CreateKey :one
-INSERT INTO client_api_keys (user_id, key_name, prefix, key_hash, permissions, rate_limit_overrides, expires_at, is_active)
+INSERT INTO client_api_keys (user_id, key_name, prefix, key_hash, key_suffix, permissions, rate_limit_overrides, expires_at, is_active)
 VALUES (
     sqlc.arg(user_id),
     sqlc.arg(key_name),
     sqlc.arg(prefix),
     sqlc.arg(key_hash),
+    sqlc.arg(key_suffix),
     sqlc.arg(permissions),
     sqlc.narg(rate_limit_overrides),
     NULLIF(sqlc.arg(expires_at), '')::timestamptz,
@@ -90,7 +91,7 @@ WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id);
 
 -- name: UpdateKeySecret :execrows
 UPDATE client_api_keys
-SET key_hash = sqlc.arg(key_hash), prefix = sqlc.arg(prefix), updated_at = now()
+SET key_hash = sqlc.arg(key_hash), prefix = sqlc.arg(prefix), key_suffix = sqlc.arg(key_suffix), updated_at = now()
 WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id);
 
 -- name: DeleteKey :execrows

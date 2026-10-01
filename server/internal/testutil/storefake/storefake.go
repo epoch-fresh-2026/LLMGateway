@@ -91,10 +91,12 @@ type memoryKey struct {
 	userID             int
 	keyName            string
 	prefix             string
+	keySuffix          string
 	keyHash            string
 	permissions        json.RawMessage
 	rateLimitOverrides json.RawMessage
 	isActive           bool
+	createdAt          string
 	lastUsedAt         *string
 	expiresAt          *string
 }
