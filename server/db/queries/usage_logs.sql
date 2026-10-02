@@ -111,6 +111,15 @@ WHERE (sqlc.arg(user_id) = 0 OR user_id = sqlc.arg(user_id))
   AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text)
   AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint);
 
+-- name: CountTokensSince :one
+SELECT COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens
+FROM usage_logs
+WHERE (sqlc.arg(user_id)::bigint = 0 OR user_id = sqlc.arg(user_id)::bigint)
+  AND created_at >= sqlc.arg(since)::timestamptz
+  AND (sqlc.arg(api_key_id)::bigint = 0 OR api_key_id = sqlc.arg(api_key_id)::bigint)
+  AND (sqlc.arg(model)::text = '' OR model = sqlc.arg(model)::text)
+  AND (sqlc.arg(channel_id)::bigint = 0 OR channel_id = sqlc.arg(channel_id)::bigint);
+
 -- name: StatsOverview :one
 SELECT
     count(*)::bigint AS request_count,

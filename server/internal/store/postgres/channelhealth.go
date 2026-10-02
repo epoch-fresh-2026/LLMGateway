@@ -24,32 +24,31 @@ func (s *Store) GetChannelHealthRow(ctx context.Context, channelID int) (domain.
 }
 
 func (s *Store) ListChannelHealthRows(ctx context.Context, ownerUserID int) ([]domain.ChannelHealth, error) {
-	rows, err := s.pool.Query(ctx, `SELECT c.id, COALESCE(h.state,'closed'), COALESCE(h.consecutive_failures,0), COALESCE(h.success_count,0), COALESCE(h.failure_count,0), h.opened_at, COALESCE(h.updated_at,c.updated_at) FROM channels c LEFT JOIN channel_health h ON h.channel_id=c.id WHERE c.owner_user_id=$1 ORDER BY c.id`, int64(ownerUserID))
+	rows, err := s.queries.ListChannelHealth(ctx, int64(ownerUserID))
 	if err != nil {
 		return nil, mapError(err)
 	}
-	defer rows.Close()
 
 	list := []domain.ChannelHealth{}
-	for rows.Next() {
-		var h domain.ChannelHealth
-		var opened, updated pgtype.Timestamptz
-		if err := rows.Scan(&h.ChannelID, &h.State, &h.ConsecutiveFailures, &h.SuccessCount, &h.FailureCount, &opened, &updated); err != nil {
-			return nil, mapError(err)
-		}
-		h.OpenedAt = optionalTimestamp(opened)
-		h.UpdatedAt = updated.Time.UTC().Format(time.RFC3339)
-		list = append(list, h)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, mapError(err)
+	for _, row := range rows {
+		list = append(list, domain.ChannelHealth{
+			ChannelID:           int(row.ChannelID),
+			State:               domain.HealthState(row.State),
+			ConsecutiveFailures: int(row.ConsecutiveFailures),
+			SuccessCount:        row.SuccessCount,
+			FailureCount:        row.FailureCount,
+			OpenedAt:            optionalTimestamp(row.OpenedAt),
+			UpdatedAt:           row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+		})
 	}
 	return list, nil
 }
 
 func (s *Store) AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (string, bool, error) {
-	var leaseID string
-	err := s.pool.QueryRow(ctx, `INSERT INTO channel_breaker_probes(channel_id, lease_id, leased_until) VALUES($1, gen_random_uuid(), now()+$2::int*interval '1 second') ON CONFLICT(channel_id) DO UPDATE SET lease_id=gen_random_uuid(), leased_until=EXCLUDED.leased_until WHERE channel_breaker_probes.leased_until <= now() RETURNING lease_id`, channelID, int(lease.Seconds())).Scan(&leaseID)
+	leaseID, err := s.queries.AcquireChannelProbe(ctx, sqlc.AcquireChannelProbeParams{
+		ChannelID:    int64(channelID),
+		LeaseSeconds: int32(lease.Seconds()),
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", false, nil
@@ -60,11 +59,14 @@ func (s *Store) AcquireChannelProbe(ctx context.Context, channelID int, lease ti
 }
 
 func (s *Store) ReleaseChannelProbe(ctx context.Context, channelID int, leaseID string) (bool, error) {
-	result, err := s.pool.Exec(ctx, `DELETE FROM channel_breaker_probes WHERE channel_id=$1 AND lease_id=$2`, channelID, leaseID)
+	affected, err := s.queries.ReleaseChannelProbe(ctx, sqlc.ReleaseChannelProbeParams{
+		ChannelID: int64(channelID),
+		LeaseID:   leaseID,
+	})
 	if err != nil {
 		return false, mapError(err)
 	}
-	return result.RowsAffected() > 0, nil
+	return affected > 0, nil
 }
 
 func (s *Store) GetUserBreakerConfigRow(ctx context.Context, ownerUserID int) (domain.ChannelBreakerConfig, bool, error) {

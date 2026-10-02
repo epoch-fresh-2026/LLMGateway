@@ -11,14 +11,20 @@ import (
 )
 
 type Querier interface {
+	AcquireChannelProbe(ctx context.Context, arg AcquireChannelProbeParams) (string, error)
 	AggregateUsageByAPIKey(ctx context.Context, arg AggregateUsageByAPIKeyParams) ([]AggregateUsageByAPIKeyRow, error)
 	AggregateUsageByChannel(ctx context.Context, arg AggregateUsageByChannelParams) ([]AggregateUsageByChannelRow, error)
 	AggregateUsageByModel(ctx context.Context, arg AggregateUsageByModelParams) ([]AggregateUsageByModelRow, error)
 	AggregateUsageByUser(ctx context.Context, arg AggregateUsageByUserParams) ([]AggregateUsageByUserRow, error)
+	ApplicableQuotaPolicies(ctx context.Context, arg ApplicableQuotaPoliciesParams) ([]ApplicableQuotaPoliciesRow, error)
 	ChannelUpstreamExists(ctx context.Context, arg ChannelUpstreamExistsParams) (int32, error)
+	CountActiveRateLimitReservations(ctx context.Context, arg CountActiveRateLimitReservationsParams) (int64, error)
+	CountQuotaPolicies(ctx context.Context, arg CountQuotaPoliciesParams) (int64, error)
+	CountQuotaUsage(ctx context.Context, arg CountQuotaUsageParams) (int64, error)
 	CountRateLimitRules(ctx context.Context, arg CountRateLimitRulesParams) (int32, error)
 	CountRequestsSince(ctx context.Context, arg CountRequestsSinceParams) (int32, error)
 	CountStatsDaily(ctx context.Context, arg CountStatsDailyParams) (int32, error)
+	CountTokensSince(ctx context.Context, arg CountTokensSinceParams) (int64, error)
 	CountUsageLogs(ctx context.Context, arg CountUsageLogsParams) (int32, error)
 	CountUserKeys(ctx context.Context, userID int64) (int32, error)
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (int64, error)
@@ -34,13 +40,16 @@ type Querier interface {
 	DeleteChannelProbe(ctx context.Context, channelID int64) error
 	DeleteExpiredSessions(ctx context.Context, maxRows int32) (int64, error)
 	DeleteKey(ctx context.Context, arg DeleteKeyParams) (int64, error)
+	DeleteKeyQuotaReservations(ctx context.Context, arg DeleteKeyQuotaReservationsParams) error
 	DeletePricing(ctx context.Context, arg DeletePricingParams) error
 	DeleteQuotaPolicy(ctx context.Context, arg DeleteQuotaPolicyParams) (int64, error)
 	DeleteRateLimitRule(ctx context.Context, arg DeleteRateLimitRuleParams) (int64, error)
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) (int64, error)
 	DeleteStaleChannelHealthBuckets(ctx context.Context, before pgtype.Timestamptz) (int64, error)
 	DeleteUserBreakerConfig(ctx context.Context, ownerUserID int64) (int64, error)
+	DeleteUserQuotaReservations(ctx context.Context, userID int64) error
 	EnsureChannelHealth(ctx context.Context, channelID int64) error
+	FinalizeRateLimitReservation(ctx context.Context, id int64) (int64, error)
 	GetAccountByID(ctx context.Context, id int64) (GetAccountByIDRow, error)
 	GetAuthContextByKeyHash(ctx context.Context, keyHash string) (GetAuthContextByKeyHashRow, error)
 	GetChannel(ctx context.Context, arg GetChannelParams) (GetChannelRow, error)
@@ -62,18 +71,43 @@ type Querier interface {
 	GetUserBreakerConfig(ctx context.Context, ownerUserID int64) (GetUserBreakerConfigRow, error)
 	GetUserCredentialsByID(ctx context.Context, id int64) (GetUserCredentialsByIDRow, error)
 	GetUserCredentialsByUsername(ctx context.Context, username string) (GetUserCredentialsByUsernameRow, error)
+	InsertQuotaReservation(ctx context.Context, arg InsertQuotaReservationParams) (int64, error)
+	InsertQuotaReservationItem(ctx context.Context, arg InsertQuotaReservationItemParams) error
+	InsertRateLimitReservation(ctx context.Context, arg InsertRateLimitReservationParams) (int64, error)
 	InsertUsageLog(ctx context.Context, arg InsertUsageLogParams) (int64, error)
+	KeyBelongsToUser(ctx context.Context, arg KeyBelongsToUserParams) (bool, error)
 	ListCatalogModels(ctx context.Context, arg ListCatalogModelsParams) ([]ListCatalogModelsRow, error)
-	ListChannelHealth(ctx context.Context, ownerUserID int64) ([]ChannelHealth, error)
+	ListChannelHealth(ctx context.Context, ownerUserID int64) ([]ListChannelHealthRow, error)
 	ListChannelModels(ctx context.Context, arg ListChannelModelsParams) ([]ListChannelModelsRow, error)
 	ListChannels(ctx context.Context, ownerUserID int64) ([]ListChannelsRow, error)
 	ListPricing(ctx context.Context, ownerUserID int64) ([]ListPricingRow, error)
+	ListQuotaPolicies(ctx context.Context, arg ListQuotaPoliciesParams) ([]ListQuotaPoliciesRow, error)
+	ListQuotaUsage(ctx context.Context, arg ListQuotaUsageParams) ([]ListQuotaUsageRow, error)
 	ListRateLimitRules(ctx context.Context, arg ListRateLimitRulesParams) ([]ListRateLimitRulesRow, error)
 	ListRouteCandidates(ctx context.Context, arg ListRouteCandidatesParams) ([]ListRouteCandidatesRow, error)
 	ListUsageLogs(ctx context.Context, arg ListUsageLogsParams) ([]ListUsageLogsRow, error)
 	ListUserKeys(ctx context.Context, arg ListUserKeysParams) ([]ListUserKeysRow, error)
 	LockChannel(ctx context.Context, arg LockChannelParams) (int64, error)
+	LockExpiredQuotaReservations(ctx context.Context, arg LockExpiredQuotaReservationsParams) ([]int64, error)
+	LockQuotaBucket(ctx context.Context, arg LockQuotaBucketParams) (int64, error)
+	LockQuotaPoliciesForCleanup(ctx context.Context, arg LockQuotaPoliciesForCleanupParams) error
+	LockQuotaReservationIdentity(ctx context.Context, id int64) (LockQuotaReservationIdentityRow, error)
+	LockQuotaReservationItems(ctx context.Context, reservationID int64) ([]LockQuotaReservationItemsRow, error)
+	LockQuotaReservationStatus(ctx context.Context, id int64) (string, error)
+	LockQuotaReservationsForCleanup(ctx context.Context, arg LockQuotaReservationsForCleanupParams) ([]int64, error)
+	RateLimitAPIKeyOwnedByUser(ctx context.Context, arg RateLimitAPIKeyOwnedByUserParams) (bool, error)
+	RateLimitChannelOwnedByUser(ctx context.Context, arg RateLimitChannelOwnedByUserParams) (bool, error)
+	RateLimitModelOwnedByUser(ctx context.Context, arg RateLimitModelOwnedByUserParams) (bool, error)
+	ReapRateLimitReservations(ctx context.Context, batchLimit int32) (int64, error)
+	ReleaseChannelProbe(ctx context.Context, arg ReleaseChannelProbeParams) (int64, error)
+	ReleaseQuotaBucket(ctx context.Context, arg ReleaseQuotaBucketParams) (int64, error)
+	ReleaseQuotaReservation(ctx context.Context, arg ReleaseQuotaReservationParams) error
+	ReleaseRateLimitReservation(ctx context.Context, id int64) (int64, error)
+	ReserveQuotaBucket(ctx context.Context, arg ReserveQuotaBucketParams) (int64, error)
 	ResetChannelHealthState(ctx context.Context, channelID int64) error
+	SettleQuotaBucket(ctx context.Context, arg SettleQuotaBucketParams) (int64, error)
+	SettleQuotaReservation(ctx context.Context, arg SettleQuotaReservationParams) error
+	SettleQuotaReservationItem(ctx context.Context, arg SettleQuotaReservationItemParams) error
 	StatsChannels(ctx context.Context, arg StatsChannelsParams) ([]StatsChannelsRow, error)
 	StatsDaily(ctx context.Context, arg StatsDailyParams) ([]StatsDailyRow, error)
 	StatsOverview(ctx context.Context, arg StatsOverviewParams) (StatsOverviewRow, error)
@@ -95,6 +129,7 @@ type Querier interface {
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (int64, error)
 	UpsertChannelHealthBucket(ctx context.Context, arg UpsertChannelHealthBucketParams) error
 	UpsertPricing(ctx context.Context, arg UpsertPricingParams) (int64, error)
+	UpsertQuotaBucket(ctx context.Context, arg UpsertQuotaBucketParams) error
 	UpsertUserBreakerConfig(ctx context.Context, arg UpsertUserBreakerConfigParams) error
 }
 

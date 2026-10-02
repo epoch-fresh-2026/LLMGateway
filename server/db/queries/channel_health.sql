@@ -39,11 +39,29 @@ SET state = 'closed',
 WHERE channel_id = $1;
 
 -- name: ListChannelHealth :many
-SELECT h.channel_id, h.state, h.consecutive_failures, h.success_count, h.failure_count, h.opened_at, h.updated_at
-FROM channel_health h
-JOIN channels c ON c.id = h.channel_id
+SELECT c.id AS channel_id,
+    COALESCE(h.state, 'closed')::text AS state,
+    COALESCE(h.consecutive_failures, 0)::integer AS consecutive_failures,
+    COALESCE(h.success_count, 0)::bigint AS success_count,
+    COALESCE(h.failure_count, 0)::bigint AS failure_count,
+    h.opened_at,
+    COALESCE(h.updated_at, c.updated_at)::timestamptz AS updated_at
+FROM channels c
+LEFT JOIN channel_health h ON h.channel_id = c.id
 WHERE c.owner_user_id = sqlc.arg(owner_user_id)
-ORDER BY h.channel_id;
+ORDER BY c.id;
+
+-- name: AcquireChannelProbe :one
+INSERT INTO channel_breaker_probes (channel_id, lease_id, leased_until)
+VALUES (sqlc.arg(channel_id), gen_random_uuid(), now() + sqlc.arg(lease_seconds)::integer * interval '1 second')
+ON CONFLICT (channel_id) DO UPDATE
+SET lease_id = gen_random_uuid(), leased_until = EXCLUDED.leased_until
+WHERE channel_breaker_probes.leased_until <= now()
+RETURNING lease_id::text;
+
+-- name: ReleaseChannelProbe :execrows
+DELETE FROM channel_breaker_probes
+WHERE channel_id = sqlc.arg(channel_id) AND lease_id = sqlc.arg(lease_id)::text::uuid;
 
 -- name: UpsertChannelHealthBucket :exec
 INSERT INTO channel_health_buckets (channel_id, bucket_start, requests, errors, timeouts)

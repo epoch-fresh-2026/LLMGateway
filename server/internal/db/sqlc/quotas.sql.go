@@ -11,6 +11,117 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const applicableQuotaPolicies = `-- name: ApplicableQuotaPolicies :many
+SELECT id, policy_name, scope_type, COALESCE(user_id, api_key_id)::bigint AS scope_id,
+       period_type, token_limit, COALESCE(cost_limit::text, '')::text AS cost_limit, enabled
+FROM quota_policies
+WHERE deleted_at IS NULL AND enabled = true
+  AND ((scope_type = 'user' AND user_id = $1::bigint)
+       OR (scope_type = 'api_key' AND api_key_id = $2::bigint))
+ORDER BY id FOR SHARE
+`
+
+type ApplicableQuotaPoliciesParams struct {
+	UserID int64 `json:"user_id"`
+	KeyID  int64 `json:"key_id"`
+}
+
+type ApplicableQuotaPoliciesRow struct {
+	ID         int64       `json:"id"`
+	PolicyName string      `json:"policy_name"`
+	ScopeType  string      `json:"scope_type"`
+	ScopeID    int64       `json:"scope_id"`
+	PeriodType string      `json:"period_type"`
+	TokenLimit pgtype.Int8 `json:"token_limit"`
+	CostLimit  string      `json:"cost_limit"`
+	Enabled    bool        `json:"enabled"`
+}
+
+func (q *Queries) ApplicableQuotaPolicies(ctx context.Context, arg ApplicableQuotaPoliciesParams) ([]ApplicableQuotaPoliciesRow, error) {
+	rows, err := q.db.Query(ctx, applicableQuotaPolicies, arg.UserID, arg.KeyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ApplicableQuotaPoliciesRow{}
+	for rows.Next() {
+		var i ApplicableQuotaPoliciesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PolicyName,
+			&i.ScopeType,
+			&i.ScopeID,
+			&i.PeriodType,
+			&i.TokenLimit,
+			&i.CostLimit,
+			&i.Enabled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const countQuotaPolicies = `-- name: CountQuotaPolicies :one
+SELECT count(*)
+FROM quota_policies p
+WHERE p.deleted_at IS NULL
+  AND ((p.scope_type = 'user' AND p.user_id = $1::bigint)
+       OR (p.scope_type = 'api_key' AND p.api_key_id IN (
+           SELECT k.id FROM client_api_keys k WHERE k.user_id = $1::bigint)))
+  AND ($2::text = '' OR p.scope_type = $2::text)
+  AND ($3::bigint = 0 OR COALESCE(p.user_id, p.api_key_id) = $3::bigint)
+  AND ($4::boolean IS NULL OR p.enabled = $4::boolean)
+`
+
+type CountQuotaPoliciesParams struct {
+	OwnerUserID int64       `json:"owner_user_id"`
+	ScopeType   string      `json:"scope_type"`
+	ScopeID     int64       `json:"scope_id"`
+	Enabled     pgtype.Bool `json:"enabled"`
+}
+
+func (q *Queries) CountQuotaPolicies(ctx context.Context, arg CountQuotaPoliciesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countQuotaPolicies,
+		arg.OwnerUserID,
+		arg.ScopeType,
+		arg.ScopeID,
+		arg.Enabled,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countQuotaUsage = `-- name: CountQuotaUsage :one
+SELECT count(*)
+FROM quota_policies p JOIN quota_buckets b ON b.policy_id = p.id
+WHERE p.deleted_at IS NULL
+  AND ((p.scope_type = 'user' AND p.user_id = $1::bigint)
+       OR (p.scope_type = 'api_key' AND p.api_key_id IN (
+           SELECT k.id FROM client_api_keys k WHERE k.user_id = $1::bigint)))
+  AND ($2::text = '' OR p.scope_type = $2::text)
+  AND ($3::bigint = 0 OR COALESCE(p.user_id, p.api_key_id) = $3::bigint)
+  AND b.period_start <= now() AND b.period_end > now()
+`
+
+type CountQuotaUsageParams struct {
+	OwnerUserID int64  `json:"owner_user_id"`
+	ScopeType   string `json:"scope_type"`
+	ScopeID     int64  `json:"scope_id"`
+}
+
+func (q *Queries) CountQuotaUsage(ctx context.Context, arg CountQuotaUsageParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countQuotaUsage, arg.OwnerUserID, arg.ScopeType, arg.ScopeID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createQuotaPolicy = `-- name: CreateQuotaPolicy :one
 INSERT INTO quota_policies (policy_name, scope_type, user_id, api_key_id, period_type, token_limit, cost_limit, enabled)
 VALUES ($1, $2, $3, $4,
@@ -45,13 +156,28 @@ func (q *Queries) CreateQuotaPolicy(ctx context.Context, arg CreateQuotaPolicyPa
 	return id, err
 }
 
+const deleteKeyQuotaReservations = `-- name: DeleteKeyQuotaReservations :exec
+DELETE FROM quota_reservations
+WHERE api_key_id = $1::bigint AND ($2::bigint = 0 OR user_id = $2::bigint)
+`
+
+type DeleteKeyQuotaReservationsParams struct {
+	KeyID  int64 `json:"key_id"`
+	UserID int64 `json:"user_id"`
+}
+
+func (q *Queries) DeleteKeyQuotaReservations(ctx context.Context, arg DeleteKeyQuotaReservationsParams) error {
+	_, err := q.db.Exec(ctx, deleteKeyQuotaReservations, arg.KeyID, arg.UserID)
+	return err
+}
+
 const deleteQuotaPolicy = `-- name: DeleteQuotaPolicy :execrows
 UPDATE quota_policies
 SET enabled = false, deleted_at = now(), updated_at = now()
 WHERE quota_policies.id = $1 AND deleted_at IS NULL
   AND ((quota_policies.scope_type = 'user' AND quota_policies.user_id = $2)
        OR (quota_policies.scope_type = 'api_key' AND quota_policies.api_key_id IN (
-           SELECT k.id FROM client_api_keys k WHERE k.user_id = $2)))
+            SELECT k.id FROM client_api_keys k WHERE k.user_id = $2)))
 `
 
 type DeleteQuotaPolicyParams struct {
@@ -65,6 +191,15 @@ func (q *Queries) DeleteQuotaPolicy(ctx context.Context, arg DeleteQuotaPolicyPa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteUserQuotaReservations = `-- name: DeleteUserQuotaReservations :exec
+DELETE FROM quota_reservations WHERE user_id = $1::bigint
+`
+
+func (q *Queries) DeleteUserQuotaReservations(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, deleteUserQuotaReservations, userID)
+	return err
 }
 
 const getQuotaPolicy = `-- name: GetQuotaPolicy :one
@@ -111,6 +246,578 @@ func (q *Queries) GetQuotaPolicy(ctx context.Context, arg GetQuotaPolicyParams) 
 	return i, err
 }
 
+const insertQuotaReservation = `-- name: InsertQuotaReservation :one
+INSERT INTO quota_reservations (request_id, user_id, api_key_id, model, estimated_tokens, estimated_cost, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6::text::numeric, $7)
+RETURNING id
+`
+
+type InsertQuotaReservationParams struct {
+	RequestID       string             `json:"request_id"`
+	UserID          int64              `json:"user_id"`
+	ApiKeyID        int64              `json:"api_key_id"`
+	Model           string             `json:"model"`
+	EstimatedTokens int64              `json:"estimated_tokens"`
+	EstimatedCost   string             `json:"estimated_cost"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) InsertQuotaReservation(ctx context.Context, arg InsertQuotaReservationParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertQuotaReservation,
+		arg.RequestID,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.Model,
+		arg.EstimatedTokens,
+		arg.EstimatedCost,
+		arg.ExpiresAt,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertQuotaReservationItem = `-- name: InsertQuotaReservationItem :exec
+INSERT INTO quota_reservation_items (reservation_id, policy_id, period_start, reserved_tokens, reserved_cost)
+VALUES ($1, $2, $3, $4, $5::text::numeric)
+`
+
+type InsertQuotaReservationItemParams struct {
+	ReservationID int64              `json:"reservation_id"`
+	PolicyID      int64              `json:"policy_id"`
+	PeriodStart   pgtype.Timestamptz `json:"period_start"`
+	Tokens        int64              `json:"tokens"`
+	Cost          string             `json:"cost"`
+}
+
+func (q *Queries) InsertQuotaReservationItem(ctx context.Context, arg InsertQuotaReservationItemParams) error {
+	_, err := q.db.Exec(ctx, insertQuotaReservationItem,
+		arg.ReservationID,
+		arg.PolicyID,
+		arg.PeriodStart,
+		arg.Tokens,
+		arg.Cost,
+	)
+	return err
+}
+
+const keyBelongsToUser = `-- name: KeyBelongsToUser :one
+SELECT EXISTS (
+    SELECT 1 FROM client_api_keys
+    WHERE id = $1::bigint AND user_id = $2::bigint
+)
+`
+
+type KeyBelongsToUserParams struct {
+	KeyID       int64 `json:"key_id"`
+	OwnerUserID int64 `json:"owner_user_id"`
+}
+
+func (q *Queries) KeyBelongsToUser(ctx context.Context, arg KeyBelongsToUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, keyBelongsToUser, arg.KeyID, arg.OwnerUserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const listQuotaPolicies = `-- name: ListQuotaPolicies :many
+SELECT p.id, p.policy_name, p.scope_type, p.user_id, p.api_key_id, p.period_type,
+       p.token_limit, p.cost_limit::text AS cost_limit, p.enabled
+FROM quota_policies p
+WHERE p.deleted_at IS NULL
+  AND ((p.scope_type = 'user' AND p.user_id = $1::bigint)
+       OR (p.scope_type = 'api_key' AND p.api_key_id IN (
+           SELECT k.id FROM client_api_keys k WHERE k.user_id = $1::bigint)))
+  AND ($2::text = '' OR p.scope_type = $2::text)
+  AND ($3::bigint = 0 OR COALESCE(p.user_id, p.api_key_id) = $3::bigint)
+  AND ($4::boolean IS NULL OR p.enabled = $4::boolean)
+ORDER BY p.id
+LIMIT $6::integer OFFSET $5::integer
+`
+
+type ListQuotaPoliciesParams struct {
+	OwnerUserID int64       `json:"owner_user_id"`
+	ScopeType   string      `json:"scope_type"`
+	ScopeID     int64       `json:"scope_id"`
+	Enabled     pgtype.Bool `json:"enabled"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
+}
+
+type ListQuotaPoliciesRow struct {
+	ID         int64       `json:"id"`
+	PolicyName string      `json:"policy_name"`
+	ScopeType  string      `json:"scope_type"`
+	UserID     pgtype.Int8 `json:"user_id"`
+	ApiKeyID   pgtype.Int8 `json:"api_key_id"`
+	PeriodType string      `json:"period_type"`
+	TokenLimit pgtype.Int8 `json:"token_limit"`
+	CostLimit  string      `json:"cost_limit"`
+	Enabled    bool        `json:"enabled"`
+}
+
+func (q *Queries) ListQuotaPolicies(ctx context.Context, arg ListQuotaPoliciesParams) ([]ListQuotaPoliciesRow, error) {
+	rows, err := q.db.Query(ctx, listQuotaPolicies,
+		arg.OwnerUserID,
+		arg.ScopeType,
+		arg.ScopeID,
+		arg.Enabled,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListQuotaPoliciesRow{}
+	for rows.Next() {
+		var i ListQuotaPoliciesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PolicyName,
+			&i.ScopeType,
+			&i.UserID,
+			&i.ApiKeyID,
+			&i.PeriodType,
+			&i.TokenLimit,
+			&i.CostLimit,
+			&i.Enabled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listQuotaUsage = `-- name: ListQuotaUsage :many
+SELECT p.id AS policy_id, p.policy_name, p.scope_type, p.user_id, p.api_key_id, p.period_type,
+       b.period_start, b.period_end, p.token_limit, b.used_tokens, b.reserved_tokens,
+       p.cost_limit::text AS cost_limit, b.used_cost::text AS used_cost,
+       b.reserved_cost::text AS reserved_cost
+FROM quota_policies p JOIN quota_buckets b ON b.policy_id = p.id
+WHERE p.deleted_at IS NULL
+  AND ((p.scope_type = 'user' AND p.user_id = $1::bigint)
+       OR (p.scope_type = 'api_key' AND p.api_key_id IN (
+           SELECT k.id FROM client_api_keys k WHERE k.user_id = $1::bigint)))
+  AND ($2::text = '' OR p.scope_type = $2::text)
+  AND ($3::bigint = 0 OR COALESCE(p.user_id, p.api_key_id) = $3::bigint)
+  AND b.period_start <= now() AND b.period_end > now()
+ORDER BY p.id
+LIMIT $5::integer OFFSET $4::integer
+`
+
+type ListQuotaUsageParams struct {
+	OwnerUserID int64  `json:"owner_user_id"`
+	ScopeType   string `json:"scope_type"`
+	ScopeID     int64  `json:"scope_id"`
+	PageOffset  int32  `json:"page_offset"`
+	PageLimit   int32  `json:"page_limit"`
+}
+
+type ListQuotaUsageRow struct {
+	PolicyID       int64              `json:"policy_id"`
+	PolicyName     string             `json:"policy_name"`
+	ScopeType      string             `json:"scope_type"`
+	UserID         pgtype.Int8        `json:"user_id"`
+	ApiKeyID       pgtype.Int8        `json:"api_key_id"`
+	PeriodType     string             `json:"period_type"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
+	TokenLimit     pgtype.Int8        `json:"token_limit"`
+	UsedTokens     int64              `json:"used_tokens"`
+	ReservedTokens int64              `json:"reserved_tokens"`
+	CostLimit      string             `json:"cost_limit"`
+	UsedCost       string             `json:"used_cost"`
+	ReservedCost   string             `json:"reserved_cost"`
+}
+
+func (q *Queries) ListQuotaUsage(ctx context.Context, arg ListQuotaUsageParams) ([]ListQuotaUsageRow, error) {
+	rows, err := q.db.Query(ctx, listQuotaUsage,
+		arg.OwnerUserID,
+		arg.ScopeType,
+		arg.ScopeID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListQuotaUsageRow{}
+	for rows.Next() {
+		var i ListQuotaUsageRow
+		if err := rows.Scan(
+			&i.PolicyID,
+			&i.PolicyName,
+			&i.ScopeType,
+			&i.UserID,
+			&i.ApiKeyID,
+			&i.PeriodType,
+			&i.PeriodStart,
+			&i.PeriodEnd,
+			&i.TokenLimit,
+			&i.UsedTokens,
+			&i.ReservedTokens,
+			&i.CostLimit,
+			&i.UsedCost,
+			&i.ReservedCost,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockExpiredQuotaReservations = `-- name: LockExpiredQuotaReservations :many
+SELECT id FROM quota_reservations
+WHERE status = 'pending' AND expires_at <= $1
+  AND ($2::bigint = 0 OR user_id = $2::bigint OR api_key_id = $3::bigint)
+ORDER BY expires_at, id FOR UPDATE SKIP LOCKED LIMIT $4::bigint
+`
+
+type LockExpiredQuotaReservationsParams struct {
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UserID    int64              `json:"user_id"`
+	KeyID     int64              `json:"key_id"`
+	RowLimit  int64              `json:"row_limit"`
+}
+
+func (q *Queries) LockExpiredQuotaReservations(ctx context.Context, arg LockExpiredQuotaReservationsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, lockExpiredQuotaReservations,
+		arg.ExpiresAt,
+		arg.UserID,
+		arg.KeyID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockQuotaBucket = `-- name: LockQuotaBucket :one
+SELECT policy_id FROM quota_buckets
+WHERE policy_id = $1 AND period_start = $2
+FOR UPDATE
+`
+
+type LockQuotaBucketParams struct {
+	PolicyID    int64              `json:"policy_id"`
+	PeriodStart pgtype.Timestamptz `json:"period_start"`
+}
+
+func (q *Queries) LockQuotaBucket(ctx context.Context, arg LockQuotaBucketParams) (int64, error) {
+	row := q.db.QueryRow(ctx, lockQuotaBucket, arg.PolicyID, arg.PeriodStart)
+	var policy_id int64
+	err := row.Scan(&policy_id)
+	return policy_id, err
+}
+
+const lockQuotaPoliciesForCleanup = `-- name: LockQuotaPoliciesForCleanup :exec
+SELECT id FROM quota_policies
+WHERE deleted_at IS NULL
+  AND (($1::bigint > 0 AND scope_type = 'user' AND user_id = $1::bigint)
+       OR ($2::bigint > 0 AND scope_type = 'api_key' AND api_key_id = $2::bigint)
+       OR ($1::bigint > 0 AND scope_type = 'api_key' AND api_key_id IN (
+           SELECT id FROM client_api_keys WHERE user_id = $1::bigint)))
+ORDER BY id FOR UPDATE
+`
+
+type LockQuotaPoliciesForCleanupParams struct {
+	UserID int64 `json:"user_id"`
+	KeyID  int64 `json:"key_id"`
+}
+
+func (q *Queries) LockQuotaPoliciesForCleanup(ctx context.Context, arg LockQuotaPoliciesForCleanupParams) error {
+	_, err := q.db.Exec(ctx, lockQuotaPoliciesForCleanup, arg.UserID, arg.KeyID)
+	return err
+}
+
+const lockQuotaReservationIdentity = `-- name: LockQuotaReservationIdentity :one
+SELECT status, request_id, user_id, api_key_id FROM quota_reservations
+WHERE id = $1 FOR UPDATE
+`
+
+type LockQuotaReservationIdentityRow struct {
+	Status    string `json:"status"`
+	RequestID string `json:"request_id"`
+	UserID    int64  `json:"user_id"`
+	ApiKeyID  int64  `json:"api_key_id"`
+}
+
+func (q *Queries) LockQuotaReservationIdentity(ctx context.Context, id int64) (LockQuotaReservationIdentityRow, error) {
+	row := q.db.QueryRow(ctx, lockQuotaReservationIdentity, id)
+	var i LockQuotaReservationIdentityRow
+	err := row.Scan(
+		&i.Status,
+		&i.RequestID,
+		&i.UserID,
+		&i.ApiKeyID,
+	)
+	return i, err
+}
+
+const lockQuotaReservationItems = `-- name: LockQuotaReservationItems :many
+SELECT policy_id, period_start, reserved_tokens, reserved_cost::text AS reserved_cost
+FROM quota_reservation_items WHERE reservation_id = $1
+ORDER BY policy_id FOR UPDATE
+`
+
+type LockQuotaReservationItemsRow struct {
+	PolicyID       int64              `json:"policy_id"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	ReservedTokens int64              `json:"reserved_tokens"`
+	ReservedCost   string             `json:"reserved_cost"`
+}
+
+func (q *Queries) LockQuotaReservationItems(ctx context.Context, reservationID int64) ([]LockQuotaReservationItemsRow, error) {
+	rows, err := q.db.Query(ctx, lockQuotaReservationItems, reservationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockQuotaReservationItemsRow{}
+	for rows.Next() {
+		var i LockQuotaReservationItemsRow
+		if err := rows.Scan(
+			&i.PolicyID,
+			&i.PeriodStart,
+			&i.ReservedTokens,
+			&i.ReservedCost,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockQuotaReservationStatus = `-- name: LockQuotaReservationStatus :one
+SELECT status FROM quota_reservations WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockQuotaReservationStatus(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRow(ctx, lockQuotaReservationStatus, id)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
+const lockQuotaReservationsForCleanup = `-- name: LockQuotaReservationsForCleanup :many
+SELECT id FROM quota_reservations
+WHERE ($1::bigint = 0 OR user_id = $1::bigint)
+  AND ($2::bigint = 0 OR api_key_id = $2::bigint)
+ORDER BY id FOR UPDATE
+`
+
+type LockQuotaReservationsForCleanupParams struct {
+	UserID int64 `json:"user_id"`
+	KeyID  int64 `json:"key_id"`
+}
+
+func (q *Queries) LockQuotaReservationsForCleanup(ctx context.Context, arg LockQuotaReservationsForCleanupParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, lockQuotaReservationsForCleanup, arg.UserID, arg.KeyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const releaseQuotaBucket = `-- name: ReleaseQuotaBucket :execrows
+UPDATE quota_buckets
+SET reserved_tokens = reserved_tokens - $1::bigint,
+    reserved_cost = reserved_cost - $2::text::numeric, updated_at = now()
+WHERE policy_id = $3 AND period_start = $4
+  AND reserved_tokens >= $1::bigint AND reserved_cost >= $2::text::numeric
+`
+
+type ReleaseQuotaBucketParams struct {
+	Tokens      int64              `json:"tokens"`
+	Cost        string             `json:"cost"`
+	PolicyID    int64              `json:"policy_id"`
+	PeriodStart pgtype.Timestamptz `json:"period_start"`
+}
+
+func (q *Queries) ReleaseQuotaBucket(ctx context.Context, arg ReleaseQuotaBucketParams) (int64, error) {
+	result, err := q.db.Exec(ctx, releaseQuotaBucket,
+		arg.Tokens,
+		arg.Cost,
+		arg.PolicyID,
+		arg.PeriodStart,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const releaseQuotaReservation = `-- name: ReleaseQuotaReservation :exec
+UPDATE quota_reservations
+SET status = $1, released_at = $2, updated_at = now()
+WHERE id = $3
+`
+
+type ReleaseQuotaReservationParams struct {
+	Status     string             `json:"status"`
+	ReleasedAt pgtype.Timestamptz `json:"released_at"`
+	ID         int64              `json:"id"`
+}
+
+func (q *Queries) ReleaseQuotaReservation(ctx context.Context, arg ReleaseQuotaReservationParams) error {
+	_, err := q.db.Exec(ctx, releaseQuotaReservation, arg.Status, arg.ReleasedAt, arg.ID)
+	return err
+}
+
+const reserveQuotaBucket = `-- name: ReserveQuotaBucket :execrows
+UPDATE quota_buckets b
+SET reserved_tokens = b.reserved_tokens + $1::bigint,
+    reserved_cost = b.reserved_cost + $2::text::numeric,
+    updated_at = now()
+FROM quota_policies p
+WHERE b.policy_id = $3 AND b.period_start = $4 AND p.id = b.policy_id
+  AND p.enabled = true AND p.deleted_at IS NULL
+  AND (p.token_limit IS NULL OR b.used_tokens + b.reserved_tokens + $1::bigint <= p.token_limit)
+  AND (p.cost_limit IS NULL OR b.used_cost + b.reserved_cost + $2::text::numeric <= p.cost_limit)
+`
+
+type ReserveQuotaBucketParams struct {
+	Tokens      int64              `json:"tokens"`
+	Cost        string             `json:"cost"`
+	PolicyID    int64              `json:"policy_id"`
+	PeriodStart pgtype.Timestamptz `json:"period_start"`
+}
+
+func (q *Queries) ReserveQuotaBucket(ctx context.Context, arg ReserveQuotaBucketParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reserveQuotaBucket,
+		arg.Tokens,
+		arg.Cost,
+		arg.PolicyID,
+		arg.PeriodStart,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const settleQuotaBucket = `-- name: SettleQuotaBucket :execrows
+UPDATE quota_buckets
+SET reserved_tokens = reserved_tokens - $1::bigint,
+    reserved_cost = reserved_cost - $2::text::numeric,
+    used_tokens = used_tokens + $3::bigint,
+    used_cost = used_cost + $4::text::numeric, updated_at = now()
+WHERE policy_id = $5 AND period_start = $6
+  AND reserved_tokens >= $1::bigint AND reserved_cost >= $2::text::numeric
+  AND $3::bigint <= $1::bigint
+  AND $4::text::numeric <= $2::text::numeric
+`
+
+type SettleQuotaBucketParams struct {
+	ReservedTokens int64              `json:"reserved_tokens"`
+	ReservedCost   string             `json:"reserved_cost"`
+	ActualTokens   int64              `json:"actual_tokens"`
+	ActualCost     string             `json:"actual_cost"`
+	PolicyID       int64              `json:"policy_id"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+}
+
+func (q *Queries) SettleQuotaBucket(ctx context.Context, arg SettleQuotaBucketParams) (int64, error) {
+	result, err := q.db.Exec(ctx, settleQuotaBucket,
+		arg.ReservedTokens,
+		arg.ReservedCost,
+		arg.ActualTokens,
+		arg.ActualCost,
+		arg.PolicyID,
+		arg.PeriodStart,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const settleQuotaReservation = `-- name: SettleQuotaReservation :exec
+UPDATE quota_reservations
+SET status = 'settled', actual_tokens = $1, actual_cost = $2::text::numeric,
+    settled_at = $3, updated_at = now()
+WHERE id = $4
+`
+
+type SettleQuotaReservationParams struct {
+	ActualTokens pgtype.Int8        `json:"actual_tokens"`
+	ActualCost   string             `json:"actual_cost"`
+	SettledAt    pgtype.Timestamptz `json:"settled_at"`
+	ID           int64              `json:"id"`
+}
+
+func (q *Queries) SettleQuotaReservation(ctx context.Context, arg SettleQuotaReservationParams) error {
+	_, err := q.db.Exec(ctx, settleQuotaReservation,
+		arg.ActualTokens,
+		arg.ActualCost,
+		arg.SettledAt,
+		arg.ID,
+	)
+	return err
+}
+
+const settleQuotaReservationItem = `-- name: SettleQuotaReservationItem :exec
+UPDATE quota_reservation_items
+SET actual_tokens = $1, actual_cost = $2::text::numeric
+WHERE reservation_id = $3 AND policy_id = $4
+`
+
+type SettleQuotaReservationItemParams struct {
+	ActualTokens  pgtype.Int8 `json:"actual_tokens"`
+	ActualCost    string      `json:"actual_cost"`
+	ReservationID int64       `json:"reservation_id"`
+	PolicyID      int64       `json:"policy_id"`
+}
+
+func (q *Queries) SettleQuotaReservationItem(ctx context.Context, arg SettleQuotaReservationItemParams) error {
+	_, err := q.db.Exec(ctx, settleQuotaReservationItem,
+		arg.ActualTokens,
+		arg.ActualCost,
+		arg.ReservationID,
+		arg.PolicyID,
+	)
+	return err
+}
+
 const updateQuotaPolicy = `-- name: UpdateQuotaPolicy :execrows
 UPDATE quota_policies
 SET policy_name = $1, token_limit = $2,
@@ -143,4 +850,21 @@ func (q *Queries) UpdateQuotaPolicy(ctx context.Context, arg UpdateQuotaPolicyPa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const upsertQuotaBucket = `-- name: UpsertQuotaBucket :exec
+INSERT INTO quota_buckets (policy_id, period_start, period_end)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING
+`
+
+type UpsertQuotaBucketParams struct {
+	PolicyID    int64              `json:"policy_id"`
+	PeriodStart pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd   pgtype.Timestamptz `json:"period_end"`
+}
+
+func (q *Queries) UpsertQuotaBucket(ctx context.Context, arg UpsertQuotaBucketParams) error {
+	_, err := q.db.Exec(ctx, upsertQuotaBucket, arg.PolicyID, arg.PeriodStart, arg.PeriodEnd)
+	return err
 }

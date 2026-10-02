@@ -354,6 +354,37 @@ func (q *Queries) CountStatsDaily(ctx context.Context, arg CountStatsDailyParams
 	return column_1, err
 }
 
+const countTokensSince = `-- name: CountTokensSince :one
+SELECT COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens
+FROM usage_logs
+WHERE ($1::bigint = 0 OR user_id = $1::bigint)
+  AND created_at >= $2::timestamptz
+  AND ($3::bigint = 0 OR api_key_id = $3::bigint)
+  AND ($4::text = '' OR model = $4::text)
+  AND ($5::bigint = 0 OR channel_id = $5::bigint)
+`
+
+type CountTokensSinceParams struct {
+	UserID    int64              `json:"user_id"`
+	Since     pgtype.Timestamptz `json:"since"`
+	ApiKeyID  int64              `json:"api_key_id"`
+	Model     string             `json:"model"`
+	ChannelID int64              `json:"channel_id"`
+}
+
+func (q *Queries) CountTokensSince(ctx context.Context, arg CountTokensSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTokensSince,
+		arg.UserID,
+		arg.Since,
+		arg.ApiKeyID,
+		arg.Model,
+		arg.ChannelID,
+	)
+	var total_tokens int64
+	err := row.Scan(&total_tokens)
+	return total_tokens, err
+}
+
 const countUsageLogs = `-- name: CountUsageLogs :one
 SELECT count(*)::int
 FROM usage_logs l

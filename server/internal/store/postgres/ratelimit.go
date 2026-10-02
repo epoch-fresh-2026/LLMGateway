@@ -95,7 +95,6 @@ func (s *Store) TargetOwnedByUser(ctx context.Context, ownerUserID int, targetTy
 	if targetValue == "*" {
 		return true, nil
 	}
-	var exists bool
 	switch targetType {
 	case "user":
 		return targetValue == strconv.Itoa(ownerUserID), nil
@@ -104,25 +103,21 @@ func (s *Store) TargetOwnedByUser(ctx context.Context, ownerUserID int, targetTy
 		if err != nil {
 			return false, nil
 		}
-		if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM client_api_keys WHERE id = $1 AND user_id = $2)`, id, ownerUserID).Scan(&exists); err != nil {
-			return false, mapError(err)
-		}
+		exists, err := s.queries.RateLimitAPIKeyOwnedByUser(ctx, sqlc.RateLimitAPIKeyOwnedByUserParams{ID: int64(id), OwnerUserID: int64(ownerUserID)})
+		return exists, mapError(err)
 	case "channel":
 		id, err := strconv.Atoi(targetValue)
 		if err != nil {
 			return false, nil
 		}
-		if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM channels WHERE id = $1 AND owner_user_id = $2)`, id, ownerUserID).Scan(&exists); err != nil {
-			return false, mapError(err)
-		}
+		exists, err := s.queries.RateLimitChannelOwnedByUser(ctx, sqlc.RateLimitChannelOwnedByUserParams{ID: int64(id), OwnerUserID: int64(ownerUserID)})
+		return exists, mapError(err)
 	case "model":
-		if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM channel_models cm JOIN channels c ON c.id = cm.channel_id WHERE cm.model_name = $1 AND c.owner_user_id = $2)`, targetValue, ownerUserID).Scan(&exists); err != nil {
-			return false, mapError(err)
-		}
+		exists, err := s.queries.RateLimitModelOwnedByUser(ctx, sqlc.RateLimitModelOwnedByUserParams{ModelName: targetValue, OwnerUserID: int64(ownerUserID)})
+		return exists, mapError(err)
 	default:
 		return false, nil
 	}
-	return exists, nil
 }
 
 func rateLimitRule(id int64, ruleName, targetType, targetValue, metric string, limitValue int64, action string, priority int32, enabled bool, extras []byte) domain.RateLimitRule {

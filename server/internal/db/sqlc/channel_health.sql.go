@@ -11,6 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acquireChannelProbe = `-- name: AcquireChannelProbe :one
+INSERT INTO channel_breaker_probes (channel_id, lease_id, leased_until)
+VALUES ($1, gen_random_uuid(), now() + $2::integer * interval '1 second')
+ON CONFLICT (channel_id) DO UPDATE
+SET lease_id = gen_random_uuid(), leased_until = EXCLUDED.leased_until
+WHERE channel_breaker_probes.leased_until <= now()
+RETURNING lease_id::text
+`
+
+type AcquireChannelProbeParams struct {
+	ChannelID    int64 `json:"channel_id"`
+	LeaseSeconds int32 `json:"lease_seconds"`
+}
+
+func (q *Queries) AcquireChannelProbe(ctx context.Context, arg AcquireChannelProbeParams) (string, error) {
+	row := q.db.QueryRow(ctx, acquireChannelProbe, arg.ChannelID, arg.LeaseSeconds)
+	var lease_id string
+	err := row.Scan(&lease_id)
+	return lease_id, err
+}
+
 const deleteChannelHealthBuckets = `-- name: DeleteChannelHealthBuckets :exec
 DELETE FROM channel_health_buckets WHERE channel_id = $1
 `
@@ -135,22 +156,38 @@ func (q *Queries) GetUserBreakerConfig(ctx context.Context, ownerUserID int64) (
 }
 
 const listChannelHealth = `-- name: ListChannelHealth :many
-SELECT h.channel_id, h.state, h.consecutive_failures, h.success_count, h.failure_count, h.opened_at, h.updated_at
-FROM channel_health h
-JOIN channels c ON c.id = h.channel_id
+SELECT c.id AS channel_id,
+    COALESCE(h.state, 'closed')::text AS state,
+    COALESCE(h.consecutive_failures, 0)::integer AS consecutive_failures,
+    COALESCE(h.success_count, 0)::bigint AS success_count,
+    COALESCE(h.failure_count, 0)::bigint AS failure_count,
+    h.opened_at,
+    COALESCE(h.updated_at, c.updated_at)::timestamptz AS updated_at
+FROM channels c
+LEFT JOIN channel_health h ON h.channel_id = c.id
 WHERE c.owner_user_id = $1
-ORDER BY h.channel_id
+ORDER BY c.id
 `
 
-func (q *Queries) ListChannelHealth(ctx context.Context, ownerUserID int64) ([]ChannelHealth, error) {
+type ListChannelHealthRow struct {
+	ChannelID           int64              `json:"channel_id"`
+	State               string             `json:"state"`
+	ConsecutiveFailures int32              `json:"consecutive_failures"`
+	SuccessCount        int64              `json:"success_count"`
+	FailureCount        int64              `json:"failure_count"`
+	OpenedAt            pgtype.Timestamptz `json:"opened_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListChannelHealth(ctx context.Context, ownerUserID int64) ([]ListChannelHealthRow, error) {
 	rows, err := q.db.Query(ctx, listChannelHealth, ownerUserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ChannelHealth{}
+	items := []ListChannelHealthRow{}
 	for rows.Next() {
-		var i ChannelHealth
+		var i ListChannelHealthRow
 		if err := rows.Scan(
 			&i.ChannelID,
 			&i.State,
@@ -168,6 +205,24 @@ func (q *Queries) ListChannelHealth(ctx context.Context, ownerUserID int64) ([]C
 		return nil, err
 	}
 	return items, nil
+}
+
+const releaseChannelProbe = `-- name: ReleaseChannelProbe :execrows
+DELETE FROM channel_breaker_probes
+WHERE channel_id = $1 AND lease_id = $2::text::uuid
+`
+
+type ReleaseChannelProbeParams struct {
+	ChannelID int64  `json:"channel_id"`
+	LeaseID   string `json:"lease_id"`
+}
+
+func (q *Queries) ReleaseChannelProbe(ctx context.Context, arg ReleaseChannelProbeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, releaseChannelProbe, arg.ChannelID, arg.LeaseID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const resetChannelHealthState = `-- name: ResetChannelHealthState :exec

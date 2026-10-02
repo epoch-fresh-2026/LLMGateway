@@ -118,8 +118,13 @@ func (s *Store) CountTokensSince(ctx context.Context, filter domain.TokenCountFi
 	if err := domain.ValidateSince(filter.Since); err != nil {
 		return 0, err
 	}
-	var total int64
-	err := s.pool.QueryRow(ctx, `SELECT COALESCE(SUM(total_tokens),0) FROM usage_logs WHERE ($1=0 OR user_id=$1) AND created_at >= $2::timestamptz AND ($3=0 OR api_key_id=$3) AND ($4='' OR model=$4) AND ($5=0 OR channel_id=$5)`, filter.UserID, filter.Since, optionalID(filter.APIKeyID), filter.Model, optionalID(filter.ChannelID)).Scan(&total)
+	total, err := s.queries.CountTokensSince(ctx, sqlc.CountTokensSinceParams{
+		UserID:    int64(filter.UserID),
+		Since:     timestampValue(filter.Since),
+		ApiKeyID:  int64(optionalID(filter.APIKeyID)),
+		Model:     filter.Model,
+		ChannelID: int64(optionalID(filter.ChannelID)),
+	})
 	if err != nil {
 		return 0, mapError(err)
 	}

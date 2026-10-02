@@ -11,6 +11,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countActiveRateLimitReservations = `-- name: CountActiveRateLimitReservations :one
+SELECT count(*) FROM rate_limit_reservations
+WHERE status = 'pending' AND expires_at > now()
+  AND user_id = $1::bigint
+  AND ($2::bigint = 0 OR api_key_id = $2::bigint)
+  AND ($3::text = '' OR model = $3::text)
+  AND ($4::bigint = 0 OR channel_id = $4::bigint)
+`
+
+type CountActiveRateLimitReservationsParams struct {
+	UserID    int64  `json:"user_id"`
+	ApiKeyID  int64  `json:"api_key_id"`
+	Model     string `json:"model"`
+	ChannelID int64  `json:"channel_id"`
+}
+
+func (q *Queries) CountActiveRateLimitReservations(ctx context.Context, arg CountActiveRateLimitReservationsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveRateLimitReservations,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.Model,
+		arg.ChannelID,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countRateLimitRules = `-- name: CountRateLimitRules :one
 SELECT count(*)::int
 FROM rate_limit_rules
@@ -95,6 +123,18 @@ func (q *Queries) DeleteRateLimitRule(ctx context.Context, arg DeleteRateLimitRu
 	return result.RowsAffected(), nil
 }
 
+const finalizeRateLimitReservation = `-- name: FinalizeRateLimitReservation :execrows
+UPDATE rate_limit_reservations SET status = 'settled' WHERE id = $1 AND status = 'pending'
+`
+
+func (q *Queries) FinalizeRateLimitReservation(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, finalizeRateLimitReservation, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getRateLimitRule = `-- name: GetRateLimitRule :one
 SELECT id, rule_name, target_type, target_value, metric, limit_value, action, priority, enabled, extras
 FROM rate_limit_rules
@@ -135,6 +175,37 @@ func (q *Queries) GetRateLimitRule(ctx context.Context, arg GetRateLimitRulePara
 		&i.Extras,
 	)
 	return i, err
+}
+
+const insertRateLimitReservation = `-- name: InsertRateLimitReservation :one
+INSERT INTO rate_limit_reservations (request_id, user_id, api_key_id, model, channel_id, estimated_tokens, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id
+`
+
+type InsertRateLimitReservationParams struct {
+	RequestID       string             `json:"request_id"`
+	UserID          int64              `json:"user_id"`
+	ApiKeyID        int64              `json:"api_key_id"`
+	Model           string             `json:"model"`
+	ChannelID       pgtype.Int8        `json:"channel_id"`
+	EstimatedTokens int64              `json:"estimated_tokens"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) InsertRateLimitReservation(ctx context.Context, arg InsertRateLimitReservationParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertRateLimitReservation,
+		arg.RequestID,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.Model,
+		arg.ChannelID,
+		arg.EstimatedTokens,
+		arg.ExpiresAt,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const listRateLimitRules = `-- name: ListRateLimitRules :many
@@ -200,6 +271,87 @@ func (q *Queries) ListRateLimitRules(ctx context.Context, arg ListRateLimitRules
 		return nil, err
 	}
 	return items, nil
+}
+
+const rateLimitAPIKeyOwnedByUser = `-- name: RateLimitAPIKeyOwnedByUser :one
+SELECT EXISTS (SELECT 1 FROM client_api_keys WHERE id = $1::bigint AND user_id = $2::bigint)
+`
+
+type RateLimitAPIKeyOwnedByUserParams struct {
+	ID          int64 `json:"id"`
+	OwnerUserID int64 `json:"owner_user_id"`
+}
+
+func (q *Queries) RateLimitAPIKeyOwnedByUser(ctx context.Context, arg RateLimitAPIKeyOwnedByUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, rateLimitAPIKeyOwnedByUser, arg.ID, arg.OwnerUserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const rateLimitChannelOwnedByUser = `-- name: RateLimitChannelOwnedByUser :one
+SELECT EXISTS (SELECT 1 FROM channels WHERE id = $1::bigint AND owner_user_id = $2::bigint)
+`
+
+type RateLimitChannelOwnedByUserParams struct {
+	ID          int64 `json:"id"`
+	OwnerUserID int64 `json:"owner_user_id"`
+}
+
+func (q *Queries) RateLimitChannelOwnedByUser(ctx context.Context, arg RateLimitChannelOwnedByUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, rateLimitChannelOwnedByUser, arg.ID, arg.OwnerUserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const rateLimitModelOwnedByUser = `-- name: RateLimitModelOwnedByUser :one
+SELECT EXISTS (
+    SELECT 1 FROM channel_models cm
+    JOIN channels c ON c.id = cm.channel_id
+    WHERE cm.model_name = $1::text AND c.owner_user_id = $2::bigint
+)
+`
+
+type RateLimitModelOwnedByUserParams struct {
+	ModelName   string `json:"model_name"`
+	OwnerUserID int64  `json:"owner_user_id"`
+}
+
+func (q *Queries) RateLimitModelOwnedByUser(ctx context.Context, arg RateLimitModelOwnedByUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, rateLimitModelOwnedByUser, arg.ModelName, arg.OwnerUserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const reapRateLimitReservations = `-- name: ReapRateLimitReservations :execrows
+WITH expired AS (
+    SELECT id FROM rate_limit_reservations
+    WHERE status = 'pending' AND expires_at <= now()
+    ORDER BY id LIMIT $1::integer
+)
+UPDATE rate_limit_reservations SET status = 'expired' WHERE id IN (SELECT id FROM expired)
+`
+
+func (q *Queries) ReapRateLimitReservations(ctx context.Context, batchLimit int32) (int64, error) {
+	result, err := q.db.Exec(ctx, reapRateLimitReservations, batchLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const releaseRateLimitReservation = `-- name: ReleaseRateLimitReservation :execrows
+UPDATE rate_limit_reservations SET status = 'released', released_at = now() WHERE id = $1 AND status = 'pending'
+`
+
+func (q *Queries) ReleaseRateLimitReservation(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, releaseRateLimitReservation, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateRateLimitRule = `-- name: UpdateRateLimitRule :execrows
