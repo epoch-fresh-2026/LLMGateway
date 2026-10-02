@@ -151,18 +151,11 @@ func WithChannelBreakerConfig(breaker catalog.ChannelBreakerConfig) Option {
 // NewServer builds the HTTP entry points around an injected store. Route
 // registration is done by cmd/llmgateway/router.go.
 func NewServer(st Port, opts ...Option) *Server {
-	settings := options{
-		upstreamTimeout:       60 * time.Second,
-		randIntN:              rand.Intn,
-		now:                   time.Now,
-		quotaDefaultMaxTokens: 4096,
-		quotaReservationTTL:   2 * time.Minute,
-		upstreamMaxAttempts:   3,
-	}
-	for _, opt := range opts {
-		opt(&settings)
-	}
+	settings := resolveOptions(opts...)
 	client := &http.Client{Timeout: settings.upstreamTimeout}
+
+	accountsServer := newAccountsServer(st, settings)
+	usageServer := usage.New(st)
 	catalogServer := catalog.New(catalog.Deps{
 		Store:   st,
 		Health:  st,
@@ -187,27 +180,8 @@ func NewServer(st Port, opts ...Option) *Server {
 	proxyService.ConfigureQuota(settings.quotaDefaultMaxTokens, settings.quotaReservationTTL)
 	proxyService.ConfigureRequest(settings.upstreamTimeout, settings.upstreamMaxAttempts)
 	proxyService.ConfigureMinimumRouteBalance(settings.minimumRouteBalance)
-	adminMux := http.NewServeMux()
-	adminMux.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusNotFound, map[string]any{"code": http.StatusNotFound, "message": "not found", "data": map[string]any{}})
-	})
-	catalogServer.RegisterAdminRoutes(adminMux)
-	accountsOpts := []accounts.Option{accounts.WithClock(settings.now)}
-	if settings.sessionConfigured {
-		accountsOpts = append(accountsOpts, accounts.WithAuthConfig(accounts.AuthConfig{
-			SessionTTL:       settings.sessionTTL,
-			CookieSecure:     settings.sessionCookieSecure,
-			RegistrationOpen: settings.registrationEnabled,
-			BcryptCost:       settings.bcryptCost,
-		}))
-	}
-	accountsServer := accounts.New(st, st.AccountsTx(), accountsOpts...)
-	accountsServer.RegisterAdminRoutes(adminMux)
-	ratelimitServer.RegisterAdminRoutes(adminMux)
-	quotaServer.RegisterAdminRoutes(adminMux)
-	usageServer := usage.New(st)
-	usageServer.RegisterAdminRoutes(adminMux)
-	return &Server{
+
+	server := &Server{
 		store:          st,
 		client:         client,
 		proxy:          proxyService,
@@ -216,9 +190,51 @@ func NewServer(st Port, opts ...Option) *Server {
 		usage:          usageServer,
 		ratelimit:      ratelimitServer,
 		quota:          quotaServer,
-		adminMux:       adminMux,
 		enforceSession: true,
 	}
+	server.adminMux = newAdminMux(server)
+	return server
+}
+
+func resolveOptions(opts ...Option) options {
+	settings := options{
+		upstreamTimeout:       60 * time.Second,
+		randIntN:              rand.Intn,
+		now:                   time.Now,
+		quotaDefaultMaxTokens: 4096,
+		quotaReservationTTL:   2 * time.Minute,
+		upstreamMaxAttempts:   3,
+	}
+	for _, opt := range opts {
+		opt(&settings)
+	}
+	return settings
+}
+
+func newAccountsServer(st Port, settings options) *accounts.Server {
+	opts := []accounts.Option{accounts.WithClock(settings.now)}
+	if settings.sessionConfigured {
+		opts = append(opts, accounts.WithAuthConfig(accounts.AuthConfig{
+			SessionTTL:       settings.sessionTTL,
+			CookieSecure:     settings.sessionCookieSecure,
+			RegistrationOpen: settings.registrationEnabled,
+			BcryptCost:       settings.bcryptCost,
+		}))
+	}
+	return accounts.New(st, st.AccountsTx(), opts...)
+}
+
+func newAdminMux(server *Server) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": http.StatusNotFound, "message": "not found", "data": map[string]any{}})
+	})
+	server.catalog.RegisterAdminRoutes(mux)
+	server.accounts.RegisterAdminRoutes(mux)
+	server.ratelimit.RegisterAdminRoutes(mux)
+	server.quota.RegisterAdminRoutes(mux)
+	server.usage.RegisterAdminRoutes(mux)
+	return mux
 }
 
 // Healthz reports service health.
