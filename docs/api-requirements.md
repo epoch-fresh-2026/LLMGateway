@@ -868,7 +868,6 @@ Authorization: Bearer <gateway-key>
 ```text
 GET    /admin/quota-policies
 POST   /admin/quota-policies
-PUT    /admin/quota-policies/:id
 DELETE /admin/quota-policies/:id
 GET    /admin/quota-usage
 ```
@@ -889,6 +888,7 @@ GET    /admin/quota-usage
 
 要求：
 
+- 策略管理仅支持列表、创建与删除，不支持更新；已认证请求 `PUT /admin/quota-policies/:id` 返回 `405 method not allowed`。
 - `scope_type` 为 `user` 或 `api_key`；同一 scope 的日/月策略各最多一条。
 - `period_type` 为 `day` 或 `month`，全部按 UTC 自然周期和 `[start,end)` 边界计算。
 - `token_limit`、`cost_limit` 至少提供一个；金额始终使用字符串。

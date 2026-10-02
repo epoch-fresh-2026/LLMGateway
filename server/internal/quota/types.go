@@ -110,11 +110,8 @@ func QuotaPeriodBounds(now time.Time, period QuotaPeriodType) (time.Time, time.T
 	}
 }
 
-func NormalizeQuotaPolicy(in QuotaPolicyInput, existing *QuotaPolicy) (QuotaPolicy, error) {
+func NormalizeQuotaPolicy(in QuotaPolicyInput) (QuotaPolicy, error) {
 	policy := QuotaPolicy{Enabled: true}
-	if existing != nil {
-		policy = *existing
-	}
 	if in.PolicyName != nil {
 		policy.PolicyName = strings.TrimSpace(*in.PolicyName)
 	}

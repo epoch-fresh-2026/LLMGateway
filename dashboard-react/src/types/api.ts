@@ -47,7 +47,6 @@ export type RateLimitUpdateInput = components['schemas']['RateLimitUpdateInput']
 export type QuotaPolicy = components['schemas']['QuotaPolicy']
 type QuotaPolicyCreateFields = { policy_name: string; scope_type: 'user' | 'api_key'; scope_id: number; period_type: 'day' | 'month'; enabled?: boolean }
 export type QuotaPolicyCreateInput = QuotaPolicyCreateFields & ({ token_limit: number; cost_limit?: string } | { token_limit?: number; cost_limit: string })
-export type QuotaPolicyUpdateInput = components['schemas']['QuotaPolicyUpdateInput']
 export type QuotaUsage = components['schemas']['QuotaUsage']
 
 export type Deleted = { deleted: true }

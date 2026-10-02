@@ -91,19 +91,6 @@ func (s *Store) InsertQuotaPolicy(_ context.Context, policy domain.QuotaPolicy) 
 	return stored.ID, nil
 }
 
-func (s *Store) UpdateQuotaPolicyRecord(_ context.Context, ownerUserID, id int, policy domain.QuotaPolicy) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	current, ok := s.quotaPolicies[id]
-	if !ok || s.quotaPolicyOwnerLocked(current) != ownerUserID {
-		return false, nil
-	}
-	policy.ID = id
-	stored := policy
-	s.quotaPolicies[id] = &stored
-	return true, nil
-}
-
 func (s *Store) DeleteQuotaPolicy(_ context.Context, ownerUserID, id int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -41,8 +41,6 @@ func (a *Server) quotaPolicy(r *http.Request) httpcommon.AdminResult {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid policy id")
 	}
 	switch r.Method {
-	case http.MethodPut:
-		return a.updatePolicy(r, ownerUserID, id)
 	case http.MethodDelete:
 		return httpcommon.NoBody(a.DeleteQuotaPolicy(r.Context(), ownerUserID, id))
 	default:
@@ -86,12 +84,4 @@ func (a *Server) createPolicy(r *http.Request) httpcommon.AdminResult {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.CreateQuotaPolicy(r.Context(), ownerUserID, input))
-}
-
-func (a *Server) updatePolicy(r *http.Request, ownerUserID, id int) httpcommon.AdminResult {
-	var input QuotaPolicyInput
-	if err := httpcommon.ReadJSON(r, &input); err != nil {
-		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
-	}
-	return httpcommon.Result(a.UpdateQuotaPolicy(r.Context(), ownerUserID, id, input))
 }

@@ -12,7 +12,6 @@ type Port interface {
 	ListQuotaPolicies(ctx context.Context, filter QuotaPolicyFilter) (ListResponse[QuotaPolicyDTO], error)
 	GetQuotaPolicy(ctx context.Context, ownerUserID, id int) (QuotaPolicy, error)
 	InsertQuotaPolicy(ctx context.Context, policy QuotaPolicy) (int, error)
-	UpdateQuotaPolicyRecord(ctx context.Context, ownerUserID, id int, policy QuotaPolicy) (bool, error)
 	DeleteQuotaPolicy(ctx context.Context, ownerUserID, id int) (bool, error)
 	ListQuotaUsage(ctx context.Context, filter QuotaPolicyFilter) (ListResponse[QuotaUsageDTO], error)
 

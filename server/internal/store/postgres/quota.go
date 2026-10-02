@@ -84,24 +84,6 @@ func (s *Store) InsertQuotaPolicy(ctx context.Context, policy domain.QuotaPolicy
 	return int(id), nil
 }
 
-func (s *Store) UpdateQuotaPolicyRecord(ctx context.Context, ownerUserID, id int, policy domain.QuotaPolicy) (bool, error) {
-	params := sqlc.UpdateQuotaPolicyParams{
-		ID:          int64(id),
-		OwnerUserID: pgtype.Int8{Int64: int64(ownerUserID), Valid: true},
-		PolicyName:  policy.PolicyName,
-		Enabled:     policy.Enabled,
-		CostLimit:   numericValue(policy.CostLimit),
-	}
-	if policy.TokenLimit != nil {
-		params.TokenLimit = pgtype.Int8{Int64: *policy.TokenLimit, Valid: true}
-	}
-	affected, err := s.queries.UpdateQuotaPolicy(ctx, params)
-	if err != nil {
-		return false, mapError(err)
-	}
-	return affected > 0, nil
-}
-
 func (s *Store) DeleteQuotaPolicy(ctx context.Context, ownerUserID, id int) (bool, error) {
 	affected, err := s.queries.DeleteQuotaPolicy(ctx, sqlc.DeleteQuotaPolicyParams{ID: int64(id), OwnerUserID: pgtype.Int8{Int64: int64(ownerUserID), Valid: true}})
 	if err != nil {

@@ -818,40 +818,6 @@ func (q *Queries) SettleQuotaReservationItem(ctx context.Context, arg SettleQuot
 	return err
 }
 
-const updateQuotaPolicy = `-- name: UpdateQuotaPolicy :execrows
-UPDATE quota_policies
-SET policy_name = $1, token_limit = $2,
-    cost_limit = $3, enabled = $4, updated_at = now()
-WHERE quota_policies.id = $5 AND deleted_at IS NULL
-  AND ((quota_policies.scope_type = 'user' AND quota_policies.user_id = $6)
-       OR (quota_policies.scope_type = 'api_key' AND quota_policies.api_key_id IN (
-           SELECT k.id FROM client_api_keys k WHERE k.user_id = $6)))
-`
-
-type UpdateQuotaPolicyParams struct {
-	PolicyName  string         `json:"policy_name"`
-	TokenLimit  pgtype.Int8    `json:"token_limit"`
-	CostLimit   pgtype.Numeric `json:"cost_limit"`
-	Enabled     bool           `json:"enabled"`
-	ID          int64          `json:"id"`
-	OwnerUserID pgtype.Int8    `json:"owner_user_id"`
-}
-
-func (q *Queries) UpdateQuotaPolicy(ctx context.Context, arg UpdateQuotaPolicyParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateQuotaPolicy,
-		arg.PolicyName,
-		arg.TokenLimit,
-		arg.CostLimit,
-		arg.Enabled,
-		arg.ID,
-		arg.OwnerUserID,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const upsertQuotaBucket = `-- name: UpsertQuotaBucket :exec
 INSERT INTO quota_buckets (policy_id, period_start, period_end)
 VALUES ($1, $2, $3)

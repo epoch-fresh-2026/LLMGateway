@@ -471,7 +471,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put: operations["updateQuotaPolicy"];
+        put?: never;
         post?: never;
         delete: operations["deleteQuotaPolicy"];
         options?: never;
@@ -907,17 +907,6 @@ export interface components {
             cost_limit?: components["schemas"]["Money"];
             enabled?: boolean;
         } & (unknown | unknown);
-        QuotaPolicyUpdateInput: {
-            policy_name?: string;
-            /** @enum {string} */
-            scope_type?: "user" | "api_key";
-            scope_id?: number;
-            /** @enum {string} */
-            period_type?: "day" | "month";
-            token_limit?: number;
-            cost_limit?: components["schemas"]["Money"];
-            enabled?: boolean;
-        };
         QuotaUsage: {
             policy_id: number;
             policy_name: string;
@@ -2026,25 +2015,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["QuotaPolicyCreateInput"];
-            };
-        };
-        responses: {
-            200: components["responses"]["QuotaPolicy"];
-            400: components["responses"]["Error"];
-        };
-    };
-    updateQuotaPolicy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["QuotaPolicyUpdateInput"];
             };
         };
         responses: {

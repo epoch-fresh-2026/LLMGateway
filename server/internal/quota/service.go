@@ -14,7 +14,7 @@ func (a *Server) ListQuotaPolicies(ctx context.Context, filter QuotaPolicyFilter
 // CreateQuotaPolicy normalizes the input, checks the policy targets a resource
 // owned by ownerUserID, and persists it.
 func (a *Server) CreateQuotaPolicy(ctx context.Context, ownerUserID int, in QuotaPolicyInput) (QuotaPolicyDTO, error) {
-	policy, err := NormalizeQuotaPolicy(in, nil)
+	policy, err := NormalizeQuotaPolicy(in)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
@@ -24,36 +24,6 @@ func (a *Server) CreateQuotaPolicy(ctx context.Context, ownerUserID int, in Quot
 	id, err := a.store.InsertQuotaPolicy(ctx, policy)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
-	}
-	stored, err := a.store.GetQuotaPolicy(ctx, ownerUserID, id)
-	if err != nil {
-		return QuotaPolicyDTO{}, err
-	}
-	return QuotaPolicyToDTO(stored), nil
-}
-
-// UpdateQuotaPolicy normalizes the input over the stored policy and rejects
-// changes to the scope or period.
-func (a *Server) UpdateQuotaPolicy(ctx context.Context, ownerUserID, id int, in QuotaPolicyInput) (QuotaPolicyDTO, error) {
-	existing, err := a.store.GetQuotaPolicy(ctx, ownerUserID, id)
-	if err != nil {
-		return QuotaPolicyDTO{}, err
-	}
-	policy, err := NormalizeQuotaPolicy(in, &existing)
-	if err != nil {
-		return QuotaPolicyDTO{}, err
-	}
-	if in.ScopeType != nil || in.ScopeID != nil || in.PeriodType != nil {
-		if policy.ScopeType != existing.ScopeType || policy.ScopeID != existing.ScopeID || policy.PeriodType != existing.PeriodType {
-			return QuotaPolicyDTO{}, fmt.Errorf("%w: quota scope and period cannot be changed", ErrInvalid)
-		}
-	}
-	ok, err := a.store.UpdateQuotaPolicyRecord(ctx, ownerUserID, id, policy)
-	if err != nil {
-		return QuotaPolicyDTO{}, err
-	}
-	if !ok {
-		return QuotaPolicyDTO{}, ErrNotFound
 	}
 	stored, err := a.store.GetQuotaPolicy(ctx, ownerUserID, id)
 	if err != nil {

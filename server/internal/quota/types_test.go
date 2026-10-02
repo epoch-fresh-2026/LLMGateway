@@ -31,11 +31,11 @@ func TestQuotaPeriodBoundsUseUTCNaturalPeriods(t *testing.T) {
 
 func TestNormalizeQuotaPolicyRequiresLimitAndValidScope(t *testing.T) {
 	name, scope, period, scopeID := "daily", "user", "day", 1
-	if _, err := NormalizeQuotaPolicy(QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period}, nil); err == nil {
+	if _, err := NormalizeQuotaPolicy(QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period}); err == nil {
 		t.Fatal("policy without limit was accepted")
 	}
 	limit := int64(100)
-	policy, err := NormalizeQuotaPolicy(QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}, nil)
+	policy, err := NormalizeQuotaPolicy(QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit})
 	if err != nil {
 		t.Fatal(err)
 	}

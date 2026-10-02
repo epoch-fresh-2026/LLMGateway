@@ -70,7 +70,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - `channels.owner_user_id` 标识渠道归属：管理员渠道、模型映射、定价、健康与连通性测试接口按会话用户过滤，创建渠道时写入 owner；熔断策略通过 `/admin/breaker-config` 按当前会话用户读写；`/v1` 选路通过 `RouteCandidates(ownerUserID, ...)` 只使用该 Key 所属用户的渠道。`ChannelDTO` 不暴露 owner。
 - `rate_limit_rules.owner_user_id` 标识规则归属：列表/增删改按会话用户过滤，`target_type` 不含 `global`，且 `target_value` 只能引用本人 Key/渠道/模型（`TargetOwnedByUser`）；proxy 运行时只加载请求 Key 所属用户的规则。
 - `usage_logs` 的列表与 `stats/*` 统计按会话用户过滤；`GET /admin/stats/overview` 的 `active_key_count` 统计该用户 `is_active=true` 且未过期的 Key 数。
-- `quota_policies` 只能作用于本人（`scope_type='user'` 时 `scope_id` 必须为本人，`scope_type='api_key'` 时该 Key 必须属于本人）；`quota-policies` 与 `quota-usage` 均按会话用户过滤。
+- `quota_policies` 只能作用于本人（`scope_type='user'` 时 `scope_id` 必须为本人，`scope_type='api_key'` 时该 Key 必须属于本人）；`quota-policies` 与 `quota-usage` 均按会话用户过滤。策略管理仅支持列表、创建与删除，不提供更新端口或 SQL；`PUT /admin/quota-policies/{id}` 返回 405。
 - 基线仍在 `server/db/migrations/000001_init.sql` 内迭代（项目未上线，无升级路径）；本地已有开发库必须 `docker compose -f deployments/docker-compose.yml down -v` 后重建。
 - PostgreSQL 以 `api_key_ciphertext` 保存渠道密钥；测试 fake 仅存在于 `internal/testutil`，不得作为生产持久化实现。
 - 共享 HTTP parsing/response glue 由 `server/internal/httpcommon` 统一持有；业务模块只保留领域相关的请求分派，顶层 HTTP 路由仍由 `server/cmd/llmgateway/router.go` 统一装配。

@@ -97,6 +97,7 @@ func TestAdminErrorEnvelopeContract(t *testing.T) {
 	}{
 		{name: "unknown route", method: http.MethodGet, path: "/admin/does-not-exist", status: http.StatusNotFound},
 		{name: "method not allowed", method: http.MethodPatch, path: "/admin/rate-limits", status: http.StatusMethodNotAllowed},
+		{name: "quota update removed", method: http.MethodPut, path: "/admin/quota-policies/1", body: []byte("{"), status: http.StatusMethodNotAllowed},
 		{name: "invalid json", method: http.MethodPut, path: "/admin/profile", body: []byte("{"), status: http.StatusBadRequest},
 		{name: "invalid amount", method: http.MethodPost, path: "/admin/channels", body: jsonBody(map[string]any{"name": "x", "base_url": "https://x.test", "api_key": "sk", "status": 1, "balance": "not-money"}), status: http.StatusBadRequest},
 	}
