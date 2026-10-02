@@ -29,8 +29,9 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (int64, error)
 	CreateUserWithCredentials(ctx context.Context, arg CreateUserWithCredentialsParams) (int64, error)
 	DeleteChannel(ctx context.Context, arg DeleteChannelParams) (int64, error)
-	DeleteChannelHealth(ctx context.Context, channelID int64) (int64, error)
+	DeleteChannelHealthBuckets(ctx context.Context, channelID int64) error
 	DeleteChannelModel(ctx context.Context, arg DeleteChannelModelParams) (int64, error)
+	DeleteChannelProbe(ctx context.Context, channelID int64) error
 	DeleteExpiredSessions(ctx context.Context, maxRows int32) (int64, error)
 	DeleteKey(ctx context.Context, arg DeleteKeyParams) (int64, error)
 	DeletePricing(ctx context.Context, arg DeletePricingParams) error
@@ -72,6 +73,7 @@ type Querier interface {
 	ListUsageLogs(ctx context.Context, arg ListUsageLogsParams) ([]ListUsageLogsRow, error)
 	ListUserKeys(ctx context.Context, arg ListUserKeysParams) ([]ListUserKeysRow, error)
 	LockChannel(ctx context.Context, arg LockChannelParams) (int64, error)
+	ResetChannelHealthState(ctx context.Context, channelID int64) error
 	StatsChannels(ctx context.Context, arg StatsChannelsParams) ([]StatsChannelsRow, error)
 	StatsDaily(ctx context.Context, arg StatsDailyParams) ([]StatsDailyRow, error)
 	StatsOverview(ctx context.Context, arg StatsOverviewParams) (StatsOverviewRow, error)

@@ -11,16 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteChannelHealth = `-- name: DeleteChannelHealth :execrows
-DELETE FROM channel_health WHERE channel_id = $1
+const deleteChannelHealthBuckets = `-- name: DeleteChannelHealthBuckets :exec
+DELETE FROM channel_health_buckets WHERE channel_id = $1
 `
 
-func (q *Queries) DeleteChannelHealth(ctx context.Context, channelID int64) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteChannelHealth, channelID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+func (q *Queries) DeleteChannelHealthBuckets(ctx context.Context, channelID int64) error {
+	_, err := q.db.Exec(ctx, deleteChannelHealthBuckets, channelID)
+	return err
+}
+
+const deleteChannelProbe = `-- name: DeleteChannelProbe :exec
+DELETE FROM channel_breaker_probes WHERE channel_id = $1
+`
+
+func (q *Queries) DeleteChannelProbe(ctx context.Context, channelID int64) error {
+	_, err := q.db.Exec(ctx, deleteChannelProbe, channelID)
+	return err
 }
 
 const deleteStaleChannelHealthBuckets = `-- name: DeleteStaleChannelHealthBuckets :execrows
@@ -162,6 +168,20 @@ func (q *Queries) ListChannelHealth(ctx context.Context, ownerUserID int64) ([]C
 		return nil, err
 	}
 	return items, nil
+}
+
+const resetChannelHealthState = `-- name: ResetChannelHealthState :exec
+UPDATE channel_health
+SET state = 'closed',
+    consecutive_failures = 0,
+    opened_at = NULL,
+    updated_at = now()
+WHERE channel_id = $1
+`
+
+func (q *Queries) ResetChannelHealthState(ctx context.Context, channelID int64) error {
+	_, err := q.db.Exec(ctx, resetChannelHealthState, channelID)
+	return err
 }
 
 const sumChannelHealthWindow = `-- name: SumChannelHealthWindow :one

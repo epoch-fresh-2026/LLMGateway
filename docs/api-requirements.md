@@ -352,6 +352,10 @@ page_size=20
 - `balance` 表示设置绝对值。
 - `delta` 表示增减值，可为负数。
 
+### POST /admin/channels/:id/health/reset
+
+仅解除当前用户指定渠道的熔断：在同一事务内清除该渠道的 half-open 探测租约和健康窗口 buckets，并将已有 `channel_health` 的 `state` 设为 `closed`、`consecutive_failures` 设为 `0`、`opened_at` 设为 `NULL`、`updated_at` 更新为当前时间。保留健康记录及累计 `success_count`、`failure_count`，不影响其他渠道或用户熔断策略。健康记录不存在时不创建记录，重复调用幂等；非本人渠道或渠道不存在返回 404。
+
 ### GET /admin/breaker-config
 
 读取当前用户的生效熔断策略。每个用户只有一套策略，统一应用于本人所有渠道（含新建渠道）；解析顺序仅为进程默认值 → 用户策略，未配置用户策略时返回进程默认值。不同渠道的窗口计数、连续失败计数、健康状态与 half-open 探测租约各自独立，不跨渠道累计或共享。

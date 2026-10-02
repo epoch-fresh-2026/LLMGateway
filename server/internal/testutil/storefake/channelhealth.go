@@ -142,10 +142,23 @@ func (t *catalogTx) UpdateChannelHealth(health domain.ChannelHealth) (bool, erro
 	return true, nil
 }
 
-func (t *catalogTx) DeleteChannelHealth(channelID int) error {
-	delete(t.s.channelHealth, channelID)
+func (t *catalogTx) DeleteChannelProbe(channelID int) error {
 	delete(t.s.probes, channelID)
+	return nil
+}
+
+func (t *catalogTx) DeleteChannelHealthBuckets(channelID int) error {
 	delete(t.s.healthBuckets, channelID)
+	return nil
+}
+
+func (t *catalogTx) ResetChannelHealthState(channelID int) error {
+	if health := t.s.channelHealth[channelID]; health != nil {
+		health.State = domain.HealthClosed
+		health.ConsecutiveFailures = 0
+		health.OpenedAt = nil
+		health.UpdatedAt = t.s.now().UTC().Format(time.RFC3339)
+	}
 	return nil
 }
 

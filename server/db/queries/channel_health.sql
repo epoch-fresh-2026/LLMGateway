@@ -24,8 +24,19 @@ SET state = sqlc.arg(state),
     updated_at = now()
 WHERE channel_id = sqlc.arg(channel_id);
 
--- name: DeleteChannelHealth :execrows
-DELETE FROM channel_health WHERE channel_id = $1;
+-- name: DeleteChannelProbe :exec
+DELETE FROM channel_breaker_probes WHERE channel_id = $1;
+
+-- name: DeleteChannelHealthBuckets :exec
+DELETE FROM channel_health_buckets WHERE channel_id = $1;
+
+-- name: ResetChannelHealthState :exec
+UPDATE channel_health
+SET state = 'closed',
+    consecutive_failures = 0,
+    opened_at = NULL,
+    updated_at = now()
+WHERE channel_id = $1;
 
 -- name: ListChannelHealth :many
 SELECT h.channel_id, h.state, h.consecutive_failures, h.success_count, h.failure_count, h.opened_at, h.updated_at

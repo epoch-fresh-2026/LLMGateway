@@ -41,7 +41,13 @@ func (a *Server) RecordChannelAttempt(ctx context.Context, channelID int, succes
 
 func (a *Server) ResetChannelHealth(ctx context.Context, channelID int) error {
 	return a.tx.InTx(ctx, func(tx Tx) error {
-		return tx.DeleteChannelHealth(channelID)
+		if err := tx.DeleteChannelProbe(channelID); err != nil {
+			return err
+		}
+		if err := tx.DeleteChannelHealthBuckets(channelID); err != nil {
+			return err
+		}
+		return tx.ResetChannelHealthState(channelID)
 	})
 }
 

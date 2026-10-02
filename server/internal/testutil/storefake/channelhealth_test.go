@@ -103,15 +103,64 @@ func TestChannelHealthHalfOpenFailureReopens(t *testing.T) {
 func TestResetChannelHealth(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)
-	if _, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream401); err != nil {
+	ctx := context.Background()
+	for _, id := range []int{1, 2} {
+		if _, err := cat.RecordChannelSuccess(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := cat.RecordChannelFailure(ctx, id, domain.FailureUpstream401); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, err := cat.AcquireChannelProbe(ctx, id, time.Minute); err != nil || !ok {
+			t.Fatalf("acquire channel %d: ok=%v err=%v", id, ok, err)
+		}
+	}
+	other := *st.channelHealth[2]
+	otherLease := st.probes[2]
+	otherBucket := *st.healthBuckets[2][catalog.ChannelHealthBucketStart(*clock).Unix()]
+	*clock = clock.Add(time.Second)
+	for i := 0; i < 2; i++ {
+		if err := cat.ResetChannelHealth(ctx, 1); err != nil {
+			t.Fatal(err)
+		}
+		health, found, err := st.GetChannelHealthRow(ctx, 1)
+		if err != nil || !found || health.State != domain.HealthClosed || health.SuccessCount != 1 || health.FailureCount != 1 || health.ConsecutiveFailures != 0 || health.OpenedAt != nil || health.UpdatedAt != clock.Format(time.RFC3339) {
+			t.Fatalf("after reset: found=%v health=%+v err=%v", found, health, err)
+		}
+		if len(st.healthBuckets[1]) != 0 {
+			t.Fatal("reset retained channel buckets")
+		}
+		if _, ok := st.probes[1]; ok {
+			t.Fatal("reset retained probe lease")
+		}
+	}
+	if *st.channelHealth[2] != other || st.probes[2] != otherLease || *st.healthBuckets[2][catalog.ChannelHealthBucketStart(*clock).Unix()] != otherBucket {
+		t.Fatal("reset changed another channel")
+	}
+	if _, ok, err := cat.AcquireChannelProbe(ctx, 1, time.Minute); err != nil || !ok {
+		t.Fatalf("probe after reset: ok=%v err=%v", ok, err)
+	}
+	if err := st.CatalogTx().InTx(ctx, func(tx catalog.Tx) error {
+		return tx.UpsertChannelHealthBucket(3, catalog.ChannelHealthBucketStart(*clock), 1, 1, 0)
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := cat.ResetChannelHealth(context.Background(), 1); err != nil {
-		t.Fatal(err)
+	if _, ok, err := cat.AcquireChannelProbe(ctx, 3, time.Minute); err != nil || !ok {
+		t.Fatalf("missing health probe: ok=%v err=%v", ok, err)
 	}
-	health, _ := cat.GetChannelHealth(context.Background(), 1)
-	if health.State != domain.HealthClosed || health.FailureCount != 0 {
-		t.Fatalf("after reset: %+v", health)
+	for i := 0; i < 2; i++ {
+		if err := cat.ResetChannelHealth(ctx, 3); err != nil {
+			t.Fatal(err)
+		}
+		if _, found, err := st.GetChannelHealthRow(ctx, 3); err != nil || found {
+			t.Fatalf("reset created missing health: found=%v err=%v", found, err)
+		}
+		if len(st.healthBuckets[3]) != 0 {
+			t.Fatal("missing health reset retained buckets")
+		}
+		if _, ok := st.probes[3]; ok {
+			t.Fatal("missing health reset retained probe")
+		}
 	}
 }
 

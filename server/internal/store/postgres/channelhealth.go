@@ -156,14 +156,16 @@ func (t *Tx) UpdateChannelHealth(health domain.ChannelHealth) (bool, error) {
 	return affected > 0, nil
 }
 
-func (t *Tx) DeleteChannelHealth(channelID int) error {
-	ctx := t.ctx
-	for _, table := range []string{"channel_breaker_probes", "channel_health_buckets", "channel_health"} {
-		if _, err := t.tx.Exec(ctx, "DELETE FROM "+table+" WHERE channel_id=$1", channelID); err != nil {
-			return mapError(err)
-		}
-	}
-	return nil
+func (t *Tx) DeleteChannelProbe(channelID int) error {
+	return mapError(t.queries.DeleteChannelProbe(t.ctx, int64(channelID)))
+}
+
+func (t *Tx) DeleteChannelHealthBuckets(channelID int) error {
+	return mapError(t.queries.DeleteChannelHealthBuckets(t.ctx, int64(channelID)))
+}
+
+func (t *Tx) ResetChannelHealthState(channelID int) error {
+	return mapError(t.queries.ResetChannelHealthState(t.ctx, int64(channelID)))
 }
 
 func channelBreakerConfig(windowSeconds, minimumSamples, errorRatePercent, timeoutRatePercent, cooldownSeconds int32) domain.ChannelBreakerConfig {

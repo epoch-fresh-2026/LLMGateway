@@ -81,7 +81,7 @@ func TestServiceHealthStateMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 	health, _ = cat.GetChannelHealth(context.Background(), channel.ID)
-	if health.State != catalog.HealthClosed || health.FailureCount != 0 {
+	if health.State != catalog.HealthClosed || health.FailureCount != 5 || health.ConsecutiveFailures != 0 || health.OpenedAt != nil {
 		t.Fatalf("after reset: %+v", health)
 	}
 }

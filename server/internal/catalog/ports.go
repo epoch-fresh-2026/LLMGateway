@@ -50,7 +50,9 @@ type Tx interface {
 	EnsureChannelHealth(channelID int) error
 	GetChannelHealthForUpdate(channelID int) (ChannelHealth, error)
 	UpdateChannelHealth(health ChannelHealth) (bool, error)
-	DeleteChannelHealth(channelID int) error
+	DeleteChannelProbe(channelID int) error
+	DeleteChannelHealthBuckets(channelID int) error
+	ResetChannelHealthState(channelID int) error
 
 	// UpsertChannelHealthBucket adds one attempt to the fixed-width bucket that
 	// contains bucketStart. GetChannelHealthWindow sums the buckets at or after

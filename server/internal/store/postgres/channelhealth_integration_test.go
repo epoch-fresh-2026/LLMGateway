@@ -80,8 +80,87 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 		t.Fatalf("ResetChannelHealth: %v", err)
 	}
 	reset, _ := cat.GetChannelHealth(context.Background(), channelID)
-	if reset.State != domain.HealthClosed || reset.FailureCount != 0 {
+	if reset.State != domain.HealthClosed || reset.FailureCount != 5 || reset.SuccessCount != 1 || reset.ConsecutiveFailures != 0 || reset.OpenedAt != nil {
 		t.Fatalf("after reset: %+v", reset)
+	}
+}
+
+func TestPGResetChannelHealth(t *testing.T) {
+	st := testStore(t)
+	owner := testOwner(t, st)
+	cat := testCatalog(t, st)
+	ctx := context.Background()
+	channelID := createHealthTestChannel(t, owner, cat)
+	otherID := createHealthTestChannel(t, owner, cat)
+	missingID := createHealthTestChannel(t, owner, cat)
+	for _, id := range []int{channelID, otherID} {
+		if _, err := cat.RecordChannelSuccess(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := cat.RecordChannelFailure(ctx, id, catalog.FailureUpstream401); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []int{channelID, otherID, missingID} {
+		if _, ok, err := cat.AcquireChannelProbe(ctx, id, time.Minute); err != nil || !ok {
+			t.Fatalf("acquire channel %d: ok=%v err=%v", id, ok, err)
+		}
+	}
+	if err := st.CatalogTx().InTx(ctx, func(tx catalog.Tx) error {
+		return tx.UpsertChannelHealthBucket(missingID, catalog.ChannelHealthBucketStart(st.now()), 1, 1, 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.pool.Exec(ctx, "UPDATE channel_health SET updated_at = now() - interval '1 hour' WHERE channel_id = $1", channelID); err != nil {
+		t.Fatal(err)
+	}
+	before, found, err := st.GetChannelHealthRow(ctx, channelID)
+	if err != nil || !found {
+		t.Fatalf("before reset: found=%v err=%v", found, err)
+	}
+	otherBefore, found, err := st.GetChannelHealthRow(ctx, otherID)
+	if err != nil || !found {
+		t.Fatalf("other before reset: found=%v err=%v", found, err)
+	}
+	checkCounts := func(id int, buckets, probes int) {
+		t.Helper()
+		var gotBuckets, gotProbes int
+		if err := st.pool.QueryRow(ctx, "SELECT (SELECT count(*) FROM channel_health_buckets WHERE channel_id=$1), (SELECT count(*) FROM channel_breaker_probes WHERE channel_id=$1)", id).Scan(&gotBuckets, &gotProbes); err != nil {
+			t.Fatal(err)
+		}
+		if gotBuckets != buckets || gotProbes != probes {
+			t.Fatalf("channel %d buckets/probes=%d/%d, want %d/%d", id, gotBuckets, gotProbes, buckets, probes)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if err := cat.ResetChannelHealth(ctx, channelID); err != nil {
+			t.Fatal(err)
+		}
+		health, found, err := st.GetChannelHealthRow(ctx, channelID)
+		if err != nil || !found || health.State != catalog.HealthClosed || health.ConsecutiveFailures != 0 || health.OpenedAt != nil || health.SuccessCount != before.SuccessCount || health.FailureCount != before.FailureCount || health.UpdatedAt <= before.UpdatedAt {
+			t.Fatalf("after reset: found=%v health=%+v err=%v", found, health, err)
+		}
+		checkCounts(channelID, 0, 0)
+	}
+	otherAfter, found, err := st.GetChannelHealthRow(ctx, otherID)
+	if err != nil || !found || otherAfter.State != otherBefore.State || otherAfter.ConsecutiveFailures != otherBefore.ConsecutiveFailures || otherAfter.SuccessCount != otherBefore.SuccessCount || otherAfter.FailureCount != otherBefore.FailureCount || otherAfter.UpdatedAt != otherBefore.UpdatedAt || otherAfter.OpenedAt == nil || otherBefore.OpenedAt == nil || *otherAfter.OpenedAt != *otherBefore.OpenedAt {
+		t.Fatalf("other channel changed: before=%+v after=%+v found=%v err=%v", otherBefore, otherAfter, found, err)
+	}
+	checkCounts(otherID, 1, 1)
+	if _, ok, err := cat.AcquireChannelProbe(ctx, otherID, time.Minute); err != nil || ok {
+		t.Fatalf("other lease changed: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := cat.AcquireChannelProbe(ctx, channelID, time.Minute); err != nil || !ok {
+		t.Fatalf("probe after reset: ok=%v err=%v", ok, err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := cat.ResetChannelHealth(ctx, missingID); err != nil {
+			t.Fatal(err)
+		}
+		if _, found, err := st.GetChannelHealthRow(ctx, missingID); err != nil || found {
+			t.Fatalf("reset created missing health: found=%v err=%v", found, err)
+		}
+		checkCounts(missingID, 0, 0)
 	}
 }
 
