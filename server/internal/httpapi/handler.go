@@ -140,8 +140,6 @@ func WithCipher(cipher *crypto.Cipher) Option {
 	}
 }
 
-// WithChannelBreakerConfig sets the global channel breaker defaults. Per-channel
-// overrides in channel_breaker_configs take precedence over these values.
 func WithChannelBreakerConfig(breaker catalog.ChannelBreakerConfig) Option {
 	return func(o *options) {
 		o.breaker = breaker
