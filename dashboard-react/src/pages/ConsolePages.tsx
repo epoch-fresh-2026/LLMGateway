@@ -12,6 +12,14 @@ function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> 
   return <label><span>{label}</span><input {...props} /></label>
 }
 
+function parseLimit(value: FormDataEntryValue | null, label: string): number {
+  const text = String(value ?? '').trim()
+  if (!/^\d+(?:[,，]\d+)*$/.test(text)) throw new Error(`${label}请输入正整数，可使用逗号分隔`)
+  const limit = Number(text.replace(/[,，]/g, ''))
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new Error(`${label}须为 1 到 ${Number.MAX_SAFE_INTEGER.toLocaleString('en-US')} 之间的整数`)
+  return limit
+}
+
 export function LimitsPage() {
   const query = useQuery({ queryKey: ['rate-limits'], queryFn: () => listRateLimits() })
   const keys = useQuery({ queryKey: ['keys'], queryFn: () => listKeys({ page: 1, page_size: 1000 }) })
@@ -52,7 +60,7 @@ export function LimitsPage() {
         target_type: targetType,
         target_value: targetType === 'user' ? '*' : targetValue,
         metric: String(form.get('metric') || 'rpm') as RateLimitCreateInput['metric'],
-        limit_value: Number(form.get('limit_value')),
+        limit_value: parseLimit(form.get('limit_value'), '限额'),
         action: 'reject',
         priority: Number(form.get('priority') || 0),
         enabled: form.get('enabled') === 'on',
@@ -68,7 +76,16 @@ export function LimitsPage() {
     <div className="panel-head"><div><h3>限流规则</h3><p className="muted">rate_limit_rules · 短窗口速率控制</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void query.refetch()}>刷新</button><button className="button primary" onClick={() => { setError(''); setTargetType('user'); setTargetValue('*'); setCreating(true) }}>新建</button></div></div>
     {error && !creating && <p className="error">{error}</p>}
     {query.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>规则名</th><th>作用域</th><th>目标</th><th>指标</th><th>限额</th><th>状态</th><th /></tr></thead><tbody>{query.data?.list.map(rule => <tr key={rule.id}><td>{rule.rule_name}</td><td>{rule.target_type}</td><td>{targetLabel(rule)}</td><td>{rule.metric}</td><td>{rule.metric === 'concurrency' ? rule.limit_value : `${rule.limit_value} / 分钟`}</td><td>{rule.enabled ? '启用' : '停用'}</td><td><button className="button ghost" onClick={() => void updateRateLimit(rule.id, { enabled: !rule.enabled }).then(() => query.refetch())}>切换</button><button className="button delete" onClick={() => void deleteRateLimit(rule.id).then(() => query.refetch())}>删除</button></td></tr>)}</tbody></table></div>}
-    {creating && <Modal title="新建限流规则" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">{error && <p className="error">{error}</p>}<Field label="规则名" name="rule_name" required /><label><span>作用域</span><select value={targetType} onChange={event => changeTarget(event.target.value)}><option value="user">user（当前用户）</option><option value="api_key">api_key（指定密钥）</option><option value="model">model（指定模型）</option><option value="channel">channel（指定渠道）</option></select></label><label><span>目标值</span>{targetType === 'user' ? <input value="本人（当前用户全部请求）" readOnly disabled /> : targetType === 'api_key' ? <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部密钥（*）</option>{keys.data?.list.map(key => <option key={key.id} value={String(key.id)}>{key.key_name} #{keyOrdinal.get(key.id)}</option>)}</select> : targetType === 'model' ? <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部模型（*）</option>{models.data?.list.map(model => <option key={model.model_name} value={model.model_name}>{model.model_name}</option>)}</select> : <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部渠道（*）</option>{channels.data?.list.map(channel => <option key={channel.id} value={String(channel.id)}>{channel.name}</option>)}</select>}</label><label><span>指标</span><select name="metric" defaultValue="rpm"><option value="rpm">rpm</option><option value="tpm">tpm</option><option value="concurrency">concurrency</option></select></label><Field label="限额" name="limit_value" type="number" min={1} required /><Field label="优先级" name="priority" type="number" defaultValue={0} /><label className="checkbox"><input name="enabled" type="checkbox" defaultChecked /> 启用</label></div></Modal>}
+    {creating && <Modal title="新建限流规则" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">
+      {error && <p className="error" role="alert">{error}</p>}
+      <Field label="规则名" name="rule_name" required />
+      <label><span>作用域</span><select value={targetType} onChange={event => changeTarget(event.target.value)}><option value="user">user（当前用户）</option><option value="api_key">api_key（指定密钥）</option><option value="model">model（指定模型）</option><option value="channel">channel（指定渠道）</option></select></label>
+      <label><span>目标值</span>{targetType === 'user' ? <input value="本人（当前用户全部请求）" readOnly disabled /> : targetType === 'api_key' ? <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部密钥（*）</option>{keys.data?.list.map(key => <option key={key.id} value={String(key.id)}>{key.key_name} #{keyOrdinal.get(key.id)}</option>)}</select> : targetType === 'model' ? <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部模型（*）</option>{models.data?.list.map(model => <option key={model.model_name} value={model.model_name}>{model.model_name}</option>)}</select> : <select value={targetValue} onChange={event => setTargetValue(event.target.value)}><option value="*">全部渠道（*）</option>{channels.data?.list.map(channel => <option key={channel.id} value={String(channel.id)}>{channel.name}</option>)}</select>}</label>
+      <label><span>指标</span><select name="metric" defaultValue="rpm"><option value="rpm">rpm</option><option value="tpm">tpm</option><option value="concurrency">concurrency</option></select></label>
+      <Field label="限额" name="limit_value" type="text" inputMode="numeric" required />
+      <Field label="优先级" name="priority" type="number" defaultValue={0} />
+      <label className="checkbox"><input name="enabled" type="checkbox" defaultChecked /> 启用</label>
+    </div></Modal>}
   </section>
 }
 
@@ -97,10 +114,10 @@ export function QuotasPage() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const tokenLimit = form.get('token_limit') ? Number(form.get('token_limit')) : undefined
     const costLimit = String(form.get('cost_limit') || '')
     try {
       setError('')
+      const tokenLimit = String(form.get('token_limit') ?? '').trim() ? parseLimit(form.get('token_limit'), 'Token 限额') : undefined
       if (tokenLimit === undefined && !costLimit) throw new Error('token 限额与费用限额至少填写一项')
       const scopeId = scopeType === 'user' ? account?.id : Number(scopeKeyId)
       if (!scopeId) throw new Error(scopeType === 'user' ? '当前用户信息缺失' : '请选择密钥')
@@ -126,7 +143,16 @@ export function QuotasPage() {
     <div className="panel-head"><div><h3>周期配额</h3><p className="muted">UTC 日/月 token 与费用额度</p></div><div className="panel-actions"><button className="button ghost" onClick={() => { void policies.refetch(); void usage.refetch() }}>刷新</button><button className="button primary" onClick={() => { setError(''); setScopeType('user'); setScopeKeyId(''); setCreating(true) }}>新建</button></div></div>
     {error && !creating && <p className="error">{error}</p>}
     {policies.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>策略</th><th>作用域</th><th>周期</th><th>Token 限额</th><th>费用限额</th><th>状态</th><th /></tr></thead><tbody>{policies.data?.list.map(policy => <tr key={policy.id}><td>{policy.policy_name}</td><td>{scopeLabel(policy)}</td><td>{policy.period_type}</td><td className="mono">{policy.token_limit ?? '—'}</td><td className="mono">{policy.cost_limit ?? '—'}</td><td>{policy.enabled ? '启用' : '停用'}</td><td><button className="button delete" onClick={() => void deleteQuotaPolicy(policy.id).then(() => policies.refetch())}>删除</button></td></tr>)}</tbody></table></div>}
-    {creating && <Modal title="新建周期配额" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">{error && <p className="error">{error}</p>}<Field label="策略名" name="policy_name" required /><label><span>作用域</span><select value={scopeType} onChange={event => changeScope(event.target.value)}><option value="user">user（当前用户）</option><option value="api_key">api_key（指定密钥）</option></select></label><label><span>作用域对象</span>{scopeType === 'user' ? <input value="当前用户" readOnly disabled /> : <select value={scopeKeyId} onChange={event => setScopeKeyId(event.target.value)}>{keys.data?.list.length ? keys.data.list.map(key => <option key={key.id} value={String(key.id)}>{key.key_name} #{keyOrdinal.get(key.id)}</option>) : <option value="">（暂无可选密钥）</option>}</select>}</label><label><span>周期</span><select name="period_type" defaultValue="day"><option value="day">day</option><option value="month">month</option></select></label><Field label="Token 限额（可选）" name="token_limit" type="number" min={1} /><Field label="费用限额（可选）" name="cost_limit" /><label className="checkbox"><input name="enabled" type="checkbox" defaultChecked /> 启用</label></div></Modal>}
+    {creating && <Modal title="新建周期配额" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">
+      {error && <p className="error" role="alert">{error}</p>}
+      <Field label="策略名" name="policy_name" required />
+      <label><span>作用域</span><select value={scopeType} onChange={event => changeScope(event.target.value)}><option value="user">user（当前用户）</option><option value="api_key">api_key（指定密钥）</option></select></label>
+      <label><span>作用域对象</span>{scopeType === 'user' ? <input value="当前用户" readOnly disabled /> : <select value={scopeKeyId} onChange={event => setScopeKeyId(event.target.value)}>{keys.data?.list.length ? keys.data.list.map(key => <option key={key.id} value={String(key.id)}>{key.key_name} #{keyOrdinal.get(key.id)}</option>) : <option value="">（暂无可选密钥）</option>}</select>}</label>
+      <label><span>周期</span><select name="period_type" defaultValue="day"><option value="day">day</option><option value="month">month</option></select></label>
+      <Field label="Token 限额（可选）" name="token_limit" type="text" inputMode="numeric" />
+      <Field label="费用限额（可选）" name="cost_limit" />
+      <label className="checkbox"><input name="enabled" type="checkbox" defaultChecked /> 启用</label>
+    </div></Modal>}
   </section>
 }
 

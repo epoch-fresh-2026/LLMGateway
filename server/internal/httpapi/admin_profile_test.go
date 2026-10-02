@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestProfileAndSelfKeys(t *testing.T) {
@@ -54,6 +55,22 @@ func TestProfileAndSelfKeys(t *testing.T) {
 	decodeJSON(t, listed, &listBody)
 	if listBody["data"].(map[string]any)["total"].(float64) != 1 {
 		t.Fatalf("keys total = %v, want 1", listBody["data"])
+	}
+	key := listBody["data"].(map[string]any)["list"].([]any)[0].(map[string]any)
+	assertFields(t, key, "created_at", "key_suffix")
+	assertAbsentFields(t, key, "full_key", "key_hash")
+	createdAt, ok := key["created_at"].(string)
+	if !ok {
+		t.Fatal("created_at must be a string")
+	}
+	if _, err := time.Parse(time.RFC3339, createdAt); err != nil {
+		t.Fatalf("invalid created_at: %v", err)
+	}
+	reset := authRequest(t, server, http.MethodPost, "/admin/keys/"+itoa(keyID)+"/reset", nil, cookie)
+	assertAdminSuccess(t, reset)
+	toggled := assertAdminSuccess(t, authRequest(t, server, http.MethodPut, "/admin/keys/"+itoa(keyID), map[string]any{"is_active": false}, cookie))
+	if toggled["created_at"] != createdAt {
+		t.Fatal("created_at changed after reset or update")
 	}
 
 	if res := authRequest(t, server, http.MethodDelete, "/admin/keys/"+itoa(keyID), nil, cookie); res.Code != http.StatusOK {

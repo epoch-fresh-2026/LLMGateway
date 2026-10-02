@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/crypto"
@@ -63,10 +64,23 @@ func TestPGProfileAndKeys(t *testing.T) {
 	if listed.Total != 1 || listed.List[0].ID != created.ID {
 		t.Fatalf("keys = %+v", listed)
 	}
+	var persistedCreatedAt time.Time
+	if err := st.pool.QueryRow(ctx, "SELECT created_at FROM client_api_keys WHERE id = $1", created.ID).Scan(&persistedCreatedAt); err != nil {
+		t.Fatalf("read creation timestamp: %v", err)
+	}
+	if listed.List[0].CreatedAt != persistedCreatedAt.UTC().Format(time.RFC3339) {
+		t.Fatal("listed created_at does not match stored timestamp")
+	}
+	if err := st.UpdateKeyLastUsed(ctx, created.ID); err != nil {
+		t.Fatalf("UpdateKeyLastUsed: %v", err)
+	}
 
 	toggled, err := acc.UpdateKey(ctx, owner, created.ID, accounts.KeyUpdateInput{IsActive: boolPtr(false)})
 	if err != nil || toggled.IsActive {
 		t.Fatalf("UpdateKey = %+v, %v", toggled, err)
+	}
+	if toggled.CreatedAt != listed.List[0].CreatedAt {
+		t.Fatal("created_at changed after usage or update")
 	}
 	reset, err := acc.ResetKey(ctx, owner, created.ID)
 	if err != nil || reset.FullKey == "" || reset.FullKey == created.FullKey {

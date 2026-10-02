@@ -585,7 +585,7 @@ status=1
 
 ### GET /admin/keys
 
-只返回当前用户的 Key，响应为 `{list,total}`；每项包含 `id`、`key_name`、`prefix`、`is_active`、`last_used_at`、`expires_at`。
+只返回当前用户的 Key，响应为 `{list,total}`；每项包含 `id`、`key_name`、`prefix`、`key_suffix`、`is_active`、`created_at`、`last_used_at`、`expires_at`。`created_at` 为持久化的创建时间（RFC3339），不会随使用或重置改变；`key_suffix` 用于掩码展示，不返回完整密钥。
 
 ### POST /admin/keys
 

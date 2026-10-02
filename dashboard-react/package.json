@@ -15,6 +15,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.66.8",
     "dompurify": "^3.4.15",
+    "lucide-react": "^1.49.0",
     "marked": "^15.0.12",
     "openapi-fetch": "^0.14.1",
     "react": "^19.0.0",

@@ -19,7 +19,7 @@ const navItems = [
 const titles: Record<string, [string, string]> = {
   '/': ['运营仪表盘', '网关运行总览'], '/usage': ['用量统计', '按用户 / 模型聚合的 token 与费用'], '/logs': ['请求日志', 'usage_logs 明细'],
   '/docs': ['API 文档', '下游与管理端接口文档（应用内阅读）'], '/channels': ['渠道管理', '上游渠道 · 健康 / 权重 / 余额'],
-  '/profile': ['我的资料', '账户昵称与登录密码'], '/keys': ['API 密钥', '创建 / 重置网关 Key 与启用状态'], '/limits': ['限流规则', 'rate_limit_rules · 短窗口速率控制'], '/quotas': ['周期配额', 'UTC 日/月 token 与费用额度'],
+  '/profile': ['我的资料', '账户昵称与登录密码'], '/keys': ['API 密钥', '管理本账号的网关 API 密钥'], '/limits': ['限流规则', 'rate_limit_rules · 短窗口速率控制'], '/quotas': ['周期配额', 'UTC 日/月 token 与费用额度'],
   '/pricing': ['计费定价', '渠道×模型单价'],
 }
 
