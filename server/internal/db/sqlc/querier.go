@@ -88,7 +88,6 @@ type Querier interface {
 	UpdateChannelStatus(ctx context.Context, arg UpdateChannelStatusParams) (int64, error)
 	UpdateKeyActive(ctx context.Context, arg UpdateKeyActiveParams) (int64, error)
 	UpdateKeyLastUsed(ctx context.Context, id int64) (int64, error)
-	UpdateKeySecret(ctx context.Context, arg UpdateKeySecretParams) (int64, error)
 	UpdateQuotaPolicy(ctx context.Context, arg UpdateQuotaPolicyParams) (int64, error)
 	UpdateRateLimitRule(ctx context.Context, arg UpdateRateLimitRuleParams) (int64, error)
 	UpdateRateLimitRuleEnabled(ctx context.Context, arg UpdateRateLimitRuleEnabledParams) (int64, error)

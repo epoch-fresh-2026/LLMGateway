@@ -248,17 +248,6 @@ func (t *accountsTx) UpdateKeyActive(keyID, userID int, active bool) (domain.Cli
 	return clientKey(key), true, nil
 }
 
-func (t *accountsTx) UpdateKeySecret(keyID, userID int, keyHash, prefix, keySuffix string) (bool, error) {
-	key, ok := t.s.keys[keyID]
-	if !ok || key.userID != userID {
-		return false, nil
-	}
-	key.keyHash = keyHash
-	key.prefix = prefix
-	key.keySuffix = keySuffix
-	return true, nil
-}
-
 func (t *accountsTx) DeleteKey(keyID, userID int) (bool, error) {
 	key, ok := t.s.keys[keyID]
 	if !ok || key.userID != userID {

@@ -1,7 +1,7 @@
 import type { paths } from './generated/schema'
 
 type AdminPath = Exclude<Extract<keyof paths, `/admin/${string}`>, '/admin/channels/{id}/breaker'>
-type DynamicPath = `/admin/channels/${number}` | `/admin/channels/${number}/status` | `/admin/channels/${number}/balance` | `/admin/channels/${number}/health` | `/admin/channels/${number}/models` | `/admin/channels/${number}/models/${number}` | `/admin/channels/${number}/remote-models` | `/admin/channels/${number}/test` | `/admin/channels/${number}/health/reset` | `/admin/keys/${number}` | `/admin/keys/${number}/reset` | `/admin/usage-logs/${number}` | `/admin/rate-limits/${number}` | `/admin/quota-policies/${number}`
+type DynamicPath = `/admin/channels/${number}` | `/admin/channels/${number}/status` | `/admin/channels/${number}/balance` | `/admin/channels/${number}/health` | `/admin/channels/${number}/models` | `/admin/channels/${number}/models/${number}` | `/admin/channels/${number}/remote-models` | `/admin/channels/${number}/test` | `/admin/channels/${number}/health/reset` | `/admin/keys/${number}` | `/admin/usage-logs/${number}` | `/admin/rate-limits/${number}` | `/admin/quota-policies/${number}`
 const admin = <P extends AdminPath | DynamicPath>(path: P) => path
 
 export const apiPaths = {
@@ -22,7 +22,6 @@ export const apiPaths = {
   profile: () => admin('/admin/profile'),
   keys: () => admin('/admin/keys'),
   key: (id: number) => admin(`/admin/keys/${id}` as `/admin/keys/${number}`),
-  keyReset: (id: number) => admin(`/admin/keys/${id}/reset` as `/admin/keys/${number}/reset`),
   usageOverview: () => admin('/admin/stats/overview'),
   usageDaily: () => admin('/admin/stats/daily'),
   usageChannels: () => admin('/admin/stats/channels'),

@@ -138,14 +138,6 @@ func (t *Tx) UpdateKeyActive(keyID, userID int, active bool) (domain.ClientKey, 
 	return key, true, nil
 }
 
-func (t *Tx) UpdateKeySecret(keyID, userID int, keyHash, prefix, keySuffix string) (bool, error) {
-	affected, err := t.queries.UpdateKeySecret(t.ctx, sqlc.UpdateKeySecretParams{KeyHash: keyHash, Prefix: prefix, KeySuffix: keySuffix, ID: int64(keyID), UserID: int64(userID)})
-	if err != nil {
-		return false, mapError(err)
-	}
-	return affected > 0, nil
-}
-
 func (t *Tx) DeleteKey(keyID, userID int) (bool, error) {
 	affected, err := t.queries.DeleteKey(t.ctx, sqlc.DeleteKeyParams{ID: int64(keyID), UserID: int64(userID)})
 	if err != nil {

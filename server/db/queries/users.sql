@@ -89,11 +89,6 @@ UPDATE client_api_keys
 SET is_active = sqlc.arg(is_active), updated_at = now()
 WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id);
 
--- name: UpdateKeySecret :execrows
-UPDATE client_api_keys
-SET key_hash = sqlc.arg(key_hash), prefix = sqlc.arg(prefix), key_suffix = sqlc.arg(key_suffix), updated_at = now()
-WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id);
-
 -- name: DeleteKey :execrows
 DELETE FROM client_api_keys WHERE id = $1 AND user_id = $2;
 

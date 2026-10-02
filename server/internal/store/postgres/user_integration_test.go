@@ -82,10 +82,6 @@ func TestPGProfileAndKeys(t *testing.T) {
 	if toggled.CreatedAt != listed.List[0].CreatedAt {
 		t.Fatal("created_at changed after usage or update")
 	}
-	reset, err := acc.ResetKey(ctx, owner, created.ID)
-	if err != nil || reset.FullKey == "" || reset.FullKey == created.FullKey {
-		t.Fatalf("ResetKey = %+v, %v", reset, err)
-	}
 	if err := acc.DeleteKey(ctx, owner, created.ID); err != nil {
 		t.Fatalf("DeleteKey: %v", err)
 	}

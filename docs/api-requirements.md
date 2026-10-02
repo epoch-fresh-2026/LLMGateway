@@ -572,7 +572,7 @@ status=1
 
 ### GET /admin/keys
 
-只返回当前用户的 Key，响应为 `{list,total}`；每项包含 `id`、`key_name`、`prefix`、`key_suffix`、`is_active`、`created_at`、`last_used_at`、`expires_at`。`created_at` 为持久化的创建时间（RFC3339），不会随使用或重置改变；`key_suffix` 用于掩码展示，不返回完整密钥。
+只返回当前用户的 Key，响应为 `{list,total}`；每项包含 `id`、`key_name`、`prefix`、`key_suffix`、`is_active`、`created_at`、`last_used_at`、`expires_at`。`created_at` 为持久化的创建时间（RFC3339），不会随使用或状态更新改变；`key_suffix` 用于掩码展示，不返回完整密钥。
 
 ### POST /admin/keys
 
@@ -585,10 +585,6 @@ status=1
 ### DELETE /admin/keys/:id
 
 删除自身 Key；不存在或不属于本人返回 404。
-
-### POST /admin/keys/:id/reset
-
-重置自身 Key 的密钥，明文只在响应 `full_key` 返回一次。
 
 ## 限流规则
 

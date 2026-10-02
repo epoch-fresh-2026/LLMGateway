@@ -432,34 +432,6 @@ func (q *Queries) UpdateKeyLastUsed(ctx context.Context, id int64) (int64, error
 	return result.RowsAffected(), nil
 }
 
-const updateKeySecret = `-- name: UpdateKeySecret :execrows
-UPDATE client_api_keys
-SET key_hash = $1, prefix = $2, key_suffix = $3, updated_at = now()
-WHERE id = $4 AND user_id = $5
-`
-
-type UpdateKeySecretParams struct {
-	KeyHash   string `json:"key_hash"`
-	Prefix    string `json:"prefix"`
-	KeySuffix string `json:"key_suffix"`
-	ID        int64  `json:"id"`
-	UserID    int64  `json:"user_id"`
-}
-
-func (q *Queries) UpdateKeySecret(ctx context.Context, arg UpdateKeySecretParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateKeySecret,
-		arg.KeyHash,
-		arg.Prefix,
-		arg.KeySuffix,
-		arg.ID,
-		arg.UserID,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const updateUserPassword = `-- name: UpdateUserPassword :execrows
 UPDATE users
 SET password_hash = $1, updated_at = now()

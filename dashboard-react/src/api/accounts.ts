@@ -11,5 +11,4 @@ export const updateProfile = (input: ProfileUpdateInput): Promise<Account> => ad
 export const listKeys = (params: PaginationParams = {}): Promise<ListResponse<ClientKey>> => adminGet(apiPaths.keys(), { page: 1, page_size: 100, ...params }, KeyListSchema)
 export const createKey = (input: KeyCreateInput): Promise<KeySecret> => adminSend('POST', apiPaths.keys(), input, KeySecretSchema)
 export const updateKey = (id: number, input: KeyUpdateInput): Promise<ClientKey> => adminSend('PUT', apiPaths.key(id), input, KeySchema)
-export const resetKey = (id: number): Promise<KeySecret> => adminSend('POST', apiPaths.keyReset(id), KeySecretSchema)
 export const deleteKey = (id: number): Promise<Deleted> => adminSend('DELETE', apiPaths.key(id), DeletedSchema)

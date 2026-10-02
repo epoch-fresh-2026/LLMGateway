@@ -124,34 +124,6 @@ func (a *Server) DeleteKey(ctx context.Context, userID, keyID int) error {
 	})
 }
 
-// ResetKey rotates the stored hash and returns the new plaintext once.
-func (a *Server) ResetKey(ctx context.Context, userID, keyID int) (KeySecretDTO, error) {
-	var fullKey string
-	err := a.tx.InTx(ctx, func(tx Tx) error {
-		key, err := tx.GetKey(keyID, userID)
-		if err != nil {
-			return err
-		}
-		generated, err := crypto.GenerateGatewayKey(key.Prefix)
-		if err != nil {
-			return err
-		}
-		ok, err := tx.UpdateKeySecret(keyID, userID, crypto.HashKey(generated), key.Prefix, extractKeySuffix(generated))
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return apperrors.ErrNotFound
-		}
-		fullKey = generated
-		return nil
-	})
-	if err != nil {
-		return KeySecretDTO{}, err
-	}
-	return KeySecretDTO{FullKey: fullKey}, nil
-}
-
 func normalizePermissions(value json.RawMessage) json.RawMessage {
 	trimmed := strings.TrimSpace(string(value))
 	if trimmed == "" || trimmed == "null" {

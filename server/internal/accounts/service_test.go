@@ -57,14 +57,6 @@ func TestServiceProfileAndKeys(t *testing.T) {
 		t.Fatalf("missing is_active err = %v, want ErrInvalid", err)
 	}
 
-	reset, err := acc.ResetKey(ctx, userID, key.ID)
-	if err != nil {
-		t.Fatalf("ResetKey: %v", err)
-	}
-	if reset.FullKey == "" || reset.FullKey == key.FullKey {
-		t.Fatal("reset did not rotate the key")
-	}
-
 	if err := acc.DeleteKey(ctx, userID, key.ID); err != nil {
 		t.Fatalf("DeleteKey: %v", err)
 	}

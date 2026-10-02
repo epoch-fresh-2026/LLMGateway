@@ -42,7 +42,7 @@
 - `/admin` 接口统一返回 `{code,message,data}`，列表统一返回 `{list,total}`。时间使用 RFC3339，自然日使用 `YYYY-MM-DD`。
 - `/v1` 尽量保持 OpenAI 兼容；认证使用 `Authorization: Bearer <gateway-key>`，错误响应保持稳定、可识别。
 - 金额禁止使用 `float64` 参与计算。数据库使用 `NUMERIC`，Go 使用定点整数，对外使用字符串。
-- 渠道 API Key 必须加密存储；网关 Key 只存哈希，明文只在创建或重置时返回一次。响应、日志和错误信息不得泄露密钥、Token、数据库密码或其他敏感配置。
+- 渠道 API Key 必须加密存储；网关 Key 只存哈希，明文只在创建时返回一次。响应、日志和错误信息不得泄露密钥、Token、数据库密码或其他敏感配置。
 - 修改 SQL 查询或 schema 后运行 `sqlc generate`；迁移只能新增，不修改已发布迁移的既有语义。
 - Dashboard 由独立 nginx 托管，默认通过同源相对路径 `/admin` 访问管理端；nginx 将 `/admin`、`/v1` 和 `/healthz` 反向代理到 Go 网关。如增加管理端认证、修改响应结构或接口路径，必须同步修改前端数据层和 nginx 配置。
 - Dashboard 启动会并发请求多个管理端接口，任一失败都会进入错误页。修改启动接口时必须同时验证 `/admin/stats/overview`、`/admin/stats/daily`、`/admin/channels`、`/admin/stats/channels`、`/admin/usage-logs`、`/admin/profile`、`/admin/keys`、`/admin/rate-limits`、`/admin/models`、`/admin/quota-policies` 和 `/admin/quota-usage`。

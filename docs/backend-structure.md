@@ -64,7 +64,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - `server/internal/money` 与 `server/internal/crypto` 为叶子包，不得依赖 `server/internal/store` 或 `server/internal/httpapi`。
 - `server/internal/crypto` 的渠道密钥加密密钥来自环境变量 `CHANNEL_KEY_ENCRYPTION_KEY`（原始字节，长度 16/24/32）；缺失或非法时返回错误，禁止明文回退。
 - `server/internal/crypto` 还提供 `HashPassword`/`VerifyPassword`（bcrypt，成本范围见 `MinPasswordCost`/`MaxPasswordCost`，默认 `DefaultPasswordCost`）与 `GenerateSessionToken`/`HashSessionToken`（高熵随机 token，落库只存 SHA-256 哈希）。
-- 网关 Key 仅保存 `server/internal/crypto.HashKey` 的哈希，明文 `full_key` 只在创建/重置时返回一次。
+- 网关 Key 仅保存 `server/internal/crypto.HashKey` 的哈希，明文 `full_key` 只在创建时返回一次。
 - 自助账户使用 `users.username`（可空 + 部分唯一，认证流程写入）与 `password_hash`（bcrypt）；浏览器登录通过 `sessions` 表保存服务端会话，只存 `crypto.HashSessionToken` 的 SHA-256 哈希，`expires_at` 建有索引。认证入口 `/admin/auth/{register,login,logout,me}` 由 `accounts` 拥有，会话 Cookie 名为 `llmgateway_session`。
 - `server/internal/httpapi/session.go` 的 `requireSession` 对 `/admin`（除 `/admin/auth/*`）强制校验会话，成功后用 `httpcommon.Identity` 注入用户 id 供业务模块按归属过滤。部署为同源（nginx/Vite 代理），网关不再反射任意 Origin，也不返回 CORS 头。
 - `channels.owner_user_id` 标识渠道归属：管理员渠道、模型映射、定价、健康与连通性测试接口按会话用户过滤，创建渠道时写入 owner；熔断策略通过 `/admin/breaker-config` 按当前会话用户读写；`/v1` 选路通过 `RouteCandidates(ownerUserID, ...)` 只使用该 Key 所属用户的渠道。`ChannelDTO` 不暴露 owner。

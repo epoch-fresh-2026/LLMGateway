@@ -50,7 +50,6 @@ type Tx interface {
 	GetKey(keyID, userID int) (ClientKey, error)
 	InsertKey(in KeyInsert) (int, error)
 	UpdateKeyActive(keyID, userID int, active bool) (ClientKey, bool, error)
-	UpdateKeySecret(keyID, userID int, keyHash, prefix, keySuffix string) (bool, error)
 	DeleteKey(keyID, userID int) (bool, error)
 
 	// DeleteQuotaReservationsForUser and DeleteQuotaReservationsForKey release

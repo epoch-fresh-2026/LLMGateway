@@ -48,18 +48,3 @@ func (a *Server) key(r *http.Request) httpcommon.AdminResult {
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
-
-func (a *Server) keyReset(r *http.Request) httpcommon.AdminResult {
-	if r.Method != http.MethodPost {
-		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-	}
-	userID, result := httpcommon.RequireUserID(r)
-	if result.Status != 0 {
-		return result
-	}
-	keyID, result := parseKeyID(r)
-	if result.Status != 0 {
-		return result
-	}
-	return httpcommon.Result(a.ResetKey(r.Context(), userID, keyID))
-}

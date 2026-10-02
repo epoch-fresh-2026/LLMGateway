@@ -377,24 +377,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/keys/{id}/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["resetKey"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/admin/usage-logs": {
         parameters: {
             query?: never;
@@ -1913,21 +1895,6 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["Deleted"];
-            404: components["responses"]["Error"];
-        };
-    };
-    resetKey: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: components["responses"]["KeySecret"];
             404: components["responses"]["Error"];
         };
     };

@@ -164,11 +164,6 @@ paths:
     delete:
       operationId: deleteKey
       responses: { '200': { $ref: '#/components/responses/Deleted' }, '404': { $ref: '#/components/responses/Error' } }
-  /admin/keys/{id}/reset:
-    parameters: [$ref: '#/components/parameters/Id']
-    post:
-      operationId: resetKey
-      responses: { '200': { $ref: '#/components/responses/KeySecret' }, '404': { $ref: '#/components/responses/Error' } }
   /admin/usage-logs:
     get:
       operationId: listUsageLogs
