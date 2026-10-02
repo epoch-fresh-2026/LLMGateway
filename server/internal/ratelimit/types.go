@@ -47,14 +47,8 @@ var (
 // tpm are per-minute rates; concurrency is instantaneous and ignores it.
 const RateLimitWindowSeconds = 60
 
-// NormalizeRateLimit merges a partial input over an existing rule (or defaults
-// for a new rule) and validates the result. It is shared by persistence code
-// and test fakes so both accept and reject the same values.
-func NormalizeRateLimit(in RateLimitInput, existing *RateLimitRule) (RateLimitRule, error) {
+func NormalizeRateLimit(in RateLimitInput) (RateLimitRule, error) {
 	rule := RateLimitRule{TargetValue: "*", Priority: 100, Enabled: true, Extras: json.RawMessage(`{}`)}
-	if existing != nil {
-		rule = *existing
-	}
 
 	if in.RuleName != nil {
 		rule.RuleName = *in.RuleName
@@ -106,8 +100,6 @@ func NormalizeRateLimit(in RateLimitInput, existing *RateLimitRule) (RateLimitRu
 	return rule, nil
 }
 
-// RateLimitInput uses pointers so a partial update (for example only
-// {"enabled": false}) can be distinguished from omitted fields.
 type RateLimitInput struct {
 	RuleName    *string         `json:"rule_name"`
 	TargetType  *string         `json:"target_type"`
@@ -118,6 +110,10 @@ type RateLimitInput struct {
 	Priority    *int            `json:"priority"`
 	Enabled     *bool           `json:"enabled"`
 	Extras      json.RawMessage `json:"extras"`
+}
+
+type RateLimitUpdateInput struct {
+	Enabled *bool `json:"enabled"`
 }
 
 type RateLimitReservationInput struct {

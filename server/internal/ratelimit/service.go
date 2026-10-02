@@ -11,7 +11,7 @@ func (a *Server) ListRateLimits(ctx context.Context, ownerUserID int, enabled *b
 
 // CreateRateLimit normalizes and persists a new rule owned by ownerUserID.
 func (a *Server) CreateRateLimit(ctx context.Context, ownerUserID int, in RateLimitInput) (RateLimitRuleDTO, error) {
-	rule, err := NormalizeRateLimit(in, nil)
+	rule, err := NormalizeRateLimit(in)
 	if err != nil {
 		return RateLimitRuleDTO{}, err
 	}
@@ -26,29 +26,21 @@ func (a *Server) CreateRateLimit(ctx context.Context, ownerUserID int, in RateLi
 	return RateLimitRuleToDTO(rule), nil
 }
 
-// UpdateRateLimit merges the partial input over the stored rule and persists it.
-func (a *Server) UpdateRateLimit(ctx context.Context, ownerUserID, id int, in RateLimitInput) (RateLimitRuleDTO, error) {
-	existing, err := a.store.GetRateLimit(ctx, ownerUserID, id)
-	if err != nil {
-		return RateLimitRuleDTO{}, err
+func (a *Server) UpdateRateLimit(ctx context.Context, ownerUserID, id int, in RateLimitUpdateInput) (RateLimitRuleDTO, error) {
+	if in.Enabled == nil {
+		return RateLimitRuleDTO{}, fmt.Errorf("%w: enabled is required", ErrInvalid)
 	}
-	rule, err := NormalizeRateLimit(in, &existing)
-	if err != nil {
-		return RateLimitRuleDTO{}, err
-	}
-	if rule.TargetType != existing.TargetType || rule.TargetValue != existing.TargetValue {
-		if err := a.validateTarget(ctx, ownerUserID, rule); err != nil {
-			return RateLimitRuleDTO{}, err
-		}
-	}
-	ok, err := a.store.UpdateRateLimitRecord(ctx, ownerUserID, id, rule)
+	ok, err := a.store.UpdateRateLimitEnabled(ctx, ownerUserID, id, *in.Enabled)
 	if err != nil {
 		return RateLimitRuleDTO{}, err
 	}
 	if !ok {
 		return RateLimitRuleDTO{}, ErrNotFound
 	}
-	rule.ID = id
+	rule, err := a.store.GetRateLimit(ctx, ownerUserID, id)
+	if err != nil {
+		return RateLimitRuleDTO{}, err
+	}
 	return RateLimitRuleToDTO(rule), nil
 }
 

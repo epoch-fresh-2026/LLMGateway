@@ -33,20 +33,6 @@ VALUES (
 )
 RETURNING id;
 
--- name: UpdateRateLimitRule :execrows
-UPDATE rate_limit_rules
-SET rule_name = sqlc.arg(rule_name),
-    target_type = sqlc.arg(target_type),
-    target_value = sqlc.arg(target_value),
-    metric = sqlc.arg(metric),
-    limit_value = sqlc.arg(limit_value),
-    action = sqlc.arg(action),
-    priority = sqlc.arg(priority),
-    enabled = sqlc.arg(enabled),
-    extras = sqlc.arg(extras),
-    updated_at = now()
-WHERE id = sqlc.arg(id) AND owner_user_id = sqlc.arg(owner_user_id);
-
 -- name: UpdateRateLimitRuleEnabled :execrows
 UPDATE rate_limit_rules
 SET enabled = sqlc.arg(enabled), updated_at = now()

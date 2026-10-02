@@ -61,17 +61,9 @@ func (s *Store) InsertRateLimit(ctx context.Context, ownerUserID int, rule domai
 	return int(id), nil
 }
 
-func (s *Store) UpdateRateLimitRecord(ctx context.Context, ownerUserID, id int, rule domain.RateLimitRule) (bool, error) {
-	affected, err := s.queries.UpdateRateLimitRule(ctx, sqlc.UpdateRateLimitRuleParams{
-		RuleName:    rule.RuleName,
-		TargetType:  rule.TargetType,
-		TargetValue: rule.TargetValue,
-		Metric:      rule.Metric,
-		LimitValue:  rule.LimitValue,
-		Action:      rule.Action,
-		Priority:    int32(rule.Priority),
-		Enabled:     rule.Enabled,
-		Extras:      rule.Extras,
+func (s *Store) UpdateRateLimitEnabled(ctx context.Context, ownerUserID, id int, enabled bool) (bool, error) {
+	affected, err := s.queries.UpdateRateLimitRuleEnabled(ctx, sqlc.UpdateRateLimitRuleEnabledParams{
+		Enabled:     enabled,
 		ID:          int64(id),
 		OwnerUserID: int64(ownerUserID),
 	})

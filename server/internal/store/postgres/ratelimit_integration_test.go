@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -63,12 +64,29 @@ func TestPGRateLimitCRUDAndFilter(t *testing.T) {
 		t.Fatalf("invalid metric err = %v, want ErrInvalid", err)
 	}
 
-	updated, err := rl.UpdateRateLimit(context.Background(), 1, 1, domain.RateLimitInput{Enabled: boolp(false)})
+	if _, err := rl.UpdateRateLimit(context.Background(), 1, 1, domain.RateLimitUpdateInput{}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("missing enabled err = %v, want ErrInvalid", err)
+	}
+	otherOwner := testOwner(t, st)
+	if _, err := rl.UpdateRateLimit(context.Background(), otherOwner, 1, domain.RateLimitUpdateInput{Enabled: boolp(false)}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("foreign update err = %v, want ErrNotFound", err)
+	}
+	before, err := st.GetRateLimit(context.Background(), 1, 1)
+	if err != nil || !before.Enabled {
+		t.Fatalf("rejected updates changed rule: %+v, %v", before, err)
+	}
+	updated, err := rl.UpdateRateLimit(context.Background(), 1, 1, domain.RateLimitUpdateInput{Enabled: boolp(false)})
 	if err != nil {
 		t.Fatalf("UpdateRateLimit: %v", err)
 	}
-	if updated.Enabled != false || updated.RuleName != "default user rpm" {
-		t.Fatalf("partial update lost fields: %+v", updated)
+	created.Enabled = false
+	if !reflect.DeepEqual(updated, created) {
+		t.Fatalf("status update changed other fields: %+v", updated)
+	}
+	after, err := st.GetRateLimit(context.Background(), 1, 1)
+	before.Enabled = false
+	if err != nil || !reflect.DeepEqual(after, before) {
+		t.Fatalf("stored status update changed other fields: %+v, %v", after, err)
 	}
 
 	enabled := true
@@ -90,7 +108,7 @@ func TestPGRateLimitCRUDAndFilter(t *testing.T) {
 	if err := rl.DeleteRateLimit(context.Background(), 1, 1); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("second delete err = %v, want ErrNotFound", err)
 	}
-	if _, err := rl.UpdateRateLimit(context.Background(), 1, 404, domain.RateLimitInput{Enabled: boolp(true)}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := rl.UpdateRateLimit(context.Background(), 1, 404, domain.RateLimitUpdateInput{Enabled: boolp(true)}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("update missing err = %v, want ErrNotFound", err)
 	}
 }

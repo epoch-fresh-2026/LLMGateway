@@ -354,55 +354,6 @@ func (q *Queries) ReleaseRateLimitReservation(ctx context.Context, id int64) (in
 	return result.RowsAffected(), nil
 }
 
-const updateRateLimitRule = `-- name: UpdateRateLimitRule :execrows
-UPDATE rate_limit_rules
-SET rule_name = $1,
-    target_type = $2,
-    target_value = $3,
-    metric = $4,
-    limit_value = $5,
-    action = $6,
-    priority = $7,
-    enabled = $8,
-    extras = $9,
-    updated_at = now()
-WHERE id = $10 AND owner_user_id = $11
-`
-
-type UpdateRateLimitRuleParams struct {
-	RuleName    string `json:"rule_name"`
-	TargetType  string `json:"target_type"`
-	TargetValue string `json:"target_value"`
-	Metric      string `json:"metric"`
-	LimitValue  int64  `json:"limit_value"`
-	Action      string `json:"action"`
-	Priority    int32  `json:"priority"`
-	Enabled     bool   `json:"enabled"`
-	Extras      []byte `json:"extras"`
-	ID          int64  `json:"id"`
-	OwnerUserID int64  `json:"owner_user_id"`
-}
-
-func (q *Queries) UpdateRateLimitRule(ctx context.Context, arg UpdateRateLimitRuleParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateRateLimitRule,
-		arg.RuleName,
-		arg.TargetType,
-		arg.TargetValue,
-		arg.Metric,
-		arg.LimitValue,
-		arg.Action,
-		arg.Priority,
-		arg.Enabled,
-		arg.Extras,
-		arg.ID,
-		arg.OwnerUserID,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const updateRateLimitRuleEnabled = `-- name: UpdateRateLimitRuleEnabled :execrows
 UPDATE rate_limit_rules
 SET enabled = $1, updated_at = now()

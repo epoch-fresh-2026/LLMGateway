@@ -59,15 +59,13 @@ func (s *Store) InsertRateLimit(_ context.Context, ownerUserID int, rule domain.
 	return stored.ID, nil
 }
 
-func (s *Store) UpdateRateLimitRecord(_ context.Context, ownerUserID, id int, rule domain.RateLimitRule) (bool, error) {
+func (s *Store) UpdateRateLimitEnabled(_ context.Context, ownerUserID, id int, enabled bool) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.rateLimits[id]; !ok || s.rateLimitOwners[id] != ownerUserID {
 		return false, nil
 	}
-	rule.ID = id
-	stored := rule
-	s.rateLimits[id] = &stored
+	s.rateLimits[id].Enabled = enabled
 	return true, nil
 }
 

@@ -1,6 +1,8 @@
 package ratelimit
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -74,8 +76,13 @@ func (a *Server) createRateLimit(r *http.Request) httpcommon.AdminResult {
 }
 
 func (a *Server) updateRateLimit(r *http.Request, ownerUserID, id int) httpcommon.AdminResult {
-	var req RateLimitInput
-	if err := httpcommon.ReadJSON(r, &req); err != nil {
+	var req RateLimitUpdateInput
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.UpdateRateLimit(r.Context(), ownerUserID, id, req))

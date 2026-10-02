@@ -869,20 +869,7 @@ export interface components {
             };
         };
         RateLimitUpdateInput: {
-            rule_name?: string;
-            /** @enum {string} */
-            target_type?: "user" | "api_key" | "model" | "channel";
-            target_value?: string;
-            /** @enum {string} */
-            metric?: "rpm" | "tpm" | "concurrency";
-            limit_value?: number;
-            /** @enum {string} */
-            action?: "reject";
-            priority?: number;
-            enabled?: boolean;
-            extras?: {
-                [key: string]: unknown;
-            };
+            enabled: boolean;
         };
         QuotaPolicy: {
             id: number;

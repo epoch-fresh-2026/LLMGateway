@@ -71,6 +71,23 @@ test('breaker configuration is user-scoped while channel health and testing rema
   assert.match(page, /setUserBreaker\(true\).*用户熔断配置/)
 })
 
+test('rate limit update contract only accepts a required enabled boolean and keeps PUT', async () => {
+  const source = await readFile(new URL('../src/api/generated/schema.ts', import.meta.url), 'utf8')
+  const ast = ts.createSourceFile('schema.ts', source, ts.ScriptTarget.Latest, true)
+  let input
+  const visit = node => {
+    if (ts.isPropertySignature(node) && node.name.getText(ast) === 'RateLimitUpdateInput') input = node.type
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.ok(input && ts.isTypeLiteralNode(input))
+  assert.deepEqual(input.members.map(member => member.name.getText(ast)), ['enabled'])
+  assert.equal(input.members[0].questionToken, undefined)
+  assert.equal(input.members[0].type.kind, ts.SyntaxKind.BooleanKeyword)
+  const api = await readFile(new URL('../src/api/ratelimit.ts', import.meta.url), 'utf8')
+  assert.match(api, /updateRateLimit = \(id: number, input: RateLimitUpdateInput\) => adminSend\('PUT', apiPaths\.rateLimit\(id\), input, RateLimitSchema\)/)
+})
+
 test('quota update API and dedicated schema are absent', async () => {
   for (const file of ['api/quota.ts', 'types/api.ts', 'api/generated/schema.ts', 'api/runtime/rules.ts']) {
     const source = await readFile(new URL(`../src/${file}`, import.meta.url), 'utf8')

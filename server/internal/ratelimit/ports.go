@@ -8,7 +8,7 @@ type Port interface {
 	ListRateLimits(ctx context.Context, ownerUserID int, enabled *bool, page, pageSize int) (ListResponse[RateLimitRuleDTO], error)
 	GetRateLimit(ctx context.Context, ownerUserID, id int) (RateLimitRule, error)
 	InsertRateLimit(ctx context.Context, ownerUserID int, rule RateLimitRule) (int, error)
-	UpdateRateLimitRecord(ctx context.Context, ownerUserID, id int, rule RateLimitRule) (bool, error)
+	UpdateRateLimitEnabled(ctx context.Context, ownerUserID, id int, enabled bool) (bool, error)
 	DeleteRateLimit(ctx context.Context, ownerUserID, id int) (bool, error)
 
 	// TargetOwnedByUser reports whether a rule target value references a

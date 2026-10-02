@@ -77,6 +77,7 @@ type SettlementInput = settlement.Input
 type RateLimitRule = ratelimit.RateLimitRule
 type RateLimitRuleDTO = ratelimit.RateLimitRuleDTO
 type RateLimitInput = ratelimit.RateLimitInput
+type RateLimitUpdateInput = ratelimit.RateLimitUpdateInput
 type RateLimitReservationInput = ratelimit.RateLimitReservationInput
 type RateLimitReservation = ratelimit.RateLimitReservation
 type QuotaScopeType = quota.QuotaScopeType
