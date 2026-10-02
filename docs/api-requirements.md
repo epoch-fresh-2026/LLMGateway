@@ -893,7 +893,7 @@ GET    /admin/quota-usage
 - `period_type` 为 `day` 或 `month`，全部按 UTC 自然周期和 `[start,end)` 边界计算。
 - `token_limit`、`cost_limit` 至少提供一个；金额始终使用字符串。
 - 用户与 Key 的所有启用策略必须同时满足，不存在 Key 覆盖用户配额的语义。
-- `GET /admin/quota-usage` 返回当前 bucket 的 `used_tokens`、`reserved_tokens`、`used_cost`、`reserved_cost` 和周期边界。
+- `GET /admin/quota-usage` 返回当前 bucket 的 `used_tokens`、`reserved_tokens`、`used_cost`、`reserved_cost` 和周期边界；`period_start`、`period_end` 使用 UTC RFC3339 时间戳，不是 `YYYY-MM-DD` 日期。
 
 ## 前端相关注意事项
 

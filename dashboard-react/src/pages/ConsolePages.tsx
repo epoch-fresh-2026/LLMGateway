@@ -6,6 +6,7 @@ import { createPricing, deletePricing, listChannelModels, listChannels, listMode
 import { listKeys } from '../api/accounts'
 import { useSession } from '../auth/AuthProvider'
 import { Modal } from '../components/feedback/Modal'
+import { compact } from './dashboardMetrics'
 import type { PricingCreateInput, QuotaPolicy, QuotaPolicyCreateInput, RateLimit, RateLimitCreateInput } from '../types/api'
 
 function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
@@ -144,9 +145,9 @@ export function QuotasPage() {
   return <section className="panel">
     <div className="panel-head"><div><h3>周期配额</h3><p className="muted">UTC 日/月 token 与费用额度</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void refresh()}>刷新</button><button className="button primary" onClick={() => { setError(''); setScopeType('user'); setScopeKeyId(''); setCreating(true) }}>新建</button></div></div>
     {error && !creating && <p className="error">{error}</p>}
-    {policies.isError || usage.isError ? <p className="error" role="alert">{policies.error?.message || usage.error?.message || '配额数据加载失败'}</p> : policies.isLoading || usage.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>策略</th><th>作用域</th><th>周期</th><th>Token 限额</th><th>费用限额</th><th>已用量</th><th>状态</th><th /></tr></thead><tbody>{policies.data?.list.map(policy => {
+    {policies.isError || usage.isError ? <p className="error" role="alert">{policies.error?.message || usage.error?.message || '配额数据加载失败'}</p> : policies.isLoading || usage.isLoading ? <div className="empty">加载中…</div> : <div className="table-wrap"><table><thead><tr><th>策略</th><th>作用域</th><th>周期</th><th>Token 限额</th><th>已用Token</th><th>费用限额</th><th>已用费用</th><th>状态</th><th /></tr></thead><tbody>{policies.data?.list.map(policy => {
       const used = usageByPolicy.get(policy.id)
-      return <tr key={policy.id}><td>{policy.policy_name}</td><td>{scopeLabel(policy)}</td><td>{policy.period_type}</td><td className="mono">{policy.token_limit ?? '—'}</td><td className="mono">{policy.cost_limit ?? '—'}</td><td className="mono">Token {used?.used_tokens ?? 0} · 费用 {used?.used_cost ?? '0.000000'}</td><td>{policy.enabled ? '启用' : '停用'}</td><td><button className="button delete" onClick={() => void deleteQuotaPolicy(policy.id).then(refresh).catch(reason => setError(reason instanceof Error ? reason.message : '删除失败'))}>删除</button></td></tr>
+      return <tr key={policy.id}><td>{policy.policy_name}</td><td>{scopeLabel(policy)}</td><td>{policy.period_type}</td><td className="mono">{policy.token_limit == null ? '—' : compact(policy.token_limit)}</td><td className="mono">{compact(used?.used_tokens ?? 0)}</td><td className="mono">{policy.cost_limit ?? '—'}</td><td className="mono">{used?.used_cost ?? '0.000000'}</td><td>{policy.enabled ? '启用' : '停用'}</td><td><button className="button delete" onClick={() => void deleteQuotaPolicy(policy.id).then(refresh).catch(reason => setError(reason instanceof Error ? reason.message : '删除失败'))}>删除</button></td></tr>
     })}</tbody></table></div>}
     {creating && <Modal title="新建周期配额" submitText="创建" onClose={() => setCreating(false)} onSubmit={submit}><div className="form-grid">
       {error && <p className="error" role="alert">{error}</p>}

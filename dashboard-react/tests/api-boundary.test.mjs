@@ -8,6 +8,9 @@ import ts from 'typescript'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 const require = createRequire(import.meta.url)
+const metricsSource = await readFile(new URL('../src/pages/dashboardMetrics.ts', import.meta.url), 'utf8')
+const metrics = {}
+new Function('exports', ts.transpileModule(metricsSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(metrics)
 
 async function quotaPage({ policies, usage, creating = false, create = async () => {}, remove = async () => {} }) {
   const source = await readFile(new URL('../src/pages/ConsolePages.tsx', import.meta.url), 'utf8')
@@ -18,6 +21,7 @@ async function quotaPage({ policies, usage, creating = false, create = async () 
   const load = name => {
     if (name === 'react') return { useState: initial => [stateIndex++ === 0 ? creating : initial, () => {}] }
     if (name === '@tanstack/react-query') return { useQuery: () => queries.shift() }
+    if (name === './dashboardMetrics') return metrics
     if (name === '../auth/AuthProvider') return { useSession: () => ({ account: { id: 1 } }) }
     if (name === '../api/quota') return { createQuotaPolicy: create, deleteQuotaPolicy: remove }
     if (name === '../components/feedback/Modal') return { Modal: () => null }
@@ -80,16 +84,33 @@ test('quota usage matches policy ids, preserves money strings and never displays
     { policy_id: 1, used_tokens: 7, used_cost: '0.000001', reserved_tokens: 999, reserved_cost: '888.000000' },
   ] } }
   const html = renderToStaticMarkup(await quotaPage({ policies: quotaPolicies, usage }))
-  assert.match(html, /已用量/)
-  assert.match(html, /daily[\s\S]*Token 7 · 费用 0\.000001[\s\S]*monthly[\s\S]*Token 42 · 费用 9007199254740993\.123456/)
+  assert.match(html, /<th>Token 限额<\/th><th>已用Token<\/th><th>费用限额<\/th><th>已用费用<\/th>/)
+  assert.doesNotMatch(html, /已用量/)
+  assert.match(html, /daily[\s\S]*<td class="mono">100<\/td><td class="mono">7<\/td><td class="mono">1\.000000<\/td><td class="mono">0\.000001<\/td>[\s\S]*monthly[\s\S]*<td class="mono">—<\/td><td class="mono">42<\/td><td class="mono">2\.000000<\/td><td class="mono">9007199254740993\.123456<\/td>/)
   assert.doesNotMatch(html, /999|888\.000000|reserved/)
 })
 
 test('quota policies without a usage bucket display zero', async () => {
   for (const list of [[], [{ policy_id: 3, used_tokens: 123, used_cost: '5.000000' }]]) {
     const html = renderToStaticMarkup(await quotaPage({ policies: quotaPolicies, usage: { data: { list } } }))
-    assert.equal(html.match(/Token 0 · 费用 0\.000000/g)?.length, 2)
+    assert.equal(html.match(/<td class="mono">0<\/td><td class="mono">[12]\.000000<\/td><td class="mono">0\.000000<\/td>/g)?.length, 2)
   }
+})
+
+test('quota token limits and usage reuse compact formatting while nullable limits stay empty', async () => {
+  const policies = { data: { list: [
+    { ...quotaPolicies.data.list[0], token_limit: 1500, cost_limit: null },
+    { ...quotaPolicies.data.list[1], token_limit: 2500000 },
+    { ...quotaPolicies.data.list[0], id: 3, token_limit: 0, cost_limit: '0.000000' },
+  ] } }
+  const usage = { data: { list: [
+    { policy_id: 1, used_tokens: 1200000, used_cost: '0.123456' },
+    { policy_id: 2, used_tokens: 2300, used_cost: '9007199254740993.123456' },
+  ] } }
+  const html = renderToStaticMarkup(await quotaPage({ policies, usage }))
+  assert.match(html, /<td class="mono">1\.5K<\/td><td class="mono">1\.2M<\/td><td class="mono">—<\/td><td class="mono">0\.123456<\/td>/)
+  assert.match(html, /<td class="mono">2\.5M<\/td><td class="mono">2\.3K<\/td><td class="mono">2\.000000<\/td><td class="mono">9007199254740993\.123456<\/td>/)
+  assert.match(html, /<td class="mono">0<\/td><td class="mono">0<\/td><td class="mono">0\.000000<\/td><td class="mono">0\.000000<\/td>/)
 })
 
 test('both quota queries gate loading and errors including failed refetches', async () => {

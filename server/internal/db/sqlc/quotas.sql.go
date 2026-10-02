@@ -322,7 +322,7 @@ func (q *Queries) KeyBelongsToUser(ctx context.Context, arg KeyBelongsToUserPara
 
 const listQuotaPolicies = `-- name: ListQuotaPolicies :many
 SELECT p.id, p.policy_name, p.scope_type, p.user_id, p.api_key_id, p.period_type,
-       p.token_limit, p.cost_limit::text AS cost_limit, p.enabled
+       p.token_limit, COALESCE(p.cost_limit::text, '')::text AS cost_limit, p.enabled
 FROM quota_policies p
 WHERE p.deleted_at IS NULL
   AND ((p.scope_type = 'user' AND p.user_id = $1::bigint)
@@ -396,7 +396,7 @@ func (q *Queries) ListQuotaPolicies(ctx context.Context, arg ListQuotaPoliciesPa
 const listQuotaUsage = `-- name: ListQuotaUsage :many
 SELECT p.id AS policy_id, p.policy_name, p.scope_type, p.user_id, p.api_key_id, p.period_type,
        b.period_start, b.period_end, p.token_limit, b.used_tokens, b.reserved_tokens,
-       p.cost_limit::text AS cost_limit, b.used_cost::text AS used_cost,
+       COALESCE(p.cost_limit::text, '')::text AS cost_limit, b.used_cost::text AS used_cost,
        b.reserved_cost::text AS reserved_cost
 FROM quota_policies p JOIN quota_buckets b ON b.policy_id = p.id
 WHERE p.deleted_at IS NULL

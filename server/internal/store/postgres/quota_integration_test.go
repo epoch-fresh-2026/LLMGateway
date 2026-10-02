@@ -2,14 +2,18 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/httpcommon"
 	"LLMGateway/server/internal/proxy"
 	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/quota"
@@ -176,6 +180,71 @@ func TestPGQuotaMonthlyCostLimitIsEnforced(t *testing.T) {
 	_, err := q.ReserveQuota(context.Background(), domain.QuotaReserveInput{RequestID: "cost-2", UserID: 1, APIKeyID: keyID, EstimatedTokens: 10, EstimatedCost: "0.300000", ExpiresAt: time.Now().UTC().Add(time.Minute)})
 	if !errors.Is(err, store.ErrQuotaExceeded) {
 		t.Fatalf("error = %v, want ErrQuotaExceeded", err)
+	}
+}
+
+func TestPGQuotaListsTokenOnlyPolicyWithBucket(t *testing.T) {
+	st := testStore(t)
+	q := testQuota(t, st)
+	_, keyID := createQuotaTestIdentity(t, st)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	name, scope, period, owner, tokens := "token only", "user", "day", 1, int64(100)
+	policy, err := q.CreateQuotaPolicy(ctx, owner, domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &owner, PeriodType: &period, TokenLimit: &tokens})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.ReserveQuota(ctx, domain.QuotaReserveInput{RequestID: "token-only", UserID: owner, APIKeyID: keyID, EstimatedTokens: 10, EstimatedCost: "0.000000", ExpiresAt: time.Now().UTC().Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	filter := domain.QuotaPolicyFilter{OwnerUserID: owner, Page: 1, PageSize: 100}
+	policies, err := q.ListQuotaPolicies(ctx, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policies.Total != 1 || len(policies.List) != 1 || policies.List[0].ID != policy.ID || policies.List[0].CostLimit != nil {
+		t.Fatalf("policies = %+v", policies)
+	}
+	usage, err := q.ListQuotaUsage(ctx, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.Total != 1 || len(usage.List) != 1 || usage.List[0].CostLimit != nil || usage.List[0].ReservedTokens != 10 {
+		t.Fatalf("usage = %+v", usage)
+	}
+	mux := http.NewServeMux()
+	q.RegisterAdminRoutes(mux)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.ServeHTTP(w, r.WithContext(httpcommon.WithIdentity(r.Context(), httpcommon.Identity{UserID: owner})))
+	}))
+	t.Cleanup(server.Close)
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, path := range []string{"/admin/quota-policies?page=1&page_size=100", "/admin/quota-usage?page=1&page_size=100"} {
+		res, err := client.Get(server.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var envelope struct {
+			Code int `json:"code"`
+			Data struct {
+				List  []map[string]any `json:"list"`
+				Total int              `json:"total"`
+			} `json:"data"`
+		}
+		err = json.NewDecoder(res.Body).Decode(&envelope)
+		res.Body.Close()
+		if err != nil || res.StatusCode != http.StatusOK || envelope.Code != 0 || envelope.Data.Total != 1 || len(envelope.Data.List) != 1 {
+			t.Fatalf("GET %s: status=%d envelope=%+v err=%v", path, res.StatusCode, envelope, err)
+		}
+		cost, present := envelope.Data.List[0]["cost_limit"]
+		if !present || cost != nil {
+			t.Fatalf("GET %s cost_limit = %v, present=%v", path, cost, present)
+		}
+	}
+	for _, boundary := range []string{usage.List[0].PeriodStart, usage.List[0].PeriodEnd} {
+		if _, err := time.Parse(time.RFC3339, boundary); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

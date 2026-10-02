@@ -913,9 +913,9 @@ export interface components {
             scope_type: string;
             scope_id: number;
             period_type: string;
-            /** Format: date */
+            /** Format: date-time */
             period_start: string;
-            /** Format: date */
+            /** Format: date-time */
             period_end: string;
             token_limit?: number | null;
             used_tokens: number;
