@@ -67,17 +67,6 @@ func (s *Store) ReleaseChannelProbe(ctx context.Context, channelID int, leaseID 
 	return result.RowsAffected() > 0, nil
 }
 
-func (s *Store) GetChannelBreakerConfigRow(ctx context.Context, channelID int) (domain.ChannelBreakerConfig, bool, error) {
-	row, err := s.queries.GetChannelBreakerConfig(ctx, int64(channelID))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.ChannelBreakerConfig{}, false, nil
-		}
-		return domain.ChannelBreakerConfig{}, false, mapError(err)
-	}
-	return channelBreakerConfig(row.WindowSeconds, row.MinimumSamples, row.ErrorRatePercent, row.TimeoutRatePercent, row.CooldownSeconds), true, nil
-}
-
 func (s *Store) GetUserBreakerConfigRow(ctx context.Context, ownerUserID int) (domain.ChannelBreakerConfig, bool, error) {
 	row, err := s.queries.GetUserBreakerConfig(ctx, int64(ownerUserID))
 	if err != nil {
@@ -87,18 +76,6 @@ func (s *Store) GetUserBreakerConfigRow(ctx context.Context, ownerUserID int) (d
 		return domain.ChannelBreakerConfig{}, false, mapError(err)
 	}
 	return channelBreakerConfig(row.WindowSeconds, row.MinimumSamples, row.ErrorRatePercent, row.TimeoutRatePercent, row.CooldownSeconds), true, nil
-}
-
-func (s *Store) ListChannelBreakerConfigRows(ctx context.Context, ownerUserID int) (map[int]domain.ChannelBreakerConfig, error) {
-	rows, err := s.queries.ListChannelBreakerConfigs(ctx, int64(ownerUserID))
-	if err != nil {
-		return nil, mapError(err)
-	}
-	result := make(map[int]domain.ChannelBreakerConfig, len(rows))
-	for _, row := range rows {
-		result[int(row.ChannelID)] = channelBreakerConfig(row.WindowSeconds, row.MinimumSamples, row.ErrorRatePercent, row.TimeoutRatePercent, row.CooldownSeconds)
-	}
-	return result, nil
 }
 
 func (s *Store) DeleteStaleChannelHealthBuckets(ctx context.Context, before time.Time) (int, error) {
@@ -128,22 +105,6 @@ func (t *Tx) GetChannelHealthWindow(channelID int, since time.Time) (domain.Chan
 		return domain.ChannelHealthWindow{}, mapError(err)
 	}
 	return domain.ChannelHealthWindow{Requests: row.Requests, Errors: row.Errors, Timeouts: row.Timeouts}, nil
-}
-
-func (t *Tx) UpsertChannelBreakerConfig(channelID int, cfg domain.ChannelBreakerConfig) error {
-	return mapError(t.queries.UpsertChannelBreakerConfig(t.ctx, sqlc.UpsertChannelBreakerConfigParams{
-		ChannelID:          int64(channelID),
-		WindowSeconds:      int32(cfg.WindowSeconds),
-		MinimumSamples:     int32(cfg.MinimumSamples),
-		ErrorRatePercent:   int32(cfg.ErrorRatePercent),
-		TimeoutRatePercent: int32(cfg.TimeoutRatePercent),
-		CooldownSeconds:    int32(cfg.Cooldown.Seconds()),
-	}))
-}
-
-func (t *Tx) DeleteChannelBreakerConfig(channelID int) error {
-	_, err := t.queries.DeleteChannelBreakerConfig(t.ctx, int64(channelID))
-	return mapError(err)
 }
 
 func (t *Tx) UpsertUserBreakerConfig(ownerUserID int, cfg domain.ChannelBreakerConfig) error {
@@ -197,7 +158,7 @@ func (t *Tx) UpdateChannelHealth(health domain.ChannelHealth) (bool, error) {
 
 func (t *Tx) DeleteChannelHealth(channelID int) error {
 	ctx := t.ctx
-	for _, table := range []string{"channel_breaker_probes", "channel_breaker_configs", "channel_health_buckets", "channel_health"} {
+	for _, table := range []string{"channel_breaker_probes", "channel_health_buckets", "channel_health"} {
 		if _, err := t.tx.Exec(ctx, "DELETE FROM "+table+" WHERE channel_id=$1", channelID); err != nil {
 			return mapError(err)
 		}
@@ -205,8 +166,6 @@ func (t *Tx) DeleteChannelHealth(channelID int) error {
 	return nil
 }
 
-// channelBreakerConfig maps a per-channel override row. FailureThreshold has no
-// column, so it stays zero and the catalog layer inherits the global default.
 func channelBreakerConfig(windowSeconds, minimumSamples, errorRatePercent, timeoutRatePercent, cooldownSeconds int32) domain.ChannelBreakerConfig {
 	return domain.ChannelBreakerConfig{
 		Cooldown:           time.Duration(cooldownSeconds) * time.Second,

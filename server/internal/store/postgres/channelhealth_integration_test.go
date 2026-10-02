@@ -222,13 +222,13 @@ func TestPGChannelHealthWindowAndConfig(t *testing.T) {
 
 	override := catalog.ChannelBreakerConfig{Cooldown: 5 * time.Second, WindowSeconds: 60, MinimumSamples: 4, ErrorRatePercent: 50, TimeoutRatePercent: 50}
 	if err := st.CatalogTx().InTx(ctx, func(tx catalog.Tx) error {
-		return tx.UpsertChannelBreakerConfig(channelID, override)
+		return tx.UpsertUserBreakerConfig(owner, override)
 	}); err != nil {
-		t.Fatalf("UpsertChannelBreakerConfig: %v", err)
+		t.Fatalf("UpsertUserBreakerConfig: %v", err)
 	}
-	row, found, err := st.GetChannelBreakerConfigRow(ctx, channelID)
+	row, found, err := st.GetUserBreakerConfigRow(ctx, owner)
 	if err != nil || !found {
-		t.Fatalf("GetChannelBreakerConfigRow found=%v err=%v", found, err)
+		t.Fatalf("GetUserBreakerConfigRow found=%v err=%v", found, err)
 	}
 	if row.Cooldown != override.Cooldown || row.WindowSeconds != override.WindowSeconds || row.ErrorRatePercent != override.ErrorRatePercent {
 		t.Fatalf("breaker config = %+v", row)

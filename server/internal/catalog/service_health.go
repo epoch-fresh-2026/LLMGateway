@@ -50,17 +50,9 @@ func (a *Server) ListChannelHealth(ctx context.Context, ownerUserID int) (ListRe
 	if err != nil {
 		return ListResponse[ChannelHealthDTO]{}, err
 	}
-	overrides, err := a.health.ListChannelBreakerConfigRows(ctx, ownerUserID)
-	if err != nil {
-		return ListResponse[ChannelHealthDTO]{}, err
-	}
-	base := a.baseBreakerFor(ctx, ownerUserID)
+	cfg := a.baseBreakerFor(ctx, ownerUserID)
 	list := []ChannelHealthDTO{}
 	for i := range rows {
-		cfg := base
-		if override, ok := overrides[rows[i].ChannelID]; ok {
-			cfg = ResolveChannelBreakerConfig(base, &override)
-		}
 		health := EvaluateChannelHealth(rows[i], a.now(), cfg)
 		list = append(list, channelHealthDTO(&health))
 	}
@@ -84,49 +76,6 @@ func (a *Server) ReapChannelHealthBuckets(ctx context.Context, retention time.Du
 	return a.health.DeleteStaleChannelHealthBuckets(ctx, a.now().UTC().Add(-retention))
 }
 
-// GetChannelBreakerConfig returns the effective breaker config for a channel:
-// the global default overlaid with any per-channel override.
-func (a *Server) GetChannelBreakerConfig(ctx context.Context, ownerUserID, channelID int) (ChannelBreakerConfigDTO, error) {
-	if _, err := a.store.GetChannelDTO(ctx, ownerUserID, channelID); err != nil {
-		return ChannelBreakerConfigDTO{}, err
-	}
-	return breakerConfigDTO(channelID, a.breakerFor(ctx, channelID)), nil
-}
-
-// UpdateChannelBreakerConfig stores a per-channel override and invalidates the
-// config cache so the next recorded attempt uses it.
-func (a *Server) UpdateChannelBreakerConfig(ctx context.Context, ownerUserID, channelID int, in ChannelBreakerConfigInput) (ChannelBreakerConfigDTO, error) {
-	if _, err := a.store.GetChannelDTO(ctx, ownerUserID, channelID); err != nil {
-		return ChannelBreakerConfigDTO{}, err
-	}
-	cfg, err := validateBreakerConfig(in)
-	if err != nil {
-		return ChannelBreakerConfigDTO{}, err
-	}
-	if err := a.tx.InTx(ctx, func(tx Tx) error {
-		return tx.UpsertChannelBreakerConfig(channelID, cfg)
-	}); err != nil {
-		return ChannelBreakerConfigDTO{}, err
-	}
-	a.invalidateBreakerConfig(channelID)
-	return breakerConfigDTO(channelID, ResolveChannelBreakerConfig(a.baseBreakerFor(ctx, ownerUserID), &cfg)), nil
-}
-
-// DeleteChannelBreakerConfig removes the override so the channel inherits the
-// global defaults again.
-func (a *Server) DeleteChannelBreakerConfig(ctx context.Context, ownerUserID, channelID int) error {
-	if _, err := a.store.GetChannelDTO(ctx, ownerUserID, channelID); err != nil {
-		return err
-	}
-	if err := a.tx.InTx(ctx, func(tx Tx) error {
-		return tx.DeleteChannelBreakerConfig(channelID)
-	}); err != nil {
-		return err
-	}
-	a.invalidateBreakerConfig(channelID)
-	return nil
-}
-
 // GetUserBreakerConfig returns the owner-level breaker default, falling back to
 // the process default when the owner has not set one.
 func (a *Server) GetUserBreakerConfig(ctx context.Context, ownerUserID int) (UserBreakerConfigDTO, error) {
@@ -145,7 +94,7 @@ func (a *Server) UpdateUserBreakerConfig(ctx context.Context, ownerUserID int, i
 	}); err != nil {
 		return UserBreakerConfigDTO{}, err
 	}
-	a.invalidateAllBreakerConfigs()
+	a.invalidateBreakerConfig(ownerUserID)
 	return userBreakerConfigDTO(cfg), nil
 }
 
@@ -157,7 +106,7 @@ func (a *Server) DeleteUserBreakerConfig(ctx context.Context, ownerUserID int) e
 	}); err != nil {
 		return err
 	}
-	a.invalidateAllBreakerConfigs()
+	a.invalidateBreakerConfig(ownerUserID)
 	return nil
 }
 
@@ -185,17 +134,6 @@ func validateBreakerConfig(in ChannelBreakerConfigInput) (ChannelBreakerConfig, 
 		ErrorRatePercent:   in.ErrorRatePercent,
 		TimeoutRatePercent: in.TimeoutRatePercent,
 	}, nil
-}
-
-func breakerConfigDTO(channelID int, cfg ChannelBreakerConfig) ChannelBreakerConfigDTO {
-	return ChannelBreakerConfigDTO{
-		ChannelID:          channelID,
-		WindowSeconds:      cfg.WindowSeconds,
-		MinimumSamples:     cfg.MinimumSamples,
-		ErrorRatePercent:   cfg.ErrorRatePercent,
-		TimeoutRatePercent: cfg.TimeoutRatePercent,
-		CooldownSeconds:    int(cfg.Cooldown.Seconds()),
-	}
 }
 
 // recordChannelHealth applies a state transition inside a transaction, holding

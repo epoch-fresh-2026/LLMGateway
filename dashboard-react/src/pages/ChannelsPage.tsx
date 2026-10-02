@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  createChannel, createChannelModel, deleteChannel, deleteChannelBreakerConfig, deleteChannelModel,
-  deleteUserBreakerConfig, getChannelBreakerConfig, getUserBreakerConfig, listChannelHealth, listChannelModels,
+  createChannel, createChannelModel, deleteChannel, deleteChannelModel,
+  deleteUserBreakerConfig, getUserBreakerConfig, listChannelHealth, listChannelModels,
   listChannels, loadRemoteModels, resetChannelHealth, testChannel, updateChannel, updateChannelBalance,
-  updateChannelBreakerConfig, updateChannelModel, updateChannelStatus, updateUserBreakerConfig,
+  updateChannelModel, updateChannelStatus, updateUserBreakerConfig,
 } from '../api/catalog'
 import { AsyncState } from '../components/feedback/AsyncState'
 import { Modal } from '../components/feedback/Modal'
@@ -18,8 +18,7 @@ export function ChannelsPage() {
   const health = useQuery({ queryKey: ['channel-health'], queryFn: listChannelHealth, staleTime: 30_000 })
   const [editor, setEditor] = useState<Editor | undefined>()
   const [selected, setSelected] = useState<Channel | null>(null)
-  const [breaker, setBreaker] = useState<Channel | null>(null)
-  const [globalBreaker, setGlobalBreaker] = useState(false)
+  const [userBreaker, setUserBreaker] = useState(false)
   const [testing, setTesting] = useState<Channel | null>(null)
   const [error, setError] = useState('')
   const rows = channels.data?.list || []
@@ -29,11 +28,10 @@ export function ChannelsPage() {
 
   return <>
     <AsyncState loading={channels.isLoading || health.isLoading} error={channels.error || health.error} hasData={Boolean(channels.data || health.data)} onRetry={() => { void refresh() }} />
-    <section className="panel"><div className="panel-head"><div><h3>渠道管理</h3><p className="muted">上游渠道 · 状态 / 权重 / 优先级 / 余额</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void refresh()}>刷新</button><button className="button ghost" onClick={() => setGlobalBreaker(true)}>全局熔断配置</button><button className="button primary" onClick={() => setEditor(null)}>新建渠道</button></div></div>{error && <p className="error">{error}</p>}<div className="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>Base URL</th><th>状态</th><th>权重/优先级</th><th>余额</th><th>模型</th><th>熔断</th><th>操作</th></tr></thead><tbody>{rows.map(channel => { const state = healthMap.get(channel.id)?.state || 'closed'; return <tr key={channel.id}><td className="mono">#{channel.id}</td><td><b>{channel.name}</b></td><td className="mono channel-url">{channel.base_url}</td><td><span className={`badge ${channel.status === 1 ? 'ok-bg' : 'danger-bg'}`}>{channel.status === 1 ? '启用' : '停用'}</span></td><td className="mono">{channel.weight} / {channel.priority}</td><td className="mono">{channel.balance == null ? '不限' : `$${channel.balance}`}</td><td>{channel.model_count}</td><td><span className={`badge ${state === 'open' ? 'danger-bg' : state === 'half-open' ? 'warn-bg' : 'ok-bg'}`}>{state === 'open' ? '熔断' : state === 'half-open' ? '半开' : '正常'}</span></td><td className="table-actions"><button className="button ghost" onClick={() => setEditor(channel)}>编辑</button><button className="button ghost" onClick={() => setSelected(channel)}>模型映射</button><button className="button ghost" onClick={() => void action(() => updateChannelStatus(channel.id, { status: channel.status === 1 ? 0 : 1 }))}>切换状态</button><button className="button ghost" onClick={() => setBreaker(channel)}>熔断配置</button><button className="button ghost" onClick={() => setTesting(channel)}>测试</button><button className="button ghost" disabled={state === 'closed'} onClick={() => void action(() => resetChannelHealth(channel.id))}>解除熔断</button><button className="button delete" onClick={() => { if (window.confirm(`确认删除渠道「${channel.name}」？`)) void action(() => deleteChannel(channel.id)) }}>删除</button></td></tr> })}</tbody></table>{!rows.length && <div className="empty">暂无渠道</div>}</div></section>
+    <section className="panel"><div className="panel-head"><div><h3>渠道管理</h3><p className="muted">上游渠道 · 状态 / 权重 / 优先级 / 余额</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void refresh()}>刷新</button><button className="button ghost" onClick={() => setUserBreaker(true)}>用户熔断配置</button><button className="button primary" onClick={() => setEditor(null)}>新建渠道</button></div></div>{error && <p className="error">{error}</p>}<div className="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>Base URL</th><th>状态</th><th>权重/优先级</th><th>余额</th><th>模型</th><th>熔断</th><th>操作</th></tr></thead><tbody>{rows.map(channel => { const state = healthMap.get(channel.id)?.state || 'closed'; return <tr key={channel.id}><td className="mono">#{channel.id}</td><td><b>{channel.name}</b></td><td className="mono channel-url">{channel.base_url}</td><td><span className={`badge ${channel.status === 1 ? 'ok-bg' : 'danger-bg'}`}>{channel.status === 1 ? '启用' : '停用'}</span></td><td className="mono">{channel.weight} / {channel.priority}</td><td className="mono">{channel.balance == null ? '不限' : `$${channel.balance}`}</td><td>{channel.model_count}</td><td><span className={`badge ${state === 'open' ? 'danger-bg' : state === 'half-open' ? 'warn-bg' : 'ok-bg'}`}>{state === 'open' ? '熔断' : state === 'half-open' ? '半开' : '正常'}</span></td><td className="table-actions"><button className="button ghost" onClick={() => setEditor(channel)}>编辑</button><button className="button ghost" onClick={() => setSelected(channel)}>模型映射</button><button className="button ghost" onClick={() => void action(() => updateChannelStatus(channel.id, { status: channel.status === 1 ? 0 : 1 }))}>切换状态</button><button className="button ghost" onClick={() => setTesting(channel)}>测试</button><button className="button ghost" disabled={state === 'closed'} onClick={() => void action(() => resetChannelHealth(channel.id))}>解除熔断</button><button className="button delete" onClick={() => { if (window.confirm(`确认删除渠道「${channel.name}」？`)) void action(() => deleteChannel(channel.id)) }}>删除</button></td></tr> })}</tbody></table>{!rows.length && <div className="empty">暂无渠道</div>}</div></section>
     {editor !== undefined && <ChannelEditor channel={editor} onClose={() => setEditor(undefined)} onSaved={() => { setEditor(undefined); void refresh() }} />}
     {selected && <Mappings channel={selected} onClose={() => setSelected(null)} onChanged={() => void client.invalidateQueries({ queryKey: ['channels'] })} />}
-    {breaker && <BreakerConfig channel={breaker} onClose={() => setBreaker(null)} />}
-    {globalBreaker && <UserBreakerConfig onClose={() => setGlobalBreaker(false)} onChanged={() => void refresh()} />}
+    {userBreaker && <UserBreakerConfig onClose={() => setUserBreaker(false)} onChanged={() => void refresh()} />}
     {testing && <ChannelTest channel={testing} onClose={() => setTesting(null)} />}
   </>
 }
@@ -63,11 +61,9 @@ function ChannelTest({ channel, onClose }: { channel: Channel; onClose: () => vo
   </Modal>
 }
 
-// UserBreakerConfig edits the owner-level breaker default that channels inherit
-// when they have no per-channel override.
 function UserBreakerConfig({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const query = useQuery({ queryKey: ['user-breaker-config'], queryFn: getUserBreakerConfig })
-  return <Modal title="全局熔断配置" submitText="保存" onClose={onClose} onSubmit={async event => {
+  return <Modal title="用户熔断配置" submitText="保存" onClose={onClose} onSubmit={async event => {
     const form = new FormData(event.currentTarget)
     await updateUserBreakerConfig({
       window_seconds: Number(form.get('window_seconds')),
@@ -79,24 +75,7 @@ function UserBreakerConfig({ onClose, onChanged }: { onClose: () => void; onChan
     onChanged()
     onClose()
   }}>
-    {query.isLoading ? <div className="empty">加载中…</div> : <><p className="muted">未单独配置的渠道都继承这里的默认值。</p><div className="form-grid"><Field label="统计窗口（秒）" name="window_seconds" type="number" defaultValue={query.data?.window_seconds ?? 60} required /><Field label="最小样本" name="minimum_samples" type="number" defaultValue={query.data?.minimum_samples ?? 10} required /><Field label="错误率(%)" name="error_rate_percent" type="number" defaultValue={query.data?.error_rate_percent ?? 50} required /><Field label="超时率(%)" name="timeout_rate_percent" type="number" defaultValue={query.data?.timeout_rate_percent ?? 50} required /><Field label="冷却秒数" name="cooldown_seconds" type="number" defaultValue={query.data?.cooldown_seconds ?? 30} required /></div><button type="button" className="button ghost" onClick={() => void deleteUserBreakerConfig().then(() => { void query.refetch(); onChanged(); onClose() })}>恢复进程默认</button></>}
-  </Modal>
-}
-
-function BreakerConfig({ channel, onClose }: { channel: Channel; onClose: () => void }) {
-  const query = useQuery({ queryKey: ['channel-breaker', channel.id], queryFn: () => getChannelBreakerConfig(channel.id) })
-  return <Modal title={`熔断配置 · ${channel.name}`} submitText="保存" onClose={onClose} onSubmit={async event => {
-    const form = new FormData(event.currentTarget)
-    await updateChannelBreakerConfig(channel.id, {
-      window_seconds: Number(form.get('window_seconds')),
-      minimum_samples: Number(form.get('minimum_samples')),
-      error_rate_percent: Number(form.get('error_rate_percent')),
-      timeout_rate_percent: Number(form.get('timeout_rate_percent')),
-      cooldown_seconds: Number(form.get('cooldown_seconds')),
-    })
-    onClose()
-  }}>
-    {query.isLoading ? <div className="empty">加载中…</div> : <><div className="form-grid"><Field label="统计窗口（秒）" name="window_seconds" type="number" defaultValue={query.data?.window_seconds ?? 60} required /><Field label="最小样本" name="minimum_samples" type="number" defaultValue={query.data?.minimum_samples ?? 10} required /><Field label="错误率(%)" name="error_rate_percent" type="number" defaultValue={query.data?.error_rate_percent ?? 50} required /><Field label="超时率(%)" name="timeout_rate_percent" type="number" defaultValue={query.data?.timeout_rate_percent ?? 50} required /><Field label="冷却秒数" name="cooldown_seconds" type="number" defaultValue={query.data?.cooldown_seconds ?? 30} required /></div><button type="button" className="button ghost" onClick={() => void deleteChannelBreakerConfig(channel.id).then(() => { void query.refetch(); onClose() })}>恢复全局默认</button></>}
+    {query.isLoading ? <div className="empty">加载中…</div> : <><p className="muted">每个用户仅有一份熔断策略，应用于当前用户的所有渠道；各渠道独立统计健康状态。</p><div className="form-grid"><Field label="统计窗口（秒）" name="window_seconds" type="number" defaultValue={query.data?.window_seconds ?? 60} required /><Field label="最小样本" name="minimum_samples" type="number" defaultValue={query.data?.minimum_samples ?? 10} required /><Field label="错误率(%)" name="error_rate_percent" type="number" defaultValue={query.data?.error_rate_percent ?? 50} required /><Field label="超时率(%)" name="timeout_rate_percent" type="number" defaultValue={query.data?.timeout_rate_percent ?? 50} required /><Field label="冷却秒数" name="cooldown_seconds" type="number" defaultValue={query.data?.cooldown_seconds ?? 30} required /></div><button type="button" className="button ghost" onClick={() => void deleteUserBreakerConfig().then(() => { void query.refetch(); onChanged(); onClose() })}>恢复进程默认</button></>}
   </Modal>
 }
 

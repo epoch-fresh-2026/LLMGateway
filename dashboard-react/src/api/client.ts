@@ -3,8 +3,8 @@ import { generatedClient } from './generated/client'
 import type { paths } from './generated/schema'
 import { z } from 'zod'
 
-type AdminPath = Extract<keyof paths, `/admin/${string}`>
-type ContractPath = AdminPath | `/admin/channels/${number}` | `/admin/channels/${number}/status` | `/admin/channels/${number}/balance` | `/admin/channels/${number}/health` | `/admin/channels/${number}/breaker` | `/admin/channels/${number}/models` | `/admin/channels/${number}/models/${number}` | `/admin/channels/${number}/remote-models` | `/admin/channels/${number}/test` | `/admin/channels/${number}/health/reset` | `/admin/keys/${number}` | `/admin/keys/${number}/reset` | `/admin/usage-logs/${number}` | `/admin/rate-limits/${number}` | `/admin/quota-policies/${number}`
+type AdminPath = Exclude<Extract<keyof paths, `/admin/${string}`>, '/admin/channels/{id}/breaker'>
+type ContractPath = AdminPath | `/admin/channels/${number}` | `/admin/channels/${number}/status` | `/admin/channels/${number}/balance` | `/admin/channels/${number}/health` | `/admin/channels/${number}/models` | `/admin/channels/${number}/models/${number}` | `/admin/channels/${number}/remote-models` | `/admin/channels/${number}/test` | `/admin/channels/${number}/health/reset` | `/admin/keys/${number}` | `/admin/keys/${number}/reset` | `/admin/usage-logs/${number}` | `/admin/rate-limits/${number}` | `/admin/quota-policies/${number}`
 export type QueryParams = Record<string, string | number | boolean | undefined>
 
 export class ApiContractError extends Error {

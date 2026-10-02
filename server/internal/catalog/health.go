@@ -44,15 +44,6 @@ type ChannelBreakerConfig struct {
 	TimeoutRatePercent int
 }
 
-type ChannelBreakerConfigDTO struct {
-	ChannelID          int `json:"channel_id"`
-	WindowSeconds      int `json:"window_seconds"`
-	MinimumSamples     int `json:"minimum_samples"`
-	ErrorRatePercent   int `json:"error_rate_percent"`
-	TimeoutRatePercent int `json:"timeout_rate_percent"`
-	CooldownSeconds    int `json:"cooldown_seconds"`
-}
-
 func DefaultChannelBreakerConfig() ChannelBreakerConfig {
 	return ChannelBreakerConfig{FailureThreshold: 5, Cooldown: 30 * time.Second, WindowSeconds: 60, MinimumSamples: 10, ErrorRatePercent: 50, TimeoutRatePercent: 50}
 }
@@ -76,8 +67,6 @@ func ShouldOpenChannelBreaker(window ChannelHealthWindow, cfg ChannelBreakerConf
 	return (cfg.ErrorRatePercent > 0 && window.Errors*100 >= window.Requests*int64(cfg.ErrorRatePercent)) || (cfg.TimeoutRatePercent > 0 && window.Timeouts*100 >= window.Requests*int64(cfg.TimeoutRatePercent))
 }
 
-// ResolveChannelBreakerConfig overlays a per-channel override on the global
-// defaults. A nil override or a non-positive field means "inherit".
 func ResolveChannelBreakerConfig(base ChannelBreakerConfig, override *ChannelBreakerConfig) ChannelBreakerConfig {
 	if override == nil {
 		return base

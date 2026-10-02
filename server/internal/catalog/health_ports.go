@@ -21,10 +21,6 @@ type HealthPort interface {
 	// leaseID, so a late release cannot clobber a newer probe. It is idempotent.
 	ReleaseChannelProbe(ctx context.Context, channelID int, leaseID string) (bool, error)
 
-	// GetChannelBreakerConfigRow returns the per-channel override and whether it
-	// exists; a missing row means the channel inherits the owner/global defaults.
-	GetChannelBreakerConfigRow(ctx context.Context, channelID int) (ChannelBreakerConfig, bool, error)
-	ListChannelBreakerConfigRows(ctx context.Context, ownerUserID int) (map[int]ChannelBreakerConfig, error)
 	// GetUserBreakerConfigRow returns the owner-level breaker default and whether
 	// it exists; a missing row means the owner inherits the process default.
 	GetUserBreakerConfigRow(ctx context.Context, ownerUserID int) (ChannelBreakerConfig, bool, error)

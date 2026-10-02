@@ -219,35 +219,10 @@ func TestWindowErrorRateOpensDespiteInterleavedSuccesses(t *testing.T) {
 	}
 }
 
-func TestPerChannelBreakerConfigOverridesCooldown(t *testing.T) {
-	st, clock := newHealthTestStore()
-	st.breakerConfigs[1] = catalog.ChannelBreakerConfig{Cooldown: 5 * time.Second}
-	cat := newHealthCatalog(st, clock)
-	for i := 0; i < 5; i++ {
-		if _, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx); err != nil {
-			t.Fatal(err)
-		}
-	}
-	*clock = clock.Add(5 * time.Second)
-	health, err := cat.GetChannelHealth(context.Background(), 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if health.State != domain.HealthHalfOpen {
-		t.Fatalf("state = %s, want half-open after per-channel cooldown", health.State)
-	}
-}
-
-func TestChannelBreakerConfigAdminLifecycle(t *testing.T) {
+func TestUserBreakerConfigAdminLifecycle(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)
-	created, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := created.ID
-
-	got, err := cat.GetChannelBreakerConfig(context.Background(), 1, id)
+	got, err := cat.GetUserBreakerConfig(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,35 +230,38 @@ func TestChannelBreakerConfigAdminLifecycle(t *testing.T) {
 		t.Fatalf("defaults = %+v, want global defaults", got)
 	}
 
-	updated, err := cat.UpdateChannelBreakerConfig(context.Background(), 1, id, catalog.ChannelBreakerConfigInput{WindowSeconds: 120, MinimumSamples: 20, ErrorRatePercent: 30, TimeoutRatePercent: 40, CooldownSeconds: 15})
+	updated, err := cat.UpdateUserBreakerConfig(context.Background(), 1, catalog.ChannelBreakerConfigInput{WindowSeconds: 120, MinimumSamples: 20, ErrorRatePercent: 30, TimeoutRatePercent: 40, CooldownSeconds: 15})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.WindowSeconds != 120 || updated.CooldownSeconds != 15 || updated.MinimumSamples != 20 {
 		t.Fatalf("updated = %+v", updated)
 	}
-	if _, err := cat.UpdateChannelBreakerConfig(context.Background(), 1, id, catalog.ChannelBreakerConfigInput{WindowSeconds: 0, MinimumSamples: 1, ErrorRatePercent: 50, TimeoutRatePercent: 50, CooldownSeconds: 10}); err == nil {
+	if _, err := cat.UpdateUserBreakerConfig(context.Background(), 1, catalog.ChannelBreakerConfigInput{WindowSeconds: 0, MinimumSamples: 1, ErrorRatePercent: 50, TimeoutRatePercent: 50, CooldownSeconds: 10}); err == nil {
 		t.Fatal("expected validation error for non-positive window")
 	}
 
-	if err := cat.DeleteChannelBreakerConfig(context.Background(), 1, id); err != nil {
+	if err := cat.DeleteUserBreakerConfig(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
-	back, _ := cat.GetChannelBreakerConfig(context.Background(), 1, id)
+	back, _ := cat.GetUserBreakerConfig(context.Background(), 1)
 	if back.WindowSeconds != 60 || back.CooldownSeconds != 30 {
 		t.Fatalf("after delete = %+v, want global defaults", back)
 	}
 }
 
-func TestUserBreakerConfigInheritedByChannel(t *testing.T) {
+func TestUserBreakerConfigSharedWithIndependentChannels(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)
-	created, err := cat.CreateChannel(context.Background(), 1, domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
-	if err != nil {
-		t.Fatal(err)
+	ctx := context.Background()
+	ids := make([]int, 3)
+	for i, owner := range []int{1, 1, 2} {
+		channel, err := cat.CreateChannel(ctx, owner, catalog.ChannelInput{Name: "test", BaseURL: "https://example.test", APIKey: "placeholder", Status: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[i] = channel.ID
 	}
-	id := created.ID
-
 	initial, err := cat.GetUserBreakerConfig(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
@@ -295,7 +273,7 @@ func TestUserBreakerConfigInheritedByChannel(t *testing.T) {
 	if _, err := cat.UpdateUserBreakerConfig(context.Background(), 1, catalog.ChannelBreakerConfigInput{WindowSeconds: 120, MinimumSamples: 20, ErrorRatePercent: 30, TimeoutRatePercent: 40, CooldownSeconds: 15}); err != nil {
 		t.Fatal(err)
 	}
-	inherited, err := cat.GetChannelBreakerConfig(context.Background(), 1, id)
+	inherited, err := cat.GetUserBreakerConfig(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,22 +281,42 @@ func TestUserBreakerConfigInheritedByChannel(t *testing.T) {
 		t.Fatalf("inherited = %+v, want user defaults", inherited)
 	}
 
-	// A per-channel override still wins over the user default.
-	if _, err := cat.UpdateChannelBreakerConfig(context.Background(), 1, id, catalog.ChannelBreakerConfigInput{WindowSeconds: 300, MinimumSamples: 50, ErrorRatePercent: 20, TimeoutRatePercent: 25, CooldownSeconds: 5}); err != nil {
+	for _, id := range ids {
+		if _, err := cat.RecordChannelFailure(ctx, id, domain.FailureUpstream401); err != nil {
+			t.Fatal(err)
+		}
+	}
+	*clock = clock.Add(16 * time.Second)
+	for i, id := range ids {
+		health, err := cat.GetChannelHealth(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := domain.HealthHalfOpen
+		if i == 2 {
+			want = domain.HealthOpen
+		}
+		if health.State != want {
+			t.Fatalf("channel %d state = %s, want %s", id, health.State, want)
+		}
+	}
+	if _, err := cat.RecordChannelSuccess(ctx, ids[0]); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := cat.GetChannelBreakerConfig(context.Background(), 1, id); got.WindowSeconds != 300 || got.CooldownSeconds != 5 {
-		t.Fatalf("overridden = %+v, want channel override", got)
+	first, _ := cat.GetChannelHealth(ctx, ids[0])
+	second, _ := cat.GetChannelHealth(ctx, ids[1])
+	if first.State != domain.HealthClosed || first.SuccessCount != 1 || second.State != domain.HealthHalfOpen || second.SuccessCount != 0 || second.FailureCount != 1 {
+		t.Fatalf("channel states are not independent: first=%+v second=%+v", first, second)
 	}
-
-	if err := cat.DeleteUserBreakerConfig(context.Background(), 1); err != nil {
+	if _, err := cat.UpdateUserBreakerConfig(ctx, 1, catalog.ChannelBreakerConfigInput{WindowSeconds: 60, MinimumSamples: 10, ErrorRatePercent: 50, TimeoutRatePercent: 50, CooldownSeconds: 5}); err != nil {
 		t.Fatal(err)
 	}
-	if err := cat.DeleteChannelBreakerConfig(context.Background(), 1, id); err != nil {
+	if err := cat.DeleteUserBreakerConfig(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
-	if back, _ := cat.GetChannelBreakerConfig(context.Background(), 1, id); back.WindowSeconds != 60 || back.CooldownSeconds != 30 {
-		t.Fatalf("after deletes = %+v, want process defaults", back)
+	second, _ = cat.GetChannelHealth(ctx, ids[1])
+	if second.State != domain.HealthOpen {
+		t.Fatalf("after config deletion state = %s, want open with process cooldown", second.State)
 	}
 }
 

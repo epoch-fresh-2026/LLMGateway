@@ -16,7 +16,6 @@ func (a *Server) RegisterAdminRoutes(mux *http.ServeMux) {
 	httpcommon.HandleAdmin(mux, "/admin/channels/{id}/balance", a.channelBalance)
 	httpcommon.HandleAdmin(mux, "/admin/channels/{id}/health", a.channelHealth)
 	httpcommon.HandleAdmin(mux, "/admin/channels/{id}/health/reset", a.channelHealthReset)
-	httpcommon.HandleAdmin(mux, "/admin/channels/{id}/breaker", a.channelBreakerConfig)
 	httpcommon.HandleAdmin(mux, "/admin/channels/{id}/test", a.channelTest)
 	httpcommon.HandleAdmin(mux, "/admin/channels/{id}/remote-models", a.channelRemoteModels)
 	httpcommon.HandleAdmin(mux, "/admin/channels/{id}/models", a.channelModels)

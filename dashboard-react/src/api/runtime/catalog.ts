@@ -13,10 +13,6 @@ export const HealthSchema = z.object({
   opened_at: z.string().datetime().nullable(), updated_at: z.string().datetime(),
 })
 export const HealthListSchema = listSchema(HealthSchema)
-export const ChannelBreakerConfigSchema = z.object({
-  channel_id: z.number().int(), window_seconds: z.number().int(), minimum_samples: z.number().int(),
-  error_rate_percent: z.number().int(), timeout_rate_percent: z.number().int(), cooldown_seconds: z.number().int(),
-})
 export const BreakerConfigSchema = z.object({
   window_seconds: z.number().int(), minimum_samples: z.number().int(),
   error_rate_percent: z.number().int(), timeout_rate_percent: z.number().int(), cooldown_seconds: z.number().int(),

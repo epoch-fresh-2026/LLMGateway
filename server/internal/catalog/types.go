@@ -120,8 +120,6 @@ type DeletePricingInput struct {
 	UpstreamModel string `json:"upstream_model"`
 }
 
-// ChannelBreakerConfigInput is the admin payload for a per-channel breaker
-// override. FailureThreshold is not overridable per channel.
 type ChannelBreakerConfigInput struct {
 	WindowSeconds      int `json:"window_seconds"`
 	MinimumSamples     int `json:"minimum_samples"`

@@ -58,8 +58,6 @@ type Tx interface {
 	UpsertChannelHealthBucket(channelID int, bucketStart time.Time, requests, errors, timeouts int64) error
 	GetChannelHealthWindow(channelID int, since time.Time) (ChannelHealthWindow, error)
 
-	UpsertChannelBreakerConfig(channelID int, cfg ChannelBreakerConfig) error
-	DeleteChannelBreakerConfig(channelID int) error
 	UpsertUserBreakerConfig(ownerUserID int, cfg ChannelBreakerConfig) error
 	DeleteUserBreakerConfig(ownerUserID int) error
 

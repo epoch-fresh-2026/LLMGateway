@@ -11,18 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteChannelBreakerConfig = `-- name: DeleteChannelBreakerConfig :execrows
-DELETE FROM channel_breaker_configs WHERE channel_id = $1
-`
-
-func (q *Queries) DeleteChannelBreakerConfig(ctx context.Context, channelID int64) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteChannelBreakerConfig, channelID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const deleteChannelHealth = `-- name: DeleteChannelHealth :execrows
 DELETE FROM channel_health WHERE channel_id = $1
 `
@@ -68,35 +56,6 @@ ON CONFLICT (channel_id) DO NOTHING
 func (q *Queries) EnsureChannelHealth(ctx context.Context, channelID int64) error {
 	_, err := q.db.Exec(ctx, ensureChannelHealth, channelID)
 	return err
-}
-
-const getChannelBreakerConfig = `-- name: GetChannelBreakerConfig :one
-SELECT channel_id, window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds
-FROM channel_breaker_configs
-WHERE channel_id = $1
-`
-
-type GetChannelBreakerConfigRow struct {
-	ChannelID          int64 `json:"channel_id"`
-	WindowSeconds      int32 `json:"window_seconds"`
-	MinimumSamples     int32 `json:"minimum_samples"`
-	ErrorRatePercent   int32 `json:"error_rate_percent"`
-	TimeoutRatePercent int32 `json:"timeout_rate_percent"`
-	CooldownSeconds    int32 `json:"cooldown_seconds"`
-}
-
-func (q *Queries) GetChannelBreakerConfig(ctx context.Context, channelID int64) (GetChannelBreakerConfigRow, error) {
-	row := q.db.QueryRow(ctx, getChannelBreakerConfig, channelID)
-	var i GetChannelBreakerConfigRow
-	err := row.Scan(
-		&i.ChannelID,
-		&i.WindowSeconds,
-		&i.MinimumSamples,
-		&i.ErrorRatePercent,
-		&i.TimeoutRatePercent,
-		&i.CooldownSeconds,
-	)
-	return i, err
 }
 
 const getChannelHealth = `-- name: GetChannelHealth :one
@@ -167,50 +126,6 @@ func (q *Queries) GetUserBreakerConfig(ctx context.Context, ownerUserID int64) (
 		&i.CooldownSeconds,
 	)
 	return i, err
-}
-
-const listChannelBreakerConfigs = `-- name: ListChannelBreakerConfigs :many
-SELECT b.channel_id, b.window_seconds, b.minimum_samples, b.error_rate_percent, b.timeout_rate_percent, b.cooldown_seconds
-FROM channel_breaker_configs b
-JOIN channels c ON c.id = b.channel_id
-WHERE c.owner_user_id = $1
-ORDER BY b.channel_id
-`
-
-type ListChannelBreakerConfigsRow struct {
-	ChannelID          int64 `json:"channel_id"`
-	WindowSeconds      int32 `json:"window_seconds"`
-	MinimumSamples     int32 `json:"minimum_samples"`
-	ErrorRatePercent   int32 `json:"error_rate_percent"`
-	TimeoutRatePercent int32 `json:"timeout_rate_percent"`
-	CooldownSeconds    int32 `json:"cooldown_seconds"`
-}
-
-func (q *Queries) ListChannelBreakerConfigs(ctx context.Context, ownerUserID int64) ([]ListChannelBreakerConfigsRow, error) {
-	rows, err := q.db.Query(ctx, listChannelBreakerConfigs, ownerUserID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListChannelBreakerConfigsRow{}
-	for rows.Next() {
-		var i ListChannelBreakerConfigsRow
-		if err := rows.Scan(
-			&i.ChannelID,
-			&i.WindowSeconds,
-			&i.MinimumSamples,
-			&i.ErrorRatePercent,
-			&i.TimeoutRatePercent,
-			&i.CooldownSeconds,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listChannelHealth = `-- name: ListChannelHealth :many
@@ -309,39 +224,6 @@ func (q *Queries) UpdateChannelHealth(ctx context.Context, arg UpdateChannelHeal
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const upsertChannelBreakerConfig = `-- name: UpsertChannelBreakerConfig :exec
-INSERT INTO channel_breaker_configs (channel_id, window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
-ON CONFLICT (channel_id) DO UPDATE
-SET window_seconds = EXCLUDED.window_seconds,
-    minimum_samples = EXCLUDED.minimum_samples,
-    error_rate_percent = EXCLUDED.error_rate_percent,
-    timeout_rate_percent = EXCLUDED.timeout_rate_percent,
-    cooldown_seconds = EXCLUDED.cooldown_seconds,
-    updated_at = now()
-`
-
-type UpsertChannelBreakerConfigParams struct {
-	ChannelID          int64 `json:"channel_id"`
-	WindowSeconds      int32 `json:"window_seconds"`
-	MinimumSamples     int32 `json:"minimum_samples"`
-	ErrorRatePercent   int32 `json:"error_rate_percent"`
-	TimeoutRatePercent int32 `json:"timeout_rate_percent"`
-	CooldownSeconds    int32 `json:"cooldown_seconds"`
-}
-
-func (q *Queries) UpsertChannelBreakerConfig(ctx context.Context, arg UpsertChannelBreakerConfigParams) error {
-	_, err := q.db.Exec(ctx, upsertChannelBreakerConfig,
-		arg.ChannelID,
-		arg.WindowSeconds,
-		arg.MinimumSamples,
-		arg.ErrorRatePercent,
-		arg.TimeoutRatePercent,
-		arg.CooldownSeconds,
-	)
-	return err
 }
 
 const upsertChannelHealthBucket = `-- name: UpsertChannelHealthBucket :exec

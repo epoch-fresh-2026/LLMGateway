@@ -29,7 +29,6 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (int64, error)
 	CreateUserWithCredentials(ctx context.Context, arg CreateUserWithCredentialsParams) (int64, error)
 	DeleteChannel(ctx context.Context, arg DeleteChannelParams) (int64, error)
-	DeleteChannelBreakerConfig(ctx context.Context, channelID int64) (int64, error)
 	DeleteChannelHealth(ctx context.Context, channelID int64) (int64, error)
 	DeleteChannelModel(ctx context.Context, arg DeleteChannelModelParams) (int64, error)
 	DeleteExpiredSessions(ctx context.Context, maxRows int32) (int64, error)
@@ -44,7 +43,6 @@ type Querier interface {
 	GetAccountByID(ctx context.Context, id int64) (GetAccountByIDRow, error)
 	GetAuthContextByKeyHash(ctx context.Context, keyHash string) (GetAuthContextByKeyHashRow, error)
 	GetChannel(ctx context.Context, arg GetChannelParams) (GetChannelRow, error)
-	GetChannelBreakerConfig(ctx context.Context, channelID int64) (GetChannelBreakerConfigRow, error)
 	GetChannelHealth(ctx context.Context, channelID int64) (ChannelHealth, error)
 	GetChannelHealthForUpdate(ctx context.Context, channelID int64) (ChannelHealth, error)
 	GetChannelModel(ctx context.Context, arg GetChannelModelParams) (GetChannelModelRow, error)
@@ -65,7 +63,6 @@ type Querier interface {
 	GetUserCredentialsByUsername(ctx context.Context, username string) (GetUserCredentialsByUsernameRow, error)
 	InsertUsageLog(ctx context.Context, arg InsertUsageLogParams) (int64, error)
 	ListCatalogModels(ctx context.Context, arg ListCatalogModelsParams) ([]ListCatalogModelsRow, error)
-	ListChannelBreakerConfigs(ctx context.Context, ownerUserID int64) ([]ListChannelBreakerConfigsRow, error)
 	ListChannelHealth(ctx context.Context, ownerUserID int64) ([]ChannelHealth, error)
 	ListChannelModels(ctx context.Context, arg ListChannelModelsParams) ([]ListChannelModelsRow, error)
 	ListChannels(ctx context.Context, ownerUserID int64) ([]ListChannelsRow, error)
@@ -95,7 +92,6 @@ type Querier interface {
 	UpdateRateLimitRuleEnabled(ctx context.Context, arg UpdateRateLimitRuleEnabledParams) (int64, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (int64, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (int64, error)
-	UpsertChannelBreakerConfig(ctx context.Context, arg UpsertChannelBreakerConfigParams) error
 	UpsertChannelHealthBucket(ctx context.Context, arg UpsertChannelHealthBucketParams) error
 	UpsertPricing(ctx context.Context, arg UpsertPricingParams) (int64, error)
 	UpsertUserBreakerConfig(ctx context.Context, arg UpsertUserBreakerConfigParams) error

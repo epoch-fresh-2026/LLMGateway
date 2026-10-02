@@ -53,32 +53,6 @@ WHERE channel_id = sqlc.arg(channel_id) AND bucket_start >= sqlc.arg(since);
 -- name: DeleteStaleChannelHealthBuckets :execrows
 DELETE FROM channel_health_buckets WHERE bucket_start < sqlc.arg(before);
 
--- name: GetChannelBreakerConfig :one
-SELECT channel_id, window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds
-FROM channel_breaker_configs
-WHERE channel_id = $1;
-
--- name: ListChannelBreakerConfigs :many
-SELECT b.channel_id, b.window_seconds, b.minimum_samples, b.error_rate_percent, b.timeout_rate_percent, b.cooldown_seconds
-FROM channel_breaker_configs b
-JOIN channels c ON c.id = b.channel_id
-WHERE c.owner_user_id = sqlc.arg(owner_user_id)
-ORDER BY b.channel_id;
-
--- name: UpsertChannelBreakerConfig :exec
-INSERT INTO channel_breaker_configs (channel_id, window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds, updated_at)
-VALUES (sqlc.arg(channel_id), sqlc.arg(window_seconds), sqlc.arg(minimum_samples), sqlc.arg(error_rate_percent), sqlc.arg(timeout_rate_percent), sqlc.arg(cooldown_seconds), now())
-ON CONFLICT (channel_id) DO UPDATE
-SET window_seconds = EXCLUDED.window_seconds,
-    minimum_samples = EXCLUDED.minimum_samples,
-    error_rate_percent = EXCLUDED.error_rate_percent,
-    timeout_rate_percent = EXCLUDED.timeout_rate_percent,
-    cooldown_seconds = EXCLUDED.cooldown_seconds,
-    updated_at = now();
-
--- name: DeleteChannelBreakerConfig :execrows
-DELETE FROM channel_breaker_configs WHERE channel_id = $1;
-
 -- name: GetUserBreakerConfig :one
 SELECT window_seconds, minimum_samples, error_rate_percent, timeout_rate_percent, cooldown_seconds
 FROM user_breaker_configs

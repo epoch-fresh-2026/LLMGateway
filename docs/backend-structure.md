@@ -67,7 +67,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - 网关 Key 仅保存 `server/internal/crypto.HashKey` 的哈希，明文 `full_key` 只在创建/重置时返回一次。
 - 自助账户使用 `users.username`（可空 + 部分唯一，认证流程写入）与 `password_hash`（bcrypt）；浏览器登录通过 `sessions` 表保存服务端会话，只存 `crypto.HashSessionToken` 的 SHA-256 哈希，`expires_at` 建有索引。认证入口 `/admin/auth/{register,login,logout,me}` 由 `accounts` 拥有，会话 Cookie 名为 `llmgateway_session`。
 - `server/internal/httpapi/session.go` 的 `requireSession` 对 `/admin`（除 `/admin/auth/*`）强制校验会话，成功后用 `httpcommon.Identity` 注入用户 id 供业务模块按归属过滤。部署为同源（nginx/Vite 代理），网关不再反射任意 Origin，也不返回 CORS 头。
-- `channels.owner_user_id` 标识渠道归属：管理员渠道、模型映射、定价、健康、熔断与连通性测试接口按会话用户过滤，创建写入 owner；`/v1` 选路通过 `RouteCandidates(ownerUserID, ...)` 只使用该 Key 所属用户的渠道。`ChannelDTO` 不暴露 owner。
+- `channels.owner_user_id` 标识渠道归属：管理员渠道、模型映射、定价、健康与连通性测试接口按会话用户过滤，创建渠道时写入 owner；熔断策略通过 `/admin/breaker-config` 按当前会话用户读写；`/v1` 选路通过 `RouteCandidates(ownerUserID, ...)` 只使用该 Key 所属用户的渠道。`ChannelDTO` 不暴露 owner。
 - `rate_limit_rules.owner_user_id` 标识规则归属：列表/增删改按会话用户过滤，`target_type` 不含 `global`，且 `target_value` 只能引用本人 Key/渠道/模型（`TargetOwnedByUser`）；proxy 运行时只加载请求 Key 所属用户的规则。
 - `usage_logs` 的列表与 `stats/*` 统计按会话用户过滤；`GET /admin/stats/overview` 的 `active_key_count` 统计该用户 `is_active=true` 且未过期的 Key 数。
 - `quota_policies` 只能作用于本人（`scope_type='user'` 时 `scope_id` 必须为本人，`scope_type='api_key'` 时该 Key 必须属于本人）；`quota-policies` 与 `quota-usage` 均按会话用户过滤。
@@ -133,7 +133,7 @@ var _ catalog.Port = (*postgres.Store)(nil)
 - 周期配额：所有边界使用 UTC，日桶为 `[00:00, 次日 00:00)`，月桶为 `[当月 1 日, 下月 1 日)`。请求选定最终渠道后，使用内嵌 tokenizer 估算输入 token，并按 `max_completion_tokens > max_tokens > QUOTA_DEFAULT_MAX_TOKENS` 预留最大输出 token；费用按最终渠道价格预留。用户 policy 与 Key policy 必须全部满足。
 - 配额持久化：`quota_buckets` 原子维护 `used_*` 与 `reserved_*`，`quota_reservations`/`quota_reservation_items` 保存请求级占用。正常失败主动释放，申请新额度时小批回收相关过期占用，进程后台 reaper 使用 `FOR UPDATE SKIP LOCKED` 兜底。成功结算在同一 PostgreSQL 事务中将 reserved 转为实际 used，并同时完成渠道近似余额扣减和 usage log。
 - 限流：`rpm` + `reject` 规则基于 `usage_logs` 统计最近 1 分钟请求次数。`global`/`user`/`api_key` 保持按当前用户/Key 计数；`model` 规则额外按 public model 精确过滤；`channel` 规则在路由选中最终渠道后、调用上游前评估，超限直接返回 429 且写入 `error_code=rate_limited` 的 error usage log，不自动改选其他渠道。
-- 熔断：每个渠道有 `channel_health` 状态（closed/open/half-open）。判定取并集：确定性失败（上游 401/402/403）或 half-open 探测失败立即 open；窗口错误率/超时率超阈值（默认窗口 60s、最小样本 10、错误率 50%、超时率 50%）时 open；低流量下回退到连续失败阈值（默认 5）。窗口统计使用固定 10s 分桶的 `channel_health_buckets`，每次尝试（成功或渠道可归因失败）在同一健康事务内 upsert 并聚合，bucket 由后台 reaper 按保留期清理。冷却（默认 30s）后惰性转为 half-open 允许探测，探测成功回 closed、失败回 open。half-open 探测通过 `channel_breaker_probes` 租约实现单飞：一次请求只放行一个探测，请求返回（或流关闭）时按 `lease_id` 条件释放，租约到期仅作崩溃/超时兜底。阈值解析顺序为进程默认值（环境变量）→ 用户级默认值（`user_breaker_configs`，管理端 `/admin/breaker-config`）→ 每渠道覆盖（`channel_breaker_configs`，管理端 `/admin/channels/{id}/breaker`）；用户级默认值变更会清空解析缓存。`ListRouteCandidates` 按每渠道 cooldown（未覆盖时用用户级/进程默认）排除 open 渠道；当无可用渠道（无映射或全部 open）时返回 `503 no_healthy_channel`（错误码由 `no_available_channel` 变更而来，同时覆盖这两种情况）。失败分类仅计入传输错误、上游 429/401/403/402 与 5xx，其余 4xx 透传且不计渠道失败。健康记录为 best-effort。
+- 熔断：每个渠道有 `channel_health` 状态（closed/open/half-open）。判定取并集：确定性失败（上游 401/402/403）或 half-open 探测失败立即 open；窗口错误率/超时率超阈值（默认窗口 60s、最小样本 10、错误率 50%、超时率 50%）时 open；低流量下回退到连续失败阈值（默认 5）。窗口统计使用固定 10s 分桶的 `channel_health_buckets`，每次尝试（成功或渠道可归因失败）在同一健康事务内 upsert 并聚合，bucket 由后台 reaper 按保留期清理。冷却（默认 30s）后惰性转为 half-open 允许探测，探测成功回 closed、失败回 open。half-open 探测通过 `channel_breaker_probes` 租约实现单飞：一次请求只放行一个探测，请求返回（或流关闭）时按 `lease_id` 条件释放，租约到期仅作崩溃/超时兜底。每个用户只有一套熔断策略，统一应用于本人所有渠道（含新建渠道）；阈值解析顺序仅为进程默认值（环境变量）→ 用户策略（`user_breaker_configs`，管理端 `/admin/breaker-config`），未配置用户策略时回退进程默认值；连续失败阈值仅使用进程默认值。用户策略变更会清空解析缓存。策略共享不代表运行状态共享：各渠道的窗口计数、连续失败计数、`channel_health` 状态与 `channel_breaker_probes` 探测租约均按渠道独立，不跨渠道累计或互相占用。渠道级配置接口已移除，旧渠道策略直接废弃，由迁移 DROP `channel_breaker_configs` 表，不合并或迁入用户策略。`ListRouteCandidates` 使用所属用户的生效 cooldown，按各渠道独立的 opened_at 排除仍在冷却期内的 open 渠道；当无可用渠道（无映射或全部 open）时返回 `503 no_healthy_channel`（错误码由 `no_available_channel` 变更而来，同时覆盖这两种情况）。失败分类仅计入传输错误、上游 429/401/403/402 与 5xx，其余 4xx 透传且不计渠道失败。健康记录为 best-effort。
 - 已知限制（后续 issue 处理）：
   - 定价按上游真实模型绑定（`model_pricing` 唯一键 `(channel_id, upstream_model)`，同渠道多别名共享一条定价）；未配置定价的渠道×上游模型按 cost=0 放行（建议为所有可路由模型配置定价）。
 
@@ -194,6 +194,7 @@ go run ./cmd/llmgateway
 - tern 在 `public.schema_version(version)` 中记录当前版本，以 PostgreSQL advisory lock 串行化迁移；默认每个迁移在独立事务中执行。
 - 项目尚未上线，不存在旧 `schema_migrations` 部署；数据库以全新实例为基线，直接由 tern 从零执行全部迁移。
 - 进程启动会使用必填的 `DATABASE_URL` 自动执行 `MIGRATIONS_DIR`（默认 `db/migrations`）下的待执行迁移；失败时启动报错退出。
+- 删除渠道级熔断策略的迁移直接 DROP `channel_breaker_configs`，其中旧策略直接废弃，不合并到 `user_breaker_configs`；用户策略与按渠道独立的健康状态、窗口计数和探测租约保留。
 
 ## sqlc
 

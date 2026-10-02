@@ -68,32 +68,11 @@ func (s *Store) ReleaseChannelProbe(_ context.Context, channelID int, leaseID st
 	return true, nil
 }
 
-func (s *Store) GetChannelBreakerConfigRow(_ context.Context, channelID int) (domain.ChannelBreakerConfig, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cfg, ok := s.breakerConfigs[channelID]
-	return cfg, ok, nil
-}
-
 func (s *Store) GetUserBreakerConfigRow(_ context.Context, ownerUserID int) (domain.ChannelBreakerConfig, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cfg, ok := s.userBreakerConfigs[ownerUserID]
 	return cfg, ok, nil
-}
-
-func (s *Store) ListChannelBreakerConfigRows(_ context.Context, ownerUserID int) (map[int]domain.ChannelBreakerConfig, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	result := make(map[int]domain.ChannelBreakerConfig, len(s.breakerConfigs))
-	for id, cfg := range s.breakerConfigs {
-		channel := s.channels[id]
-		if channel == nil || channel.OwnerUserID != ownerUserID {
-			continue
-		}
-		result[id] = cfg
-	}
-	return result, nil
 }
 
 func (s *Store) DeleteStaleChannelHealthBuckets(_ context.Context, before time.Time) (int, error) {
@@ -167,7 +146,6 @@ func (t *catalogTx) DeleteChannelHealth(channelID int) error {
 	delete(t.s.channelHealth, channelID)
 	delete(t.s.probes, channelID)
 	delete(t.s.healthBuckets, channelID)
-	delete(t.s.breakerConfigs, channelID)
 	return nil
 }
 
@@ -201,16 +179,6 @@ func (t *catalogTx) GetChannelHealthWindow(channelID int, since time.Time) (doma
 		window.Timeouts += bucket.timeouts
 	}
 	return window, nil
-}
-
-func (t *catalogTx) UpsertChannelBreakerConfig(channelID int, cfg domain.ChannelBreakerConfig) error {
-	t.s.breakerConfigs[channelID] = cfg
-	return nil
-}
-
-func (t *catalogTx) DeleteChannelBreakerConfig(channelID int) error {
-	delete(t.s.breakerConfigs, channelID)
-	return nil
 }
 
 func (t *catalogTx) UpsertUserBreakerConfig(ownerUserID int, cfg domain.ChannelBreakerConfig) error {

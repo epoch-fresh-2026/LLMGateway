@@ -23,16 +23,6 @@ type Channel struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
-type ChannelBreakerConfig struct {
-	ChannelID          int64              `json:"channel_id"`
-	WindowSeconds      int32              `json:"window_seconds"`
-	MinimumSamples     int32              `json:"minimum_samples"`
-	ErrorRatePercent   int32              `json:"error_rate_percent"`
-	TimeoutRatePercent int32              `json:"timeout_rate_percent"`
-	CooldownSeconds    int32              `json:"cooldown_seconds"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-}
-
 type ChannelBreakerProbe struct {
 	ChannelID   int64              `json:"channel_id"`
 	LeaseID     pgtype.UUID        `json:"lease_id"`

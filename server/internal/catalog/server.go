@@ -9,9 +9,6 @@ import (
 	"LLMGateway/server/internal/crypto"
 )
 
-// breakerConfigCacheTTL bounds how long a per-channel breaker override is
-// cached. Recording an attempt happens on the request path, so re-reading the
-// override every attempt would add a query; admin writes invalidate eagerly.
 const breakerConfigCacheTTL = 30 * time.Second
 
 type breakerConfigCacheEntry struct {
@@ -68,57 +65,42 @@ func New(d Deps) *Server {
 	}
 }
 
-// baseBreakerFor resolves the base breaker config for an owner: the owner-level
-// default overlaid on the process default when present. FailureThreshold has no
-// owner-level column, so it always comes from the process default.
 func (a *Server) baseBreakerFor(ctx context.Context, ownerUserID int) ChannelBreakerConfig {
-	userCfg, found, err := a.health.GetUserBreakerConfigRow(ctx, ownerUserID)
-	if err == nil && found {
-		return ResolveChannelBreakerConfig(a.breaker, &userCfg)
-	}
-	return a.breaker
-}
-
-// breakerFor resolves the effective breaker config for a channel: the process
-// default, overlaid with the channel owner's default and then any per-channel
-// override. The owner is looked up from the channel so the proxy request path
-// can resolve the owner-level default without an extra parameter. Results are
-// cached briefly because recording runs on that path.
-func (a *Server) breakerFor(ctx context.Context, channelID int) ChannelBreakerConfig {
 	now := a.now()
 	a.breakerMu.RLock()
-	entry, ok := a.breakerCache[channelID]
+	entry, ok := a.breakerCache[ownerUserID]
 	a.breakerMu.RUnlock()
 	if ok && now.Before(entry.expires) {
 		return entry.config
 	}
 
-	base := a.breaker
-	if ownerUserID, err := a.store.GetChannelOwner(ctx, channelID); err == nil {
-		base = a.baseBreakerFor(ctx, ownerUserID)
-	}
-	resolved := base
-	override, found, err := a.health.GetChannelBreakerConfigRow(ctx, channelID)
-	if err == nil && found {
-		resolved = ResolveChannelBreakerConfig(base, &override)
-	}
 	a.breakerMu.Lock()
-	a.breakerCache[channelID] = breakerConfigCacheEntry{config: resolved, expires: now.Add(breakerConfigCacheTTL)}
-	a.breakerMu.Unlock()
+	defer a.breakerMu.Unlock()
+	if entry, ok := a.breakerCache[ownerUserID]; ok && now.Before(entry.expires) {
+		return entry.config
+	}
+	userCfg, found, err := a.health.GetUserBreakerConfigRow(ctx, ownerUserID)
+	if err != nil {
+		return a.breaker
+	}
+	resolved := a.breaker
+	if found {
+		resolved = ResolveChannelBreakerConfig(a.breaker, &userCfg)
+	}
+	a.breakerCache[ownerUserID] = breakerConfigCacheEntry{config: resolved, expires: now.Add(breakerConfigCacheTTL)}
 	return resolved
 }
 
-// invalidateBreakerConfig drops the cached override after an admin write.
-func (a *Server) invalidateBreakerConfig(channelID int) {
-	a.breakerMu.Lock()
-	delete(a.breakerCache, channelID)
-	a.breakerMu.Unlock()
+func (a *Server) breakerFor(ctx context.Context, channelID int) ChannelBreakerConfig {
+	ownerUserID, err := a.store.GetChannelOwner(ctx, channelID)
+	if err != nil {
+		return a.breaker
+	}
+	return a.baseBreakerFor(ctx, ownerUserID)
 }
 
-// invalidateAllBreakerConfigs clears the cache after an owner-level default
-// change so every channel of that owner re-resolves on the next attempt.
-func (a *Server) invalidateAllBreakerConfigs() {
+func (a *Server) invalidateBreakerConfig(ownerUserID int) {
 	a.breakerMu.Lock()
-	a.breakerCache = map[int]breakerConfigCacheEntry{}
+	delete(a.breakerCache, ownerUserID)
 	a.breakerMu.Unlock()
 }

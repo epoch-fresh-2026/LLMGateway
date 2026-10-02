@@ -57,8 +57,6 @@ func (a *Server) channelHealthList(r *http.Request) httpcommon.AdminResult {
 	return httpcommon.Result(a.ListChannelHealth(r.Context(), ownerUserID))
 }
 
-// userBreakerConfig serves the owner-level breaker default that channels
-// inherit when they have no per-channel override.
 func (a *Server) userBreakerConfig(r *http.Request) httpcommon.AdminResult {
 	ownerUserID, result := ownerFromRequest(r)
 	if result.Status != 0 {
@@ -75,31 +73,6 @@ func (a *Server) userBreakerConfig(r *http.Request) httpcommon.AdminResult {
 		return httpcommon.Result(a.UpdateUserBreakerConfig(r.Context(), ownerUserID, req))
 	case http.MethodDelete:
 		return httpcommon.NoBody(a.DeleteUserBreakerConfig(r.Context(), ownerUserID))
-	default:
-		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-	}
-}
-
-func (a *Server) channelBreakerConfig(r *http.Request) httpcommon.AdminResult {
-	ownerUserID, result := ownerFromRequest(r)
-	if result.Status != 0 {
-		return result
-	}
-	id, result := parseID(r.PathValue("id"), "channel")
-	if result.Status != 0 {
-		return result
-	}
-	switch r.Method {
-	case http.MethodGet:
-		return httpcommon.Result(a.GetChannelBreakerConfig(r.Context(), ownerUserID, id))
-	case http.MethodPut:
-		var req ChannelBreakerConfigInput
-		if err := httpcommon.ReadJSON(r, &req); err != nil {
-			return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
-		}
-		return httpcommon.Result(a.UpdateChannelBreakerConfig(r.Context(), ownerUserID, id, req))
-	case http.MethodDelete:
-		return httpcommon.NoBody(a.DeleteChannelBreakerConfig(r.Context(), ownerUserID, id))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}

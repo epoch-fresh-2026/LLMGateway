@@ -312,13 +312,9 @@ func (s *Store) RouteCandidates(_ context.Context, ownerUserID int, modelName st
 		if channel == nil || channel.OwnerUserID != ownerUserID || channel.Status != 1 {
 			continue
 		}
-		cfg := base
-		if override, ok := s.breakerConfigs[channelID]; ok {
-			cfg = domain.ResolveChannelBreakerConfig(base, &override)
-		}
 		// Exclude open (tripped) channels; a missing health row means closed and
 		// a cooled-down open channel is treated as half-open.
-		if s.channelHealthLocked(channelID, cfg).State == domain.HealthOpen {
+		if s.channelHealthLocked(channelID, base).State == domain.HealthOpen {
 			continue
 		}
 		for _, model := range models {

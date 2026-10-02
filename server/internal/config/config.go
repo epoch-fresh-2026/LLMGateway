@@ -29,8 +29,6 @@ const (
 	EnvUpstreamMaxAttempts    = "UPSTREAM_MAX_ATTEMPTS"
 )
 
-// Channel breaker tuning. Thresholds are global defaults; per-channel overrides
-// live in channel_breaker_configs and are managed through the admin API.
 const (
 	EnvChannelBreakerFailureThreshold       = "CHANNEL_BREAKER_FAILURE_THRESHOLD"
 	EnvChannelBreakerCooldownSeconds        = "CHANNEL_BREAKER_COOLDOWN_SECONDS"
