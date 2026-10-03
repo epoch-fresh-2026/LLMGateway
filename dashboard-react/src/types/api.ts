@@ -28,15 +28,12 @@ export type Health = components['schemas']['Health']
 export type BreakerConfig = components['schemas']['BreakerConfig']
 export type BreakerConfigInput = BreakerConfig
 
-export type CatalogChannel = components['schemas']['CatalogChannel']
-export type CatalogModel = components['schemas']['CatalogModel']
 export type Pricing = components['schemas']['Pricing']
 export type PricingCreateInput = components['schemas']['PricingCreateInput']
 export type DeletePricingInput = components['schemas']['DeletePricingInput']
 
 export type UsageLog = components['schemas']['UsageLog']
 export type Stats = components['schemas']['Stats']
-export type TTFTStats = components['schemas']['TTFTStats']
 export type DailyStats = components['schemas']['DailyStats']
 export type ChannelStats = components['schemas']['ChannelStats']
 export type UsageAggregate = components['schemas']['UsageAggregate']
@@ -47,6 +44,4 @@ export type RateLimitUpdateInput = components['schemas']['RateLimitUpdateInput']
 export type QuotaPolicy = components['schemas']['QuotaPolicy']
 type QuotaPolicyCreateFields = { policy_name: string; scope_type: 'user' | 'api_key'; scope_id: number; period_type: 'day' | 'month'; enabled?: boolean }
 export type QuotaPolicyCreateInput = QuotaPolicyCreateFields & ({ token_limit: number; cost_limit?: string } | { token_limit?: number; cost_limit: string })
-export type QuotaUsage = components['schemas']['QuotaUsage']
-
 export type Deleted = { deleted: true }

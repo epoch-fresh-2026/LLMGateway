@@ -7,7 +7,6 @@ import { ProfilePage } from './pages/ProfilePage'
 import { KeysPage } from './pages/KeysPage'
 import { LimitsPage, QuotasPage, PricingPage } from './pages/ConsolePages'
 import { UsagePage } from './pages/UsagePage'
-import { DocsPage } from './pages/DocsPage'
 import { LoginPage } from './pages/LoginPage'
 
 const navItems = [
@@ -46,7 +45,57 @@ function AppShell() {
   const initials = account ? account.username.slice(0, 2).toUpperCase() : 'OP'
 
   return <div className="app-shell">
-    <aside className="sidebar"><div className="brand"><span className="brand-mark">ϟ</span><div><b>MyApi</b><small>LLM API 网关</small></div></div><nav className="nav">{navItems.map(([path, label, icon]) => <NavLink key={path} to={path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><span className="nav-icon">{icon}</span><span>{label}</span></NavLink>)}</nav></aside>
-    <main className="main-area"><header className="topbar"><div className="crumb"><span>MyApi</span><b>/</b><span>Gateway</span><b>/</b><strong>{title}</strong></div><div className="top-actions"><button className="profile"><span>{initials}</span><label>{account?.username ?? '未登录'}<small>自助控制台</small></label></button><button className="icon-button" onClick={() => { void logout() }} aria-label="退出登录">⏻</button></div></header><section className="page-content"><div className="page-heading"><div><h1>{title}</h1><p>{subtitle}{location.pathname === '/' && <> · 数据更新于 <b>实时</b></>}</p></div></div><Routes><Route path="/login" element={<Navigate to="/" replace />} /><Route path="/" element={<DashboardPage />} /><Route path="/usage" element={<UsagePage />} /><Route path="/logs" element={<LogsPage />} /><Route path="/channels" element={<ChannelsPage />} /><Route path="/profile" element={<ProfilePage />} /><Route path="/keys" element={<KeysPage />} /><Route path="/limits" element={<LimitsPage />} /><Route path="/quotas" element={<QuotasPage />} /><Route path="/pricing" element={<PricingPage />} /><Route path="/docs" element={<DocsPage />} /></Routes></section></main>
+    <aside className="sidebar">
+      <div className="brand">
+        <span className="brand-mark">ϟ</span>
+        <div><b>MyApi</b><small>LLM API 网关</small></div>
+      </div>
+      <nav className="nav">
+        {navItems.map(([path, label, icon]) => (
+            <NavLink
+                key={path}
+                to={path}
+                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            >
+              <span className="nav-icon">{icon}</span>
+              <span>{label}</span>
+            </NavLink>
+        ))}
+      </nav>
+    </aside>
+    <main className="main-area">
+      <header className="topbar">
+        <div className="crumb">
+          <span>MyApi</span><b>/</b><span>Gateway</span><b>/</b><strong>{title}</strong>
+        </div>
+        <div className="top-actions">
+          <button className="profile">
+            <span>{initials}</span>
+            <label>{account?.username ?? '未登录'}<small>自助控制台</small></label>
+          </button>
+          <button className="icon-button" onClick={() => { void logout() }} aria-label="退出登录">⏻</button>
+        </div>
+      </header>
+      <section className="page-content">
+        <div className="page-heading">
+          <div>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
+          </div>
+        </div>
+        <Routes>
+          <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/usage" element={<UsagePage />} />
+          <Route path="/logs" element={<LogsPage />} />
+          <Route path="/channels" element={<ChannelsPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/keys" element={<KeysPage />} />
+          <Route path="/limits" element={<LimitsPage />} />
+          <Route path="/quotas" element={<QuotasPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
+        </Routes>
+      </section>
+    </main>
   </div>
 }
