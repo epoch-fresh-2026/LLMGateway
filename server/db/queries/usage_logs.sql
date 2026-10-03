@@ -112,7 +112,7 @@ WHERE (sqlc.arg(user_id) = 0 OR user_id = sqlc.arg(user_id))
   AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint);
 
 -- name: CountTokensSince :one
-SELECT COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens
+SELECT COALESCE(SUM(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens
 FROM usage_logs
 WHERE (sqlc.arg(user_id)::bigint = 0 OR user_id = sqlc.arg(user_id)::bigint)
   AND created_at >= sqlc.arg(since)::timestamptz
@@ -125,15 +125,15 @@ SELECT
     count(*)::bigint AS request_count,
     count(*) FILTER (WHERE status = 'success')::bigint AS success_count,
     count(*) FILTER (WHERE status <> 'success')::bigint AS error_count,
-    coalesce(sum(total_tokens), 0)::bigint AS total_tokens,
-    coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost,
+    coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens, coalesce(sum(total_tokens) FILTER (WHERE status <> 'success' AND starts_with(error_code, 'partial_estimated_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens,
+    coalesce(sum(total_cost) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost,
     (SELECT count(*) FROM client_api_keys k
       WHERE k.user_id = sqlc.arg(owner_user_id) AND k.is_active = true
         AND (k.expires_at IS NULL OR k.expires_at > now()))::bigint AS active_key_count
 FROM usage_logs
 WHERE user_id = sqlc.arg(owner_user_id)
   AND created_at >= sqlc.arg(start_time)::timestamptz
-  AND created_at <= sqlc.arg(end_time)::timestamptz;
+  AND created_at < sqlc.arg(end_time)::timestamptz;
 
 -- name: StatsDaily :many
 SELECT
@@ -141,11 +141,13 @@ SELECT
     count(*)::bigint AS request_count,
     count(*) FILTER (WHERE l.status = 'success')::bigint AS success_count,
     count(*) FILTER (WHERE l.status <> 'success')::bigint AS error_count,
-    coalesce(sum(l.total_tokens), 0)::bigint AS total_tokens,
-    coalesce(sum(l.input_tokens), 0)::bigint AS input_tokens,
-    coalesce(sum(l.output_tokens), 0)::bigint AS output_tokens,
-    coalesce(sum(l.cached_input_tokens), 0)::bigint AS cached_input_tokens,
-    coalesce(sum(l.total_cost), 0)::numeric(20, 6)::text AS total_cost
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens,
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens,
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status <> 'success' AND starts_with(l.error_code, 'partial_estimated_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens,
+    coalesce(sum(l.input_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS input_tokens,
+    coalesce(sum(l.output_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS output_tokens,
+    coalesce(sum(l.cached_input_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS cached_input_tokens,
+    coalesce(sum(l.total_cost) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost
 FROM usage_logs l
 WHERE l.user_id = sqlc.arg(owner_user_id)
   AND (l.created_at AT TIME ZONE 'UTC')::date >= sqlc.arg(date_from)::text::date
@@ -171,13 +173,15 @@ SELECT
     count(*)::bigint AS request_count,
     count(*) FILTER (WHERE l.status = 'success')::bigint AS success_count,
     count(*) FILTER (WHERE l.status <> 'success')::bigint AS error_count,
-    coalesce(sum(l.total_tokens), 0)::bigint AS total_tokens,
-    coalesce(sum(l.total_cost), 0)::numeric(20, 6)::text AS total_cost
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens,
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens,
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status <> 'success' AND starts_with(l.error_code, 'partial_estimated_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens,
+    coalesce(sum(l.total_cost) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost
 FROM usage_logs l
-JOIN channels c ON c.id = l.channel_id
+LEFT JOIN channels c ON c.id = l.channel_id
 WHERE l.user_id = sqlc.arg(owner_user_id)
   AND l.created_at >= sqlc.arg(start_time)::timestamptz
-  AND l.created_at <= sqlc.arg(end_time)::timestamptz
+  AND l.created_at < sqlc.arg(end_time)::timestamptz
 GROUP BY l.channel_id, c.name
 ORDER BY request_count DESC, l.channel_id;
 
@@ -199,28 +203,28 @@ WHERE ttft_ms IS NOT NULL
   AND created_at <= sqlc.arg(end_time)::timestamptz;
 
 -- name: AggregateUsageByUser :many
-SELECT user_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+SELECT user_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens, coalesce(sum(total_tokens) FILTER (WHERE status <> 'success' AND starts_with(error_code, 'partial_estimated_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens, coalesce(sum(total_cost) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
 FROM usage_logs
 WHERE user_id = sqlc.arg(owner_user_id) AND created_at >= sqlc.arg(start_time)::timestamptz AND created_at < sqlc.arg(end_time)::timestamptz
   AND (sqlc.narg(user_id)::bigint IS NULL OR user_id = sqlc.narg(user_id)::bigint) AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint) AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint) AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text) AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)
 GROUP BY user_id ORDER BY request_count DESC, user_id NULLS LAST LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
 -- name: AggregateUsageByAPIKey :many
-SELECT api_key_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+SELECT api_key_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens, coalesce(sum(total_tokens) FILTER (WHERE status <> 'success' AND starts_with(error_code, 'partial_estimated_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens, coalesce(sum(total_cost) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
 FROM usage_logs
 WHERE user_id = sqlc.arg(owner_user_id) AND created_at >= sqlc.arg(start_time)::timestamptz AND created_at < sqlc.arg(end_time)::timestamptz
   AND (sqlc.narg(user_id)::bigint IS NULL OR user_id = sqlc.narg(user_id)::bigint) AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint) AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint) AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text) AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)
 GROUP BY api_key_id ORDER BY request_count DESC, api_key_id NULLS LAST LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
 -- name: AggregateUsageByModel :many
-SELECT model, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+SELECT model, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens, coalesce(sum(total_tokens) FILTER (WHERE status <> 'success' AND starts_with(error_code, 'partial_estimated_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens, coalesce(sum(total_cost) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
 FROM usage_logs
 WHERE user_id = sqlc.arg(owner_user_id) AND created_at >= sqlc.arg(start_time)::timestamptz AND created_at < sqlc.arg(end_time)::timestamptz
   AND (sqlc.narg(user_id)::bigint IS NULL OR user_id = sqlc.narg(user_id)::bigint) AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint) AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint) AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text) AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)
 GROUP BY model ORDER BY request_count DESC, model LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
 -- name: AggregateUsageByChannel :many
-SELECT channel_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+SELECT channel_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens, coalesce(sum(total_tokens) FILTER (WHERE status <> 'success' AND starts_with(error_code, 'partial_estimated_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens, coalesce(sum(total_cost) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
 FROM usage_logs
 WHERE user_id = sqlc.arg(owner_user_id) AND created_at >= sqlc.arg(start_time)::timestamptz AND created_at < sqlc.arg(end_time)::timestamptz
   AND (sqlc.narg(user_id)::bigint IS NULL OR user_id = sqlc.narg(user_id)::bigint) AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint) AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint) AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text) AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)

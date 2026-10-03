@@ -3,6 +3,9 @@ package proxy
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,9 +15,65 @@ import (
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
-// TestDetachedCtxIgnoresParentCancellation pins the core detached-task
-// semantic: a canceled parent must not cancel the derived context, while
-// parent values remain visible.
+func TestBufferedSettlementAfterUsageCancellation(t *testing.T) {
+	for _, mode := range []string{"cancel", "deadline", "pricing_failure", "settlement_failure"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var requestCtx context.Context
+			transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				requestCtx = r.Context()
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("usage")), Header: make(http.Header)}, nil
+			})
+			service, st, auth := newProtocolSeamService(t, transport, seamAdapter())
+			if mode == "deadline" {
+				service.ConfigureRequest(30*time.Millisecond, 1)
+			}
+			service.adapter.ParseUsage = func([]byte) *Usage {
+				if mode == "deadline" {
+					<-requestCtx.Done()
+				} else {
+					cancel()
+				}
+				service.catalog = checkedPricingCatalog{Catalog: service.catalog, t: t, fail: mode == "pricing_failure"}
+				if mode == "settlement_failure" {
+					service.settleTx = failingSettlementTx{}
+				}
+				return &Usage{PromptTokens: 1000, CompletionTokens: 500, TotalTokens: 1500}
+			}
+			_, err := service.ChatCompletions(ctx, auth, ChatRequest{Model: "public-model", Body: []byte(`{}`)}, "")
+			failed := strings.HasSuffix(mode, "failure")
+			if (err != nil) != failed {
+				t.Fatalf("err = %v", err)
+			}
+			logs, err := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 10})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if logs.Total != 1 || logs.List[0].TotalTokens != 1500 {
+				t.Fatalf("logs = %+v", logs)
+			}
+			if failed {
+				code := "pricing_error"
+				if mode == "settlement_failure" {
+					code = "settlement_failed"
+				}
+				if logs.List[0].Status != "error" || logs.List[0].ErrorCode != code || logs.List[0].TotalCost != "0.000000" {
+					t.Fatalf("log = %+v", logs.List[0])
+				}
+			} else if logs.List[0].Status != "success" || logs.List[0].TotalCost != "0.000450" {
+				t.Fatalf("log = %+v", logs.List[0])
+			}
+		})
+	}
+}
+
+type failingSettlementTx struct{}
+
+func (failingSettlementTx) InTx(context.Context, func(settlement.Tx) error) error {
+	return errors.New("settlement failed")
+}
+
 func TestDetachedCtxIgnoresParentCancellation(t *testing.T) {
 	type ctxKey struct{}
 	parent, cancel := context.WithCancel(context.WithValue(context.Background(), ctxKey{}, "sentinel"))

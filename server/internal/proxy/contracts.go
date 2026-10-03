@@ -18,6 +18,7 @@ type Usage struct {
 }
 
 type EstimatedUsage struct {
+	PromptTokens int
 	InputTokens  int
 	OutputTokens int
 	TotalTokens  int

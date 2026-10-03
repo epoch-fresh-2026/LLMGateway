@@ -11,6 +11,20 @@ test('dashboard model distribution never falls back to unfiltered logs', async (
   assert.doesNotMatch(source, /dist\.entries|const dist\s*=/, 'model distribution must not aggregate unfiltered logRows')
 })
 
+test('consumption pages show settled totals and separated sources without request fallback', async () => {
+  const dashboard = await readFile(new URL('../src/pages/DashboardPage.tsx', import.meta.url), 'utf8')
+  const usage = await readFile(new URL('../src/pages/UsagePage.tsx', import.meta.url), 'utf8')
+  for (const source of [dashboard, usage]) {
+    assert.match(source, /actual_tokens/)
+    assert.match(source, /estimated_tokens/)
+    assert.match(source, /上游确认/)
+    assert.match(source, /本地估算/)
+    assert.match(source, /仅作零费用审计/)
+    assert.doesNotMatch(source, /已结算消费\s*=|估算计入配额/)
+    assert.doesNotMatch(source, /total_tokens\s*\|\|\s*row\.request_count/)
+  }
+})
+
 test('empty ranged model aggregate yields an empty distribution', () => {
   const modelRows = (list) => (list ?? []).map(row => ({ name: row.model || 'unknown', value: Number(row.total_tokens || row.request_count || 0) }))
   assert.deepEqual(modelRows(undefined), [])

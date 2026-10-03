@@ -340,6 +340,10 @@ func TestChatCompletionsStreamingWithoutDoneFailsAndTripsBreaker(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl-stream\",\"model\":\"up-gpt\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12}}\n\n")
 	}))
+	name, scope, period, scopeID, limit := "daily", "user", "day", 1, int64(10000)
+	if _, err := f.quota.CreateQuotaPolicy(context.Background(), 1, domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+		t.Fatal(err)
+	}
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","stream":true,"messages":[]}`)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "upstream_stream_interrupted") {
 		t.Fatalf("status/body = %d %s, want interrupted SSE error", res.Code, res.Body.String())
@@ -352,20 +356,38 @@ func TestChatCompletionsStreamingWithoutDoneFailsAndTripsBreaker(t *testing.T) {
 		t.Fatalf("consecutive failures = %d, want 1", health.ConsecutiveFailures)
 	}
 	secret, _ := f.catalog.GetChannelSecret(context.Background(), 1, 1)
-	if secret.Balance == nil || *secret.Balance != "10.000000" {
-		t.Fatalf("channel balance changed after interrupted stream: %v", secret.Balance)
+	if secret.Balance == nil || *secret.Balance != "9.999998" {
+		t.Fatalf("channel balance = %v, want 9.999998", secret.Balance)
 	}
 	logs, _ := f.store.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 10})
-	if logs.Total != 1 || logs.List[0].TTFTMs == nil {
-		t.Fatalf("interrupted stream must retain observed TTFT: %+v", logs)
+	if logs.Total != 1 || logs.List[0].TTFTMs == nil || logs.List[0].Status != "error" || logs.List[0].ErrorCode != "partial_actual_upstream_stream_interrupted" || logs.List[0].InputTokens != 10 || logs.List[0].OutputTokens != 2 || logs.List[0].TotalTokens != 12 || logs.List[0].TotalCost != "0.000002" {
+		t.Fatalf("interrupted stream must settle actual usage and retain observed TTFT: %+v", logs)
+	}
+	quotaUsage, err := f.quota.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{OwnerUserID: 1, Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := f.store.StatsOverview(context.Background(), 1, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quotaUsage.Total != 1 || quotaUsage.List[0].UsedTokens != 12 || quotaUsage.List[0].ReservedTokens != 0 || quotaUsage.List[0].UsedCost != "0.000002" {
+		t.Fatalf("quota usage = %+v", quotaUsage)
+	}
+	if stats.TotalTokens != quotaUsage.List[0].UsedTokens || stats.ActualTokens != 12 || stats.EstimatedTokens != 0 || stats.TotalCost != quotaUsage.List[0].UsedCost || stats.ErrorCount != 1 || stats.SuccessCount != 0 {
+		t.Fatalf("stats = %+v, quota usage = %+v", stats, quotaUsage)
 	}
 }
 
-func TestChatCompletionsInterruptedStreamChargesForwardedTextEstimate(t *testing.T) {
+func TestChatCompletionsInterruptedStreamEstimateDoesNotCharge(t *testing.T) {
 	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl-stream\",\"model\":\"up-gpt\",\"choices\":[{\"delta\":{\"content\":\"hello world\"}}]}\n\n")
 	}))
+	name, scope, period, scopeID, limit := "daily", "user", "day", 1, int64(10000)
+	if _, err := f.quota.CreateQuotaPolicy(context.Background(), 1, domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+		t.Fatal(err)
+	}
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","stream":true,"messages":[]}`)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "upstream_stream_interrupted") {
 		t.Fatalf("status/body = %d %s, want interrupted SSE error", res.Code, res.Body.String())
@@ -374,16 +396,17 @@ func TestChatCompletionsInterruptedStreamChargesForwardedTextEstimate(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if logs.Total != 1 || logs.List[0].ErrorCode != "partial_estimated_upstream_stream_interrupted" || logs.List[0].TotalTokens <= 0 || logs.List[0].TotalCost == "0.000000" {
+	if logs.Total != 1 || logs.List[0].ErrorCode != "partial_estimated_upstream_stream_interrupted" || logs.List[0].TotalTokens <= 0 || logs.List[0].TotalCost != "0.000000" {
 		t.Fatalf("partial usage log = %+v", logs)
 	}
 	secret, err := f.catalog.GetChannelSecret(context.Background(), 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if secret.Balance == nil || *secret.Balance == "10.000000" {
-		t.Fatal("channel balance was not charged for forwarded text")
+	if secret.Balance == nil || *secret.Balance != "10.000000" {
+		t.Fatalf("channel balance changed for estimated usage: %v", secret.Balance)
 	}
+	assertStreamNoCharge(t, f)
 }
 
 func TestChatCompletionsStreamingMalformedDataTripsBreaker(t *testing.T) {
@@ -462,11 +485,11 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if usage.Total == 1 && usage.List[0].ReservedTokens == 0 && usage.List[0].UsedTokens > 0 {
+		if usage.Total == 1 && usage.List[0].ReservedTokens == 0 && usage.List[0].UsedTokens == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("forwarded stream usage was not settled after cancellation: %+v", usage)
+			t.Fatalf("stream quota reservation was not released after cancellation: %+v", usage)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -474,8 +497,37 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if logs.Total != 1 || logs.List[0].ErrorCode != "partial_estimated_client_canceled" || logs.List[0].TotalTokens <= 0 || logs.List[0].TTFTMs == nil {
+	if logs.Total != 1 || logs.List[0].ErrorCode != "partial_estimated_client_canceled" || logs.List[0].TotalTokens <= 0 || logs.List[0].TTFTMs == nil || logs.List[0].TotalCost != "0.000000" {
 		t.Fatalf("canceled stream must retain observed TTFT: %+v", logs)
+	}
+	assertStreamNoCharge(t, f)
+}
+
+func assertStreamNoCharge(t *testing.T, f *proxyFixture) {
+	t.Helper()
+	ctx := context.Background()
+	quotaUsage, err := f.quota.ListQuotaUsage(ctx, domain.QuotaPolicyFilter{OwnerUserID: 1, Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quotaUsage.Total != 1 || quotaUsage.List[0].UsedTokens != 0 || quotaUsage.List[0].ReservedTokens != 0 || quotaUsage.List[0].UsedCost != "0.000000" {
+		t.Fatalf("quota usage = %+v", quotaUsage)
+	}
+	secret, err := f.catalog.GetChannelSecret(ctx, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Balance == nil || *secret.Balance != "10.000000" {
+		t.Fatalf("channel balance = %v", secret.Balance)
+	}
+	active, err := f.store.CountActiveRateLimitReservations(ctx, 1, nil, "gpt", nil)
+	if err != nil || active != 0 {
+		t.Fatalf("active rate reservations = %d, err = %v", active, err)
+	}
+	userID := 1
+	tokens, err := f.store.CountTokensSince(ctx, domain.TokenCountFilter{UserID: userID, Model: "gpt", Since: time.Now().Add(-time.Minute).Format(time.RFC3339)})
+	if err != nil || tokens != 0 {
+		t.Fatalf("rate tokens = %d, err = %v", tokens, err)
 	}
 }
 

@@ -50,6 +50,7 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 	)
 	for attempt, next := range in.candidates {
 		if ctx.Err() != nil {
+			a.logAttemptContextError(ctx, in, candidate, false)
 			return upstreamAttempt{}, ctx.Err()
 		}
 		candidate = next
@@ -87,6 +88,7 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 		resp, err = a.client.Do(httpReq)
 		if err != nil {
 			if ctx.Err() != nil {
+				a.logAttemptContextError(ctx, in, candidate, true)
 				return upstreamAttempt{}, ctx.Err()
 			}
 			if reason := catalog.ClassifyUpstreamResult(0, err); reason.CountsAsChannelFailure() {
@@ -105,11 +107,15 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 		resp.Body.Close()
 		if readErr != nil {
 			if ctx.Err() != nil {
+				a.logAttemptContextError(ctx, in, candidate, true)
 				return upstreamAttempt{}, ctx.Err()
 			}
-			a.recordChannelHealth(ctx, candidate.ChannelID, false, catalog.FailureUpstreamUnreachable)
-			if attempt+1 < len(in.candidates) {
-				continue
+			reason := catalog.ClassifyUpstreamResult(0, readErr)
+			if reason.CountsAsChannelFailure() {
+				a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
+				if attempt+1 < len(in.candidates) {
+					continue
+				}
 			}
 			a.logUsage(ctx, in.requestID, in.auth, &candidate.ChannelID, candidate.UpstreamModel, in.req.Model, nil, "0.000000", "", "", elapsedMs(in.start, a.now()), in.clientIP, "error", "upstream_stream_interrupted")
 			return upstreamAttempt{}, ErrUpstream
@@ -134,4 +140,15 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 		return upstreamAttempt{candidate: candidate}, ErrUpstream
 	}
 	return upstreamAttempt{resp: resp, body: responseBody, candidate: candidate, healthRecorded: healthRecorded}, nil
+}
+
+func (a *Service) logAttemptContextError(ctx context.Context, in upstreamAttemptInput, candidate catalog.RouteCandidate, attempted bool) {
+	code := "client_canceled"
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		code = "upstream_timeout"
+		if attempted {
+			a.recordChannelHealth(ctx, candidate.ChannelID, false, catalog.FailureUpstreamTimeout)
+		}
+	}
+	a.logUsage(ctx, in.requestID, in.auth, &candidate.ChannelID, candidate.UpstreamModel, in.req.Model, nil, "0.000000", "", "", elapsedMs(in.start, a.now()), in.clientIP, "error", code)
 }

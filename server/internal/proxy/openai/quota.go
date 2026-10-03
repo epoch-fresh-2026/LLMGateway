@@ -46,14 +46,16 @@ func estimateRequestUsage(body []byte, defaultMaxTokens int) (proxy.EstimatedUsa
 	// Chat framing and provider-side normalization add tokens that are not
 	// represented verbatim in JSON. Keep a fixed conservative safety margin.
 	input += 16
+	prompt := input
 	if byteUpperBound := len(body) + 16; byteUpperBound > input {
 		input = byteUpperBound
 	}
 	// Remote image/audio payloads are represented by short URLs but billed from
 	// media content. Reserve a conservative budget for each multimodal part.
-	input += strings.Count(string(body), `"image_url"`) * 8192
-	input += strings.Count(string(body), `"input_audio"`) * 8192
-	return proxy.EstimatedUsage{InputTokens: input, OutputTokens: output, TotalTokens: input + output}, nil
+	media := (strings.Count(string(body), `"image_url"`) + strings.Count(string(body), `"input_audio"`)) * 8192
+	input += media
+	prompt += media
+	return proxy.EstimatedUsage{PromptTokens: prompt, InputTokens: input, OutputTokens: output, TotalTokens: input + output}, nil
 }
 
 func countTextTokens(model, text string) (int, error) {

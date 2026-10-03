@@ -769,7 +769,12 @@ export interface components {
             request_count: number;
             success_count: number;
             error_count: number;
+            /** @description Settled upstream-confirmed consumption; equals actual_tokens. Local estimates and unsettled diagnostic logs are excluded. */
             total_tokens: number;
+            /** @description Settled tokens confirmed by upstream usage (status=success or error_code=partial_actual_* excluding settlement_failed and pricing_error suffixes). */
+            actual_tokens: number;
+            /** @description Independent audit-only local estimates (status!=success and error_code=partial_estimated_*, including diagnostic suffixes). Never settled; excluded from total_tokens, cost, quota usage, rate-limit token consumption and channel balance deductions. */
+            estimated_tokens: number;
             total_cost: components["schemas"]["Money"];
             active_key_count: number;
         };
@@ -786,7 +791,12 @@ export interface components {
             request_count: number;
             success_count: number;
             error_count: number;
+            /** @description Settled upstream-confirmed consumption; equals actual_tokens. Local estimates and unsettled diagnostic logs are excluded. */
             total_tokens: number;
+            /** @description Settled tokens confirmed by upstream usage (status=success or error_code=partial_actual_* excluding settlement_failed and pricing_error suffixes). */
+            actual_tokens: number;
+            /** @description Independent audit-only local estimates (status!=success and error_code=partial_estimated_*, including diagnostic suffixes). Never settled; excluded from total_tokens, cost, quota usage, rate-limit token consumption and channel balance deductions. */
+            estimated_tokens: number;
             input_tokens: number;
             output_tokens: number;
             cached_input_tokens: number;
@@ -798,7 +808,12 @@ export interface components {
             request_count: number;
             success_count: number;
             error_count: number;
+            /** @description Settled upstream-confirmed consumption; equals actual_tokens. Local estimates and unsettled diagnostic logs are excluded. */
             total_tokens: number;
+            /** @description Settled tokens confirmed by upstream usage (status=success or error_code=partial_actual_* excluding settlement_failed and pricing_error suffixes). */
+            actual_tokens: number;
+            /** @description Independent audit-only local estimates (status!=success and error_code=partial_estimated_*, including diagnostic suffixes). Never settled; excluded from total_tokens, cost, quota usage, rate-limit token consumption and channel balance deductions. */
+            estimated_tokens: number;
             total_cost: components["schemas"]["Money"];
         };
         UsageAggregate: {
@@ -809,10 +824,16 @@ export interface components {
             request_count: number;
             success_count: number;
             error_count: number;
+            /** @description Settled upstream-confirmed consumption; equals actual_tokens. Local estimates and unsettled diagnostic logs are excluded. */
             total_tokens: number;
+            /** @description Settled tokens confirmed by upstream usage (status=success or error_code=partial_actual_* excluding settlement_failed and pricing_error suffixes). */
+            actual_tokens: number;
+            /** @description Independent audit-only local estimates (status!=success and error_code=partial_estimated_*, including diagnostic suffixes). Never settled; excluded from total_tokens, cost, quota usage, rate-limit token consumption and channel balance deductions. */
+            estimated_tokens: number;
             total_cost: components["schemas"]["Money"];
             duration_ms: number;
         };
+        /** @description Audit record. Token fields may retain unsettled diagnostic usage and are not aggregate consumption. Only success or partial_actual_* without pricing_error or settlement_failed suffixes is settled. All partial_estimated_* records are unsettled local estimates with zero cost and no quota usage, rate-limit token consumption or channel balance deduction. Historical records are not automatically corrected. */
         UsageLog: {
             id: number;
             request_id: string;

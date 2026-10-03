@@ -146,9 +146,13 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		// closes; remove it from the deferred release set.
 		probeLeaseID := probes[candidate.ChannelID]
 		delete(probes, candidate.ChannelID)
+		promptTokens := estimate.PromptTokens
+		if promptTokens <= 0 {
+			promptTokens = estimate.InputTokens
+		}
 		return ChatResponse{Status: resp.StatusCode, Stream: &completionStream{
 			service: a, body: resp.Body, ctx: ctx, requestID: requestID, auth: auth,
-			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID, rateReservationID: rateReservation.ID, estimatedPromptTokens: estimate.InputTokens, cancel: cancel, probeLeaseID: probeLeaseID,
+			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID, rateReservationID: rateReservation.ID, estimatedPromptTokens: promptTokens, cancel: cancel, probeLeaseID: probeLeaseID,
 		}}, nil
 	}
 
@@ -186,6 +190,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	a.recordChannelHealth(ctx, candidate.ChannelID, true, "")
 	cost, inputPrice, outputPrice, err := a.priceFor(ctx, candidate.ChannelID, candidate.UpstreamModel, usage)
 	if err != nil {
+		a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, "0.000000", "", "", durationMs, clientIP, "error", "pricing_error")
 		return ChatResponse{}, err
 	}
 
@@ -195,6 +200,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		reservationID: reservation.ID, rateReservationID: rateReservation.ID,
 		cost: cost, inputPrice: inputPrice, outputPrice: outputPrice, usage: usage,
 	}); err != nil {
+		a.logUsage(ctx, requestID+"_settlement_failed", auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, "0.000000", "", "", durationMs, clientIP, "error", "settlement_failed")
 		return ChatResponse{}, err
 	}
 	releaseReservation = false
@@ -212,7 +218,9 @@ func (a *Service) recordChannelHealth(ctx context.Context, channelID int, succes
 }
 
 func (a *Service) priceFor(ctx context.Context, channelID int, upstreamModel string, usage *Usage) (string, string, string, error) {
-	pricing, err := a.catalog.GetPricing(ctx, channelID, upstreamModel)
+	pricingCtx, cancel := detachedCtx(ctx, settleTimeout)
+	defer cancel()
+	pricing, err := a.catalog.GetPricing(pricingCtx, channelID, upstreamModel)
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
 			// Known behaviour: a channel+upstream model without pricing is served

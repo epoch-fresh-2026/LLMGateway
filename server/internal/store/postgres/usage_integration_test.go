@@ -89,7 +89,7 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	if overview.RequestCount != int64(2) || overview.SuccessCount != int64(1) || overview.ErrorCount != int64(1) {
 		t.Fatalf("unexpected overview: %+v", overview)
 	}
-	if overview.TotalCost != "0.003000" || overview.ActiveKeyCount != int64(1) {
+	if overview.TotalTokens != 100 || overview.ActualTokens != 100 || overview.EstimatedTokens != 0 || overview.TotalCost != "0.001000" || overview.ActiveKeyCount != int64(1) {
 		t.Fatalf("unexpected overview aggregates: %+v", overview)
 	}
 
@@ -101,7 +101,7 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 		t.Fatalf("daily total = %d, want 1", daily.Total)
 	}
 	day := daily.List[0]
-	if day.StatDate != "2026-09-16" || day.RequestCount != int64(2) || day.TotalCost != "0.003000" {
+	if day.StatDate != "2026-09-16" || day.RequestCount != int64(2) || day.TotalCost != "0.001000" {
 		t.Fatalf("unexpected day: %+v", day)
 	}
 
@@ -128,6 +128,129 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	}
 	if ttft.SampleCount != 3 || ttft.AverageMs != 266 || ttft.P50Ms != 200 || ttft.P95Ms != 500 || ttft.P99Ms != 500 {
 		t.Fatalf("unexpected TTFT stats: %+v", ttft)
+	}
+}
+
+func TestPGSettledTokenSeparation(t *testing.T) {
+	st := testStore(t)
+	testOwner(t, st)
+	ctx := context.Background()
+	for i, code := range []string{"", "partial_actual_upstream_stream_interrupted", "partial_estimated_upstream_stream_interrupted", "partial_estimated_settlement_failed", "pricing_error", "settlement_failed", "partial_actual_settlement_failed", "upstream_error", "partial_estimated_pricing_error", "partial_actual_pricing_error"} {
+		status := "error"
+		if i == 0 {
+			status = "success"
+		}
+		_, err := st.InsertUsageLog(ctx, domain.UsageLogInput{RequestID: "separation-" + code, UserID: intp(1), Model: "gpt", Status: status, ErrorCode: code, TotalTokens: (i + 1) * 100, InputTokens: (i + 1) * 80, OutputTokens: (i + 1) * 20, TotalCost: "0.001000"})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.pool.Exec(ctx, "UPDATE usage_logs SET created_at = '2026-09-16T10:00:00Z'"); err != nil {
+		t.Fatal(err)
+	}
+	check := func(total, actual, estimated int64, cost string) {
+		t.Helper()
+		if total != 300 || actual != 300 || estimated != 300 || total != actual || cost != "0.002000" {
+			t.Fatalf("consumption = %d/%d/%d %s", total, actual, estimated, cost)
+		}
+	}
+	start, end := "2026-09-16T00:00:00Z", "2026-09-17T00:00:00Z"
+	o, err := st.StatsOverview(ctx, 1, start, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(o.TotalTokens, o.ActualTokens, o.EstimatedTokens, o.TotalCost)
+	if o.RequestCount != 10 {
+		t.Fatal(o)
+	}
+	daily, err := st.StatsDaily(ctx, 1, "2026-09-16", "2026-09-16", 1, 100)
+	if err != nil || len(daily.List) != 1 {
+		t.Fatalf("daily: %+v %v", daily, err)
+	}
+	d := daily.List[0]
+	check(d.TotalTokens, d.ActualTokens, d.EstimatedTokens, d.TotalCost)
+	if d.InputTokens != 240 || d.OutputTokens != 60 {
+		t.Fatal(d)
+	}
+	channels, err := st.StatsChannels(ctx, 1, start, end)
+	if err != nil || len(channels.List) != 1 {
+		t.Fatalf("channels: %+v %v", channels, err)
+	}
+	c := channels.List[0]
+	check(c.TotalTokens, c.ActualTokens, c.EstimatedTokens, c.TotalCost)
+	for _, group := range []string{"user", "api_key", "model", "channel"} {
+		rows, err := st.AggregateUsage(ctx, 1, domain.UsageAggregateFilter{GroupBy: group, StartTime: start, EndTime: end, Page: 1, PageSize: 100})
+		if err != nil || len(rows.List) != 1 {
+			t.Fatalf("%s: %+v %v", group, rows, err)
+		}
+		r := rows.List[0]
+		check(r.TotalTokens, r.ActualTokens, r.EstimatedTokens, r.TotalCost)
+	}
+	logs, err := st.ListUsageLogs(ctx, 1, domain.UsageLogFilter{Status: "error", Page: 1, PageSize: 100})
+	if err != nil || len(logs.List) != 9 {
+		t.Fatalf("audit: %+v %v", logs, err)
+	}
+	found := false
+	for _, log := range logs.List {
+		if log.ErrorCode == "partial_estimated_settlement_failed" {
+			found = log.TotalTokens == 400
+		}
+	}
+	if !found {
+		t.Fatal("missing unsettled audit tokens")
+	}
+	count, err := st.CountTokensSince(ctx, domain.TokenCountFilter{UserID: 1, Since: start})
+	if err != nil || count != 300 {
+		t.Fatalf("rate tokens: %d %v", count, err)
+	}
+}
+
+func TestPGEstimatedUsageIsAuditOnly(t *testing.T) {
+	st := testStore(t)
+	testOwner(t, st)
+	ctx := context.Background()
+	_, err := st.InsertUsageLog(ctx, domain.UsageLogInput{RequestID: "estimated-only", UserID: intp(1), Model: "gpt", Status: "error", ErrorCode: "partial_estimated_upstream_stream_interrupted", TotalTokens: 100, InputTokens: 80, OutputTokens: 20, CachedInputTokens: 10, TotalCost: "1.000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, end := "1970-01-01T00:00:00Z", "2100-01-01T00:00:00Z"
+	check := func(total, actual, estimated int64, cost string) {
+		t.Helper()
+		if total != 0 || actual != 0 || estimated != 100 || cost != "0.000000" {
+			t.Fatalf("consumption = %d/%d/%d %s", total, actual, estimated, cost)
+		}
+	}
+	o, err := st.StatsOverview(ctx, 1, start, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(o.TotalTokens, o.ActualTokens, o.EstimatedTokens, o.TotalCost)
+	daily, err := st.StatsDaily(ctx, 1, "1970-01-01", "2100-01-01", 1, 100)
+	if err != nil || len(daily.List) != 1 {
+		t.Fatalf("daily: %+v %v", daily, err)
+	}
+	d := daily.List[0]
+	check(d.TotalTokens, d.ActualTokens, d.EstimatedTokens, d.TotalCost)
+	if d.InputTokens != 0 || d.OutputTokens != 0 || d.CachedInputTokens != 0 {
+		t.Fatal(d)
+	}
+	channels, err := st.StatsChannels(ctx, 1, start, end)
+	if err != nil || len(channels.List) != 1 {
+		t.Fatalf("channels: %+v %v", channels, err)
+	}
+	c := channels.List[0]
+	check(c.TotalTokens, c.ActualTokens, c.EstimatedTokens, c.TotalCost)
+	for _, group := range []string{"user", "api_key", "model", "channel"} {
+		rows, err := st.AggregateUsage(ctx, 1, domain.UsageAggregateFilter{GroupBy: group, StartTime: start, EndTime: end, Page: 1, PageSize: 100})
+		if err != nil || len(rows.List) != 1 {
+			t.Fatalf("%s: %+v %v", group, rows, err)
+		}
+		r := rows.List[0]
+		check(r.TotalTokens, r.ActualTokens, r.EstimatedTokens, r.TotalCost)
+	}
+	count, err := st.CountTokensSince(ctx, domain.TokenCountFilter{UserID: 1, Since: start})
+	if err != nil || count != 0 {
+		t.Fatalf("rate tokens: %d %v", count, err)
 	}
 }
 
@@ -178,7 +301,7 @@ func TestPGAggregateUsageFiltersByAPIKey(t *testing.T) {
 	}
 	for _, input := range []domain.UsageLogInput{
 		{RequestID: "aggregate-a-gpt-1", UserID: intp(1), APIKeyID: intp(keyA.ID), Model: "gpt", Status: "success", TotalTokens: 10, TotalCost: "0.001000", DurationMs: 20},
-		{RequestID: "aggregate-a-gpt-2", UserID: intp(1), APIKeyID: intp(keyA.ID), Model: "gpt", Status: "error", TotalTokens: 20, TotalCost: "0.002000", DurationMs: 30},
+		{RequestID: "aggregate-a-gpt-2", UserID: intp(1), APIKeyID: intp(keyA.ID), Model: "gpt", Status: "error", ErrorCode: "partial_actual_upstream_stream_interrupted", TotalTokens: 20, TotalCost: "0.002000", DurationMs: 30},
 		{RequestID: "aggregate-a-other", UserID: intp(1), APIKeyID: intp(keyA.ID), Model: "other", Status: "success", TotalTokens: 5, TotalCost: "0.003000", DurationMs: 10},
 		{RequestID: "aggregate-b-gpt", UserID: intp(1), APIKeyID: intp(keyB.ID), Model: "gpt", Status: "success", TotalTokens: 999, TotalCost: "9.000000", DurationMs: 99},
 	} {

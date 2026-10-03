@@ -94,7 +94,7 @@ func TestUsageLogsAndStats(t *testing.T) {
 	if ov["request_count"].(float64) != 2 || ov["success_count"].(float64) != 1 || ov["error_count"].(float64) != 1 {
 		t.Fatalf("unexpected overview: %+v", ov)
 	}
-	if ov["total_tokens"].(float64) != 300 || ov["total_cost"] != "0.003000" || ov["active_key_count"].(float64) != 1 {
+	if ov["total_tokens"].(float64) != 100 || ov["actual_tokens"].(float64) != 100 || ov["estimated_tokens"].(float64) != 0 || ov["total_cost"] != "0.001000" || ov["active_key_count"].(float64) != 1 {
 		t.Fatalf("unexpected overview aggregates: %+v", ov)
 	}
 
@@ -104,7 +104,7 @@ func TestUsageLogsAndStats(t *testing.T) {
 		t.Fatalf("daily total = %+v", dailyData)
 	}
 	day := dailyData["list"].([]any)[0].(map[string]any)
-	if day["request_count"].(float64) != 2 || day["total_cost"] != "0.003000" {
+	if day["request_count"].(float64) != 2 || day["total_tokens"].(float64) != 100 || day["actual_tokens"].(float64) != 100 || day["estimated_tokens"].(float64) != 0 || day["total_cost"] != "0.001000" {
 		t.Fatalf("unexpected day: %+v", day)
 	}
 
@@ -114,8 +114,91 @@ func TestUsageLogsAndStats(t *testing.T) {
 		t.Fatalf("channels len = %d, want 1", len(channelList))
 	}
 	channel := channelList[0].(map[string]any)
-	if channel["channel_id"].(float64) != 1 || channel["request_count"].(float64) != 2 {
+	if channel["channel_id"].(float64) != 1 || channel["request_count"].(float64) != 2 || channel["total_tokens"].(float64) != 100 || channel["actual_tokens"].(float64) != 100 || channel["estimated_tokens"].(float64) != 0 || channel["total_cost"] != "0.001000" {
 		t.Fatalf("unexpected channel stat: %+v", channel)
+	}
+}
+
+func TestUsageSettledErrorCodeContract(t *testing.T) {
+	handler, st := newUsageTestHandler(t)
+	for i, code := range []string{"", "partial_actual_upstream_stream_interrupted", "partial_estimated_upstream_stream_interrupted", "partial_estimated_settlement_failed", "partial_actual_settlement_failed", "partial_estimated_pricing_error", "partial_actual_pricing_error", "pricing_error", "settlement_failed", "upstream_error"} {
+		status := "error"
+		if i == 0 {
+			status = "success"
+		}
+		_, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "contract-" + code, UserID: intPtr(1), APIKeyID: intPtr(1), ChannelID: intPtr(1), Model: "gpt", Status: status, ErrorCode: code, TotalTokens: (i + 1) * 100, TotalCost: "0.001000"})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{"/admin/stats/overview", "/admin/stats/daily", "/admin/stats/channels", "/admin/stats/usage?group_by=user", "/admin/stats/usage?group_by=api_key", "/admin/stats/usage?group_by=model", "/admin/stats/usage?group_by=channel"} {
+		data := adminDo(t, handler, http.MethodGet, path, nil)["data"].(map[string]any)
+		if path != "/admin/stats/overview" {
+			list := data["list"].([]any)
+			if len(list) != 1 {
+				t.Fatalf("%s: %+v", path, data)
+			}
+			data = list[0].(map[string]any)
+		}
+		for field, want := range map[string]float64{"request_count": 10, "success_count": 1, "error_count": 9, "total_tokens": 300, "actual_tokens": 300, "estimated_tokens": 300} {
+			if data[field] != want {
+				t.Fatalf("%s %s = %v, want %v", path, field, data[field], want)
+			}
+		}
+		if data["total_cost"] != "0.002000" {
+			t.Fatalf("%s: %+v", path, data)
+		}
+	}
+	logs := adminDo(t, handler, http.MethodGet, "/admin/usage-logs?status=error&page_size=100", nil)["data"].(map[string]any)
+	if logs["total"] != float64(9) {
+		t.Fatal(logs)
+	}
+	found := false
+	for _, item := range logs["list"].([]any) {
+		log := item.(map[string]any)
+		if log["error_code"] == "partial_estimated_settlement_failed" {
+			found = log["status"] == "error" && log["total_tokens"] == float64(400)
+		}
+	}
+	if !found {
+		t.Fatal("missing unsettled audit tokens")
+	}
+}
+
+func TestUsageEstimatedOnlyContract(t *testing.T) {
+	handler, st := newUsageTestHandler(t)
+	_, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "estimated-only", UserID: intPtr(1), APIKeyID: intPtr(1), ChannelID: intPtr(1), Model: "gpt", Status: "error", ErrorCode: "partial_estimated_client_canceled", TotalTokens: 100, InputTokens: 80, OutputTokens: 20, CachedInputTokens: 10, TotalCost: "1.000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/admin/stats/overview", "/admin/stats/daily", "/admin/stats/channels", "/admin/stats/usage?group_by=user", "/admin/stats/usage?group_by=api_key", "/admin/stats/usage?group_by=model", "/admin/stats/usage?group_by=channel"} {
+		data := adminDo(t, handler, http.MethodGet, path, nil)["data"].(map[string]any)
+		if path != "/admin/stats/overview" {
+			list := data["list"].([]any)
+			if len(list) != 1 {
+				t.Fatalf("%s: %+v", path, data)
+			}
+			data = list[0].(map[string]any)
+		}
+		for field, want := range map[string]float64{"request_count": 1, "success_count": 0, "error_count": 1, "total_tokens": 0, "actual_tokens": 0, "estimated_tokens": 100} {
+			if data[field] != want {
+				t.Fatalf("%s %s = %v, want %v", path, field, data[field], want)
+			}
+		}
+		if data["total_cost"] != "0.000000" {
+			t.Fatalf("%s: %+v", path, data)
+		}
+		if path == "/admin/stats/daily" {
+			for _, field := range []string{"input_tokens", "output_tokens", "cached_input_tokens"} {
+				if data[field] != float64(0) {
+					t.Fatalf("%s: %+v", field, data)
+				}
+			}
+		}
+	}
+	count, err := st.CountTokensSince(context.Background(), domain.TokenCountFilter{UserID: 1, Since: "1970-01-01T00:00:00Z"})
+	if err != nil || count != 0 {
+		t.Fatalf("rate tokens: %d %v", count, err)
 	}
 }
 
@@ -184,7 +267,7 @@ func TestUsageLogsFilterAndAggregateByAPIKey(t *testing.T) {
 		t.Fatalf("model aggregation = %+v", modelData)
 	}
 	model := modelData["list"].([]any)[0].(map[string]any)
-	if model["model"] != "gpt" || model["request_count"].(float64) != 2 || model["success_count"].(float64) != 1 || model["error_count"].(float64) != 1 || model["total_tokens"].(float64) != 150 || model["total_cost"] != "0.003000" || model["duration_ms"].(float64) != 100 {
+	if model["model"] != "gpt" || model["request_count"].(float64) != 2 || model["success_count"].(float64) != 1 || model["error_count"].(float64) != 1 || model["total_tokens"].(float64) != 100 || model["actual_tokens"].(float64) != 100 || model["estimated_tokens"].(float64) != 0 || model["total_cost"] != "0.001000" || model["duration_ms"].(float64) != 100 {
 		t.Fatalf("gpt aggregation = %+v", model)
 	}
 
@@ -194,7 +277,7 @@ func TestUsageLogsFilterAndAggregateByAPIKey(t *testing.T) {
 		t.Fatalf("channel aggregation = %+v", channelData)
 	}
 	byUser := adminDo(t, handler, http.MethodGet, "/admin/stats/usage?group_by=user&api_key_id=10", nil)
-	if row := byUser["data"].(map[string]any)["list"].([]any)[0].(map[string]any); row["user_id"].(float64) != 1 || row["request_count"].(float64) != 3 || row["total_tokens"].(float64) != 180 {
+	if row := byUser["data"].(map[string]any)["list"].([]any)[0].(map[string]any); row["user_id"].(float64) != 1 || row["request_count"].(float64) != 3 || row["total_tokens"].(float64) != 130 || row["actual_tokens"].(float64) != 130 || row["estimated_tokens"].(float64) != 0 || row["total_cost"] != "0.004000" {
 		t.Fatalf("user aggregation = %+v", row)
 	}
 	byKey := adminDo(t, handler, http.MethodGet, "/admin/stats/usage?group_by=api_key&page=1&page_size=1", nil)

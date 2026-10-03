@@ -53,7 +53,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - sqlc 查询写在 `server/db/queries/*.sql`，schema 写在 `server/db/migrations/*.sql`，生成代码输出到 `server/internal/db/sqlc`。
 - 不要手改 `server/internal/db/sqlc` 生成文件；修改 SQL 后运行 `sqlc generate`。
 - 初始 schema 覆盖渠道、模型映射、定价、用户（凭据）、Key、限流和用量日志；不含平台计费、余额、用户状态或分组，后续 issue 应优先扩展现有表而不是新建重复概念。
-- 统计接口（overview/daily/channels）在 `usage_logs` 上实时聚合，按 UTC 自然日分组；不存在 `daily_usage_stats` 表，因其未被使用且复合主键无法表达全局日汇总。
+- 统计接口（overview/daily/channels/usage）在 `usage_logs` 上实时聚合，按完成时写入的 `created_at` 过滤，daily 按 UTC 自然日分组；overview/channels 使用 `[start_time,end_time)` 半开范围。不存在 `daily_usage_stats` 表。Token/费用采用已结算口径：`actual_tokens` 为 success 与已结算 `partial_actual_*` 的实际 usage，`total_tokens = actual_tokens`；`estimated_tokens` 独立汇总所有 error 状态的 `partial_estimated_*` 审计估算（包括诊断后缀），不计 total、cost、quota used、限流 Token 消耗或渠道余额扣减；daily 的 input/output/cached 与所有统计的 cost 使用同一集合。定价/结算失败（含 partial 前缀）只审计，不计消耗；部分结算仍保持 error 状态并计入错误数。历史记录不自动修复，本次调整不创建迁移或补数据。
 - 进程启动时建立 pgxpool 连接、执行迁移并装配 PostgreSQL store，不提供无数据库运行模式。
 - PostgreSQL store 只实现持久化原语（CRUD/lock/query）与事务边界；渠道/健康、凭据/Key、配额、限流等规则与编排位于各自业务模块的 `Server`，跨聚合结算编排位于 `proxy`。
 - 业务模块通过自身 `Port` 读取，通过模块自有的 `Tx`/`TxManager`（`InTx(ctx, func(Tx) error)`）在事务内编排写入；Store 不实现多步流程或业务判定。事务管理器以每模块一个适配器类型实现，经 `httpapi.Port` 的 `AccountsTx()`、`CatalogTx()`、`QuotaTx()`、`SettlementTx()` 注入。
@@ -127,11 +127,12 @@ var _ catalog.Port = (*postgres.Store)(nil)
 - 路由候选按 `priority` 越大越优先；同一 API Key 使用同一 public model 时，在最高优先级候选组内按 `APIKeyID + model` 稳定哈希结合 `weight` 选择粘性首选渠道。熔断渠道和余额低于全局 `CHANNEL_MIN_ROUTE_BALANCE` 的计费渠道被排除，未设置余额的渠道不受该阈值影响。首选渠道失败时仍按本次请求的候选顺序故障切换；未设置或设置为 `0` 时仍排除非正余额渠道。
 - 计费：缓存 token 已包含在 `prompt_tokens` 中，仅按 `(prompt_tokens - cached_tokens)` 计输入价，缓存部分计缓存价，避免重复计费。
 - 成功结算：非流式 chat completion 成功后通过 store 级结算端口统一处理可扣费渠道余额扣减（近似记账）、配额结算与 success usage log；不再对用户计费。PostgreSQL 实现在单一事务中提交；`last_used_at` 仍为成功响应后的 best-effort 更新。
-- 流式结算：`stream=true` 时网关强制向上游请求 `stream_options.include_usage=true`，逐事件重写 public model 并 flush；首个合法 JSON data 帧记录 TTFT。收到 usage 与 `[DONE]` 时按上游实际 usage 一次原子结算。中途断流、客户端取消或流协议错误时，仅对已成功写入下游的文本 delta 使用本地 tokenizer 估算 completion token，并与请求 prompt 估算一起结算；日志以 `partial_estimated_*` 错误码标识该估算口径。没有已转发文本、缺 usage 或本地估算失败时不扣费；客户端取消会传播到上游且不计渠道失败。
-- 上游故障切换：一次请求只查询一次健康路由候选，proxy 在内存中按最高优先级组的权重选择首选，并以 `channel_id` 去重保留后备。仅传输错误、429、401/402/403 和 5xx 可切换；流式 2xx 后不再切换。`UPSTREAM_REQUEST_TIMEOUT` 控制请求总 deadline，`UPSTREAM_MAX_ATTEMPTS` 控制最大候选尝试数。
-- 运行时限流：请求预检按 global -> user -> api_key -> model 顺序检查 RPM/TPM/concurrency，路由后检查 channel；`rpm`/`tpm` 固定按 60 秒窗口统计（`rpm` 滑窗近似、`tpm` 尾部求和），`concurrency` 按活跃 reservation 瞬时判定，不再有可配置的 `window_seconds`；日 token 预算不再由限流承担（`tpd` 指标已废弃，改由配额模块支持）；Token 预留使用输入 Token 加 `max_tokens` 的保守估算，完成后按实际 usage 结算。限流 reservation 与计数器独立持久化，过期记录由 reaper 清理。
-- 周期配额：所有边界使用 UTC，日桶为 `[00:00, 次日 00:00)`，月桶为 `[当月 1 日, 下月 1 日)`。请求选定最终渠道后，使用内嵌 tokenizer 估算输入 token，并按 `max_completion_tokens > max_tokens > QUOTA_DEFAULT_MAX_TOKENS` 预留最大输出 token；费用按最终渠道价格预留。用户 policy 与 Key policy 必须全部满足。
-- 配额持久化：`quota_buckets` 原子维护 `used_*` 与 `reserved_*`，`quota_reservations`/`quota_reservation_items` 保存请求级占用。正常失败主动释放，申请新额度时小批回收相关过期占用，进程后台 reaper 使用 `FOR UPDATE SKIP LOCKED` 兜底。成功结算在同一 PostgreSQL 事务中将 reserved 转为实际 used，并同时完成渠道近似余额扣减和 usage log。
+- 流式结算：`stream=true` 强制上游 `stream_options.include_usage=true`，逐事件重写 public model 并 flush；首个合法 JSON data 帧记录 TTFT。usage 与 `[DONE]` 都收到时正常按实际 usage 原子结算。异常结束（含缺 DONE、超时、协议错误、客户端断开）优先使用已收到的实际 usage，记为 `partial_actual_*`，不要求已写出文本；只有没有 usage 时才使用合理的 `PromptTokens` tokenizer estimate 加确认成功 emit 的文本 Token 记录零费用审计，记为 `partial_estimated_*`，始终未结算并释放 quota 与限流 reservation。没有已写出文本或估算失败不扣费；正常解析到 DONE 但缺 usage 则报 `upstream_usage_missing`，不补估算。部分结算日志保持 `status=error`。定价/结算失败日志（含 partial 前缀）只审计、不进消耗；结算失败事务整体回滚。客户端取消传播到上游且不计渠道失败，定价/结算使用独立且有限时的 context。
+- 上游故障切换：一次请求只查询一次健康路由候选，proxy 在内存中按最高优先级组的权重选择首选，并以 `channel_id` 去重保留后备。仅传输错误、429、401/402/403 和 5xx 可切换；流式 2xx 后不再切换。`UPSTREAM_REQUEST_TIMEOUT` 默认 600 秒（兼容旧 `UPSTREAM_TIMEOUT_SECONDS`），控制所有尝试和流式读取共享的请求总 deadline；`UPSTREAM_MAX_ATTEMPTS` 默认 3，控制最大候选尝试数。quota TTL 默认 timeout + 60 秒（默认 660 秒），配置层和 proxy 均将过小值提升到该下限。
+- 运行时限流：请求预检按 global -> user -> api_key -> model 顺序检查 RPM/TPM/concurrency，路由后检查 channel；`rpm`/`tpm` 固定按 60 秒窗口统计（`rpm` 滑窗近似、`tpm` 尾部求和），`concurrency` 按活跃 reservation 瞬时判定，不再有可配置的 `window_seconds`；日 token 预算不再由限流承担（`tpd` 指标已废弃，改由配额模块支持）；Token 预留使用保守 `InputTokens` 加最大输出预留，完成后只按上游确认 usage 结算 Token 消耗，无 usage 时释放 reservation，估算只用于零费用审计。限流 reservation 与计数器独立持久化，过期记录由 reaper 清理。
+- 周期配额：所有边界使用 UTC，日桶为 `[00:00, 次日 00:00)`，月桶为 `[当月 1 日, 下月 1 日)`。请求开始阶段选定首选候选后只申请一次预留，费用按该候选价格预留；故障切换后的结算使用实际最终渠道价格。用户与 Key 当时启用的 policy 必须全部满足，reservation 保存该时刻的 bucket，结算不按完成时间重选桶；无启用策略时不创建占用，不追溯补记。stats 按完成时间记录，跨周期、策略生命周期变化等情况下不保证与 quota 绝对相等。
+- Token 预留与消耗估算分离：OpenAI adapter 的 `PromptTokens` 为完整请求 JSON 的 tokenizer estimate + 16（未知模型回退 `cl100k_base`），`InputTokens` 则取该结果与 `len(body)+16` 的较大值；两者再各加每个 image_url/input_audio 标记 8192 的媒体预算。输出按 `max_completion_tokens > max_tokens > QUOTA_DEFAULT_MAX_TOKENS` 并乘 `n` 预留。限流/配额准入使用保守 `InputTokens + OutputTokens`，无 usage 的流式审计使用合理 `PromptTokens`，不能用字节上界替代实际消耗。
+- 配额持久化：无上游 usage 时释放的是保守准入 reservation，不存在“释放 usage”，usage log 仅作为审计事实保留。`quota_buckets` 原子维护 `used_*` 与 `reserved_*`，`quota_reservations`/`quota_reservation_items` 保存请求级占用。正常失败主动释放，申请新额度时小批回收相关过期占用，进程后台 reaper 使用 `FOR UPDATE SKIP LOCKED` 兜底。成功结算在同一 PostgreSQL 事务中将 reserved 转为实际 used，并同时完成渠道近似余额扣减和 usage log。
 - 限流：`rpm` + `reject` 规则基于 `usage_logs` 统计最近 1 分钟请求次数。`global`/`user`/`api_key` 保持按当前用户/Key 计数；`model` 规则额外按 public model 精确过滤；`channel` 规则在路由选中最终渠道后、调用上游前评估，超限直接返回 429 且写入 `error_code=rate_limited` 的 error usage log，不自动改选其他渠道。
 - 熔断：每个渠道有 `channel_health` 状态（closed/open/half-open）。判定取并集：确定性失败（上游 401/402/403）或 half-open 探测失败立即 open；窗口错误率/超时率超阈值（默认窗口 60s、最小样本 10、错误率 50%、超时率 50%）时 open；低流量下回退到连续失败阈值（默认 5）。窗口统计使用固定 10s 分桶的 `channel_health_buckets`，每次尝试（成功或渠道可归因失败）在同一健康事务内 upsert 并聚合，bucket 由后台 reaper 按保留期清理。冷却（默认 30s）后惰性转为 half-open 允许探测，探测成功回 closed、失败回 open。half-open 探测通过 `channel_breaker_probes` 租约实现单飞：一次请求只放行一个探测，请求返回（或流关闭）时按 `lease_id` 条件释放，租约到期仅作崩溃/超时兜底。每个用户只有一套熔断策略，统一应用于本人所有渠道（含新建渠道）；阈值解析顺序仅为进程默认值（环境变量）→ 用户策略（`user_breaker_configs`，管理端 `/admin/breaker-config`），未配置用户策略时回退进程默认值；连续失败阈值仅使用进程默认值。用户策略变更会清空解析缓存。策略共享不代表运行状态共享：各渠道的窗口计数、连续失败计数、`channel_health` 状态与 `channel_breaker_probes` 探测租约均按渠道独立，不跨渠道累计或互相占用。渠道级配置接口已移除，旧渠道策略直接废弃，由迁移 DROP `channel_breaker_configs` 表，不合并或迁入用户策略。`ListRouteCandidates` 使用所属用户的生效 cooldown，按各渠道独立的 opened_at 排除仍在冷却期内的 open 渠道；当无可用渠道（无映射或全部 open）时返回 `503 no_healthy_channel`（错误码由 `no_available_channel` 变更而来，同时覆盖这两种情况）。失败分类仅计入传输错误、上游 429/401/403/402 与 5xx，其余 4xx 透传且不计渠道失败。健康记录为 best-effort。
 - 手动解除熔断：`catalog.ResetChannelHealth` 在同一模块自有 `Tx` 中依次调用 `DeleteChannelProbe`、`DeleteChannelHealthBuckets`、`ResetChannelHealthState`；PostgreSQL 每个原语只执行一条持久化 SQL，不编排三表。仅清除指定渠道的探测租约和窗口 buckets，已有 `channel_health` 更新为 `state=closed`、`consecutive_failures=0`、`opened_at=NULL`、`updated_at=now()`，保留记录及累计 `success_count`/`failure_count`。缺记录时不插入，重复调用幂等，其他渠道不受影响。
@@ -158,7 +159,9 @@ DATABASE_URL=postgres://llmgateway:llmgateway_dev@localhost:5432/llmgateway?sslm
 CHANNEL_KEY_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
 MIGRATIONS_DIR=db/migrations
 QUOTA_DEFAULT_MAX_TOKENS=4096
-QUOTA_RESERVATION_TTL_SECONDS=120
+UPSTREAM_REQUEST_TIMEOUT=600
+UPSTREAM_MAX_ATTEMPTS=3
+QUOTA_RESERVATION_TTL_SECONDS=660
 QUOTA_REAPER_INTERVAL_SECONDS=30
 QUOTA_REAPER_BATCH_SIZE=100
 CHANNEL_BREAKER_FAILURE_THRESHOLD=5
@@ -174,7 +177,7 @@ REGISTRATION_ENABLED=true
 BCRYPT_COST=10
 ```
 
-路径均相对于运行目录 `server/`；`MIGRATIONS_DIR` 默认 `db/migrations`。`SESSION_TTL_SECONDS`（默认 7 天）、`SESSION_COOKIE_SECURE`（默认 `true`，纯 HTTP 本地部署设为 `false`）、`REGISTRATION_ENABLED`（默认 `true`）与 `BCRYPT_COST`（默认 10，范围 4–31）为安全相关配置，值非法时 `config.Load` 返回错误使进程启动失败。生产环境由独立 nginx 容器托管前端并将 `/admin`、`/v1` 和 `/healthz` 反向代理到 Go 网关。
+路径均相对于运行目录 `server/`；`MIGRATIONS_DIR` 默认 `db/migrations`。`SESSION_TTL_SECONDS`（默认 7 天）、`SESSION_COOKIE_SECURE`（默认 `true`，纯 HTTP 本地部署设为 `false`）、`REGISTRATION_ENABLED`（默认 `true`）与 `BCRYPT_COST`（默认 10，范围 4–31）为安全相关配置，值非法时 `config.Load` 返回错误使进程启动失败。生产环境由独立 nginx 容器托管前端并将 `/admin`、`/v1` 和 `/healthz` 反向代理到 Go 网关。普通与 TLS 示例 nginx 的 `/v1` 均设置 `proxy_read_timeout 600s`、`proxy_send_timeout 600s` 并关闭响应缓冲；这些是相邻读写操作等待时限，不是请求总 deadline。提高网关 timeout 时需同步检查 nginx 配置。
 
 启动前必须设置 PostgreSQL URL 和 16/24/32 字节的渠道密钥加密密钥：
 

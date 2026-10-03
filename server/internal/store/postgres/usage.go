@@ -150,7 +150,7 @@ func (s *Store) StatsOverview(ctx context.Context, ownerUserID int, startTime, e
 	if err != nil {
 		return domain.StatsOverviewDTO{}, mapError(err)
 	}
-	return domain.StatsOverviewDTO{RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, ActiveKeyCount: row.ActiveKeyCount}, nil
+	return domain.StatsOverviewDTO{RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, ActualTokens: row.ActualTokens, EstimatedTokens: row.EstimatedTokens, TotalCost: row.TotalCost, ActiveKeyCount: row.ActiveKeyCount}, nil
 }
 
 func (s *Store) StatsDaily(ctx context.Context, ownerUserID int, dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error) {
@@ -170,7 +170,7 @@ func (s *Store) StatsDaily(ctx context.Context, ownerUserID int, dateFrom, dateT
 
 	list := []domain.StatsDailyDTO{}
 	for _, row := range rows {
-		list = append(list, domain.StatsDailyDTO{StatDate: row.StatDate.Time.UTC().Format("2006-01-02"), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, CachedInputTokens: row.CachedInputTokens, TotalCost: row.TotalCost})
+		list = append(list, domain.StatsDailyDTO{StatDate: row.StatDate.Time.UTC().Format("2006-01-02"), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, ActualTokens: row.ActualTokens, EstimatedTokens: row.EstimatedTokens, InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, CachedInputTokens: row.CachedInputTokens, TotalCost: row.TotalCost})
 	}
 	return domain.ListResponse[domain.StatsDailyDTO]{List: list, Total: int(total)}, nil
 }
@@ -194,7 +194,7 @@ func (s *Store) StatsChannels(ctx context.Context, ownerUserID int, startTime, e
 		if row.ChannelID.Valid {
 			channelID = int(row.ChannelID.Int64)
 		}
-		list = append(list, domain.StatsChannelDTO{ChannelID: channelID, ChannelName: row.ChannelName, RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost})
+		list = append(list, domain.StatsChannelDTO{ChannelID: channelID, ChannelName: row.ChannelName, RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, ActualTokens: row.ActualTokens, EstimatedTokens: row.EstimatedTokens, TotalCost: row.TotalCost})
 	}
 	return domain.ListResponse[domain.StatsChannelDTO]{List: list}, nil
 }
@@ -233,7 +233,7 @@ func (s *Store) AggregateUsage(ctx context.Context, ownerUserID int, filter doma
 			return domain.ListResponse[domain.UsageAggregateDTO]{}, mapError(err)
 		}
 		for _, row := range rows {
-			list = append(list, domain.UsageAggregateDTO{UserID: optionalInt(row.UserID), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
+			list = append(list, domain.UsageAggregateDTO{UserID: optionalInt(row.UserID), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, ActualTokens: row.ActualTokens, EstimatedTokens: row.EstimatedTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
 			total = int(row.AggregateTotal)
 		}
 	case "api_key":
@@ -242,7 +242,7 @@ func (s *Store) AggregateUsage(ctx context.Context, ownerUserID int, filter doma
 			return domain.ListResponse[domain.UsageAggregateDTO]{}, mapError(err)
 		}
 		for _, row := range rows {
-			list = append(list, domain.UsageAggregateDTO{APIKeyID: optionalInt(row.ApiKeyID), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
+			list = append(list, domain.UsageAggregateDTO{APIKeyID: optionalInt(row.ApiKeyID), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, ActualTokens: row.ActualTokens, EstimatedTokens: row.EstimatedTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
 			total = int(row.AggregateTotal)
 		}
 	case "model":
@@ -251,7 +251,7 @@ func (s *Store) AggregateUsage(ctx context.Context, ownerUserID int, filter doma
 			return domain.ListResponse[domain.UsageAggregateDTO]{}, mapError(err)
 		}
 		for _, row := range rows {
-			list = append(list, domain.UsageAggregateDTO{Model: row.Model, RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
+			list = append(list, domain.UsageAggregateDTO{Model: row.Model, RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, ActualTokens: row.ActualTokens, EstimatedTokens: row.EstimatedTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
 			total = int(row.AggregateTotal)
 		}
 	case "channel":
@@ -260,7 +260,7 @@ func (s *Store) AggregateUsage(ctx context.Context, ownerUserID int, filter doma
 			return domain.ListResponse[domain.UsageAggregateDTO]{}, mapError(err)
 		}
 		for _, row := range rows {
-			list = append(list, domain.UsageAggregateDTO{ChannelID: optionalInt(row.ChannelID), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
+			list = append(list, domain.UsageAggregateDTO{ChannelID: optionalInt(row.ChannelID), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, ActualTokens: row.ActualTokens, EstimatedTokens: row.EstimatedTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
 			total = int(row.AggregateTotal)
 		}
 	default:

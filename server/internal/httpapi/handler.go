@@ -196,11 +196,11 @@ func NewServer(st Port, opts ...Option) *Server {
 
 func resolveOptions(opts ...Option) options {
 	settings := options{
-		upstreamTimeout:       60 * time.Second,
+		upstreamTimeout:       600 * time.Second,
 		randIntN:              rand.Intn,
 		now:                   time.Now,
 		quotaDefaultMaxTokens: 4096,
-		quotaReservationTTL:   2 * time.Minute,
+		quotaReservationTTL:   660 * time.Second,
 		upstreamMaxAttempts:   3,
 	}
 	for _, opt := range opts {

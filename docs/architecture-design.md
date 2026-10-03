@@ -68,7 +68,9 @@
 
 ### 3.2 总时限和取消传播
 
-请求使用一个总 `context` deadline，所有上游 HTTP 请求都从该 context 派生。客户端断开、服务关闭或总时限到期时：取消当前上游请求、不再尝试后续渠道、尚未结算的 quota 和 rate-limit reservation 释放或由 reaper 回收。
+请求使用一个总 `context` deadline，`UPSTREAM_REQUEST_TIMEOUT` 默认 600 秒，所有候选尝试与流式读取共享该时限，而不是每次尝试重新计时。客户端断开、服务关闭或总时限到期时，取消当前上游请求、不再尝试后续渠道；已有上游 usage 时先尝试结算（见 4.3），无 usage 的估算交付仅写零费用审计，未结算的 quota 和 rate-limit reservation 释放或由 reaper 回收。
+
+quota reservation TTL 默认 `timeout + 60` 秒（默认 660 秒），配置低于该下限会被提升；配置层和 proxy 配置入口均保证 `TTL >= timeout + 60`。普通与 TLS 示例 nginx 的 `/v1` 均设置 `proxy_read_timeout 600s`、`proxy_send_timeout 600s` 并关闭响应缓冲。这两项是相邻读/写操作的等待时限，不等于网关的请求总 deadline；调整网关 timeout 时应同步检查入口配置。
 
 总时限比无限重试更重要。没有总时限时，多渠道故障切换可能把一个下游请求拖成多个上游慢请求，最终耗尽连接、goroutine 和数据库连接池。
 
@@ -76,7 +78,7 @@
 
 流式请求分成两个阶段：上游返回 2xx 但尚未向下游写出任何数据，以及已经成功向下游写出 SSE 数据。第二阶段不能切换渠道，因为已发送内容无法撤回；重新请求会导致重复内容、上下文不连续、无法证明续接点和用量重复。
 
-因此中途断流会结束当前 SSE 并记录渠道故障（客户端取消不计为渠道故障），并对已成功写入下游的文本按估算口径结算（见 4.3）。
+当前实现从流式上游返回 2xx 起就不再切换渠道，而不仅在首次写出后才禁止切换。中途断流会结束当前 SSE 并记录渠道故障（客户端取消不计为渠道故障）；部分结算优先使用已收到的上游实际 usage，只有无 usage 时才估算确认写出的文本（见 4.3）。
 
 ## 4. 用量记录与结算
 
@@ -90,7 +92,7 @@
 申请 reservation -> 执行请求 -> 成功结算或失败释放 -> 过期回收
 ```
 
-周期配额使用 PostgreSQL bucket 和 reservation；运行时限流使用独立的 rate-limit reservation。金额使用定点整数/NUMERIC，Token 使用整数，数据库事务负责行锁和原子更新。
+周期配额仍按保守估算预留；没有上游 usage 时释放的是 reservation，不存在“释放 usage”，usage log 是审计事实。周期配额使用 PostgreSQL bucket 和 reservation；运行时限流使用独立的 rate-limit reservation。金额使用定点整数/NUMERIC，Token 使用整数，数据库事务负责行锁和原子更新。
 
 ### 4.2 成功结算事务
 
@@ -108,20 +110,26 @@
 
 ### 4.3 失败请求和部分结算
 
-失败请求仍可以写 error usage log，用于审计和渠道诊断。正常结束必须同时收到上游 usage 和 `[DONE]`，按上游实际 usage 结算。中途断流、协议错误或客户端取消时，只对已经成功写入下游的文本 delta 进行本地 tokenizer 估算：
+失败请求仍可以写 error usage log，用于审计和渠道诊断。流式正常结束必须同时收到上游 usage 和 `[DONE]`，按实际 usage 结算。异常结束（断流、缺 DONE、超时、协议错误或客户端断开）的部分结算按以下优先级执行：
 
-- prompt 使用请求预检时的输入 Token 估算。
-- completion 只累计成功 `emit` 的文本内容。
-- 本地 tokenizer 失败或没有成功转发文本时不记录计费用量。
-- usage log 以 `partial_estimated_*` 错误码标记估算口径。
+- 已收到 usage：优先按上游实际 Token（含缓存）与费用结算，即使缺 DONE 或没有成功写出文本；日志使用 `partial_actual_*`。
+- 没有 usage：只有存在确认成功 `emit` 的文本且 tokenizer 能得到正数 completion Token 时，才以合理 prompt estimate + 已写出文本 Token 记录零费用审计；日志使用 `partial_estimated_*`，始终未结算，不计 total、cost、quota used、限流 Token 消耗或渠道余额扣减。无 usage 时释放 quota 和限流 reservation。缓存 Token 不凭空推断。
+- prompt 使用 `EstimatedUsage.PromptTokens`，是完整请求 JSON 的 tokenizer estimate + 16 及媒体预算；保守准入的 `InputTokens` 还采用请求字节数 + 16 的上界，两者不能混用。每个 image_url/input_audio 标记加 8192 的媒体预算，未知模型回退 `cl100k_base`。最大输出预留按 `max_completion_tokens > max_tokens > QUOTA_DEFAULT_MAX_TOKENS` 并乘 `n`；准入总量为 `InputTokens + OutputTokens`。
+- 没有确认写出的文本或本地估算失败时不扣费；正常解析到 DONE 但缺 usage 仍报 `upstream_usage_missing`，不以本地估算补齐。
+- 部分结算使用与成功结算相同的原子事务，但日志保持 `status=error`；有消耗不意味着请求成功。定价与结算使用独立且有限时的 context，客户端取消不直接取消记账。
+- 定价/结算失败日志（`pricing_error`、`settlement_failed` 及对应 partial 前缀）可保留 usage 作为审计证据，但不计入 Token/费用消耗；结算失败回滚全部写账变化。
+
+历史记录不会自动修复、重新分类或补结算；本次口径调整不创建迁移或补数据。
 
 ### 4.4 防止重复成功日志
 
-`usage_logs.request_id` 有唯一约束，结算会检查 reservation 状态和 request identity。重复调用同一个结算请求不会再次成功写账。请求内 failover 使用同一个 request ID，最终只有成功候选进入结算。
+`usage_logs.request_id` 有唯一约束，结算会检查 reservation 状态和 request identity。重复调用同一个结算请求不会再次成功写账。请求内 failover 使用同一个 request ID，最终候选按成功或符合条件的部分用量进入结算。
 
 ### 4.5 统计接口的取舍
 
-管理端统计从 `usage_logs` 实时聚合并按用户过滤，而不是维护另一份可能漂移的统计表。优点是统计可重算、可审计；缺点是日志量大后聚合查询会成为读压力。`active_key_count` 统计该用户启用且未过期的 Key 数。
+管理端统计从 `usage_logs` 实时聚合并按用户过滤，而不是维护另一份可能漂移的统计表。`actual_tokens` 汇总 success 与已结算 `partial_actual_*` 的实际 usage，`total_tokens = actual_tokens`；`estimated_tokens` 独立汇总所有 error 状态的 `partial_estimated_*` 本地审计估算，包括诊断后缀，均未结算且不计消耗。daily 的 input/output/cached 与各统计的 cost 使用同一已结算集合；定价/结算失败审计日志不计消耗。请求/成功/错误数仍按日志状态统计，部分结算不改变 error 状态。`active_key_count` 统计该用户启用且未过期的 Key 数。
+
+stats 使用完成时写入的 `created_at`；overview/channels 使用 `[start_time,end_time)`，daily 按 UTC 自然日分组。quota 则在请求开始阶段预留时固定当时启用的 policy 和 UTC bucket，结算沿用原桶；未启用或不存在的 policy 不追溯记账。跨日/月请求、策略生命周期变化和历史错误日志等会造成差异，不能宣称 quota 与 stats 在任何情况下绝对相等。统计可按当前日志重算，但不会自动修复历史记账；日志量大后实时聚合也会成为读压力。
 
 ## 5. 瓶颈与百倍流量扩展路径
 

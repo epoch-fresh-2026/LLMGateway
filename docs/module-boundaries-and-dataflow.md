@@ -100,7 +100,7 @@ flowchart TB
 
 #### `proxy/openai`
 
-只负责 OpenAI 兼容协议边界：请求解析、请求改写、响应改写、SSE 解析、usage 提取和本地 Token 估算，通过 `proxy.ProtocolAdapter` 向协议中立的 proxy 提供能力。
+只负责 OpenAI 兼容协议边界：请求解析、请求改写、响应改写、SSE 解析、usage 提取和本地 Token 估算，通过 `proxy.ProtocolAdapter` 向协议中立的 proxy 提供能力。`EstimatedUsage.InputTokens` 用于保守准入预留：取完整 JSON 的 tokenizer estimate + 16 与请求字节数 + 16 的较大值；`PromptTokens` 保留前者，不采用字节上界，用于无 usage 的零费用审计。两者均加每个 image_url/input_audio 标记 8192 的媒体预算，未知模型回退 `cl100k_base`。输出按 `max_completion_tokens > max_tokens > QUOTA_DEFAULT_MAX_TOKENS` 并乘 `n` 预留，准入使用 `InputTokens + OutputTokens`。
 
 ### 3. 共享领域与基础设施
 
@@ -185,7 +185,7 @@ sequenceDiagram
 2. **临时资源占用**：限流和 quota reservation，由 Store 持久化并以状态机完成或释放。
 3. **最终事实**：渠道近似余额变化、usage log 和实际 quota 使用量，在 PostgreSQL 事务中提交。
 
-故障切换只改变候选和渠道健康，不创建新的 request ID，也不创建第二次最终写入。
+故障切换只改变候选和渠道健康，不创建新的 request ID，也不创建第二次最终写入。请求总 timeout（`UPSTREAM_REQUEST_TIMEOUT`）默认 600 秒，所有候选尝试和流式读取共享 deadline；quota TTL 默认 660 秒且至少为 timeout + 60 秒，过小配置由配置层和 proxy 提升。普通与 TLS 示例 nginx 的 `/v1` 均关闭响应缓冲，并设读写等待时限为 600 秒（`proxy_read_timeout` / `proxy_send_timeout`）；这些不是请求总 deadline。
 
 ## 四、流式 SSE 数据流
 
@@ -217,17 +217,21 @@ sequenceDiagram
         Stream-->>Client: data: [DONE]
     else 上游中断或协议错误
         Upstream--xAdapter: EOF / malformed frame
-        Stream->>Store: 对已 emit 文本本地 tokenizer 估算并部分结算
+        Stream->>Store: 仅实际 usage 结算；无 usage 则估算已 emit 文本作零费用审计并释放 reservation
         Stream-->>Client: SSE error + [DONE]
     else 客户端取消
         Client--xHTTP: 断开连接
         HTTP->>Stream: context cancel
         Stream->>Upstream: 取消上游请求
-        Stream->>Store: 已 emit 文本按估算部分结算
+        Stream->>Store: 独立限时 context：实际 usage 结算，否则估算已 emit 文本仅审计并释放 reservation
     end
 ```
 
-流一旦向下游写出数据，就不再切换到其他渠道。这样做牺牲了中途续接能力，但避免重复内容、重复生成和无法解释的用量。
+当前实现从流式上游返回 2xx 起就不再切换渠道。这样做牺牲了中途续接能力，但避免重复内容、重复生成和无法解释的用量。
+
+正常成功要求 usage 与 `[DONE]` 都收到；异常结束（含缺 DONE、超时、协议错误或客户端断开）只要已有 usage 就优先按实际用量结算，使用 `partial_actual_*`，不要求确认写出文本。只有没有 usage 时，才用合理的 `PromptTokens` estimate 加确认成功 emit 的文本 Token 记录零费用审计，使用 `partial_estimated_*`，不结算并释放 quota 与限流 reservation；没有已写出文本或 tokenizer 失败时不扣费。正常解析到 DONE 但缺 usage 报 `upstream_usage_missing`，不补估算。实际部分结算与本地估算审计都保持 `status=error`，定价/结算使用独立且有限时的 context。
+
+`pricing_error` / `settlement_failed`（含两种 partial 前缀）的日志仅审计，不进入消耗；事务失败回滚 quota、渠道余额与结算日志。日志可保留 usage 证据，但不能据此视为已结算；历史错误日志不自动修复或补记账。
 
 ## 五、限流与配额数据流
 
@@ -240,15 +244,20 @@ flowchart TD
     ATOMIC -->|成功| RESERVE[写入 reservation]
     RESERVE --> ROUTE[路由并调用上游]
     ROUTE --> RESULT{请求结果}
-    RESULT -->|成功 + 实际 usage| SETTLE[按实际 Token/费用结算]
-    RESULT -->|失败/取消| RELEASE[释放 reservation]
+    RESULT -->|成功 + 实际 usage| SETTLE[按选定用量口径原子结算 Token/费用]
+    RESULT -->|异常且有上游 usage| PARTIAL[实际部分结算，保持 error 状态]
+    PARTIAL --> SETTLE
+    RESULT -->|无上游 usage| AUDIT[仅零费用审计，不计消耗]
+    AUDIT --> RELEASE[释放 reservation]
     SETTLE --> LOG[写 usage log]
     SETTLE --> DONE[reservation settled]
     RELEASE --> RELEASED[reservation released]
     EXPIRE[后台 reaper] --> EXPIRED[回收超时 pending reservation]
 ```
 
-限流 reservation、周期 quota reservation 和成功结算的 quota 状态不能用进程内变量表达。进程内变量只能用于缓存或性能优化，不能作为多实例环境的最终计数。限流规则按 owner 加载，`target_type` 不含 `global`。
+周期 quota 仍以保守 `InputTokens + OutputTokens` 预留；只有上游确认 usage 才转为 used，没有 usage 则释放预留，本地审计估算不入账。释放的是 reservation，不存在“释放 usage”，usage log 是审计事实。周期 quota 在请求开始阶段预留时选择当时启用的 policy 和 UTC bucket，reservation 保存桶归属，结算不按完成时间换桶。没有匹配启用策略时不创建配额占用，不追溯补记。
+
+限流 reservation、周期 quota reservation 和已结算的 quota 状态不能用进程内变量表达。进程内变量只能用于缓存或性能优化，不能作为多实例环境的最终计数。限流规则按 owner 加载，`target_type` 不含 `global`。
 
 ## 六、用量数据流
 
@@ -257,7 +266,8 @@ flowchart LR
     OUTCOME[上游结果]
     OUTCOME --> CLASSIFY[proxy 分类\n成功 / 上游错误 / 取消 / 部分流]
     CLASSIFY --> INPUT[UsageLogInput]
-    INPUT --> TX[PostgreSQL 事务]
+    INPUT -->|上游确认且可结算| TX[PostgreSQL 事务]
+    INPUT -->|无 usage 或定价/结算失败| DIAGNOSTIC[仅审计日志，不扣费、不计消耗]
     TX --> CHANNEL[锁定并近似更新渠道余额]
     TX --> QUOTA[reserved 转 used]
     TX --> LOG[插入 usage_logs]
@@ -268,7 +278,9 @@ flowchart LR
     TX -->|任一步失败| ROLLBACK[回滚全部变化]
 ```
 
-`usage_logs.request_id` 的唯一约束和 reservation 状态共同防止重复成功结算。管理端统计从 usage_logs 聚合且按会话用户过滤；未来增加 rollup 时，rollup 只是读模型，不能替代 usage_logs 事实表。用户侧没有余额或余额流水。
+`usage_logs.request_id` 的唯一约束和 reservation 状态共同防止重复结算。管理端统计从 usage_logs 聚合且按会话用户过滤：`actual_tokens` 为 success 与已结算 `partial_actual_*` 的实际 usage，`total_tokens = actual_tokens`；`estimated_tokens` 独立汇总所有 error 状态的 `partial_estimated_*` 审计估算，包括诊断后缀，始终未结算，不计 total、cost、quota used、限流 Token 消耗或渠道余额扣减。daily 的 input/output/cached 与各统计的 cost 采用同一已结算集合，排除定价/结算失败审计日志；请求数与成功/错误数仍按日志状态计数。
+
+stats 按完成时写入的 `created_at` 归属时间，overview/channels 为 `[start_time,end_time)` 半开范围，daily 按 UTC 自然日分组；quota 按开始时预留桶与当时启用的 policy 归属。跨日/月、策略创建/删除或未启用策略及历史错误日志等情况下，两者不保证绝对相等。历史记录不会自动修复，本次调整不创建迁移或补数据。未来增加 rollup 时，rollup 只是读模型，不能替代 usage_logs 事实表。用户侧没有余额或余额流水。
 
 ## 七、扩展时的边界
 

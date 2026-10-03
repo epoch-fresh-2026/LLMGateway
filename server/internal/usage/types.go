@@ -2,6 +2,7 @@ package usage
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -97,13 +98,23 @@ type UsageLogDTO struct {
 	CreatedAt            string `json:"created_at"`
 }
 
+func IsSettledUsage(status, errorCode string) bool {
+	return status == "success" || (strings.HasPrefix(errorCode, "partial_actual_") && !strings.HasSuffix(errorCode, "settlement_failed") && !strings.HasSuffix(errorCode, "pricing_error"))
+}
+
+func IsEstimatedUsage(status, errorCode string) bool {
+	return status != "success" && strings.HasPrefix(errorCode, "partial_estimated_") && !strings.HasSuffix(errorCode, "settlement_failed") && !strings.HasSuffix(errorCode, "pricing_error")
+}
+
 type StatsOverviewDTO struct {
-	RequestCount   int64  `json:"request_count"`
-	SuccessCount   int64  `json:"success_count"`
-	ErrorCount     int64  `json:"error_count"`
-	TotalTokens    int64  `json:"total_tokens"`
-	TotalCost      string `json:"total_cost"`
-	ActiveKeyCount int64  `json:"active_key_count"`
+	RequestCount    int64  `json:"request_count"`
+	SuccessCount    int64  `json:"success_count"`
+	ErrorCount      int64  `json:"error_count"`
+	TotalTokens     int64  `json:"total_tokens"`
+	ActualTokens    int64  `json:"actual_tokens"`
+	EstimatedTokens int64  `json:"estimated_tokens"`
+	TotalCost       string `json:"total_cost"`
+	ActiveKeyCount  int64  `json:"active_key_count"`
 }
 
 // TTFTStatsFilter narrows stream first-token latency samples. Non-streaming
@@ -131,6 +142,8 @@ type StatsDailyDTO struct {
 	SuccessCount      int64  `json:"success_count"`
 	ErrorCount        int64  `json:"error_count"`
 	TotalTokens       int64  `json:"total_tokens"`
+	ActualTokens      int64  `json:"actual_tokens"`
+	EstimatedTokens   int64  `json:"estimated_tokens"`
 	InputTokens       int64  `json:"input_tokens"`
 	OutputTokens      int64  `json:"output_tokens"`
 	CachedInputTokens int64  `json:"cached_input_tokens"`
@@ -138,13 +151,15 @@ type StatsDailyDTO struct {
 }
 
 type StatsChannelDTO struct {
-	ChannelID    int    `json:"channel_id"`
-	ChannelName  string `json:"channel_name"`
-	RequestCount int64  `json:"request_count"`
-	SuccessCount int64  `json:"success_count"`
-	ErrorCount   int64  `json:"error_count"`
-	TotalTokens  int64  `json:"total_tokens"`
-	TotalCost    string `json:"total_cost"`
+	ChannelID       int    `json:"channel_id"`
+	ChannelName     string `json:"channel_name"`
+	RequestCount    int64  `json:"request_count"`
+	SuccessCount    int64  `json:"success_count"`
+	ErrorCount      int64  `json:"error_count"`
+	TotalTokens     int64  `json:"total_tokens"`
+	ActualTokens    int64  `json:"actual_tokens"`
+	EstimatedTokens int64  `json:"estimated_tokens"`
+	TotalCost       string `json:"total_cost"`
 }
 
 type UsageAggregateFilter struct {
@@ -161,16 +176,18 @@ type UsageAggregateFilter struct {
 }
 
 type UsageAggregateDTO struct {
-	UserID       *int   `json:"user_id"`
-	APIKeyID     *int   `json:"api_key_id"`
-	ChannelID    *int   `json:"channel_id"`
-	Model        string `json:"model"`
-	RequestCount int64  `json:"request_count"`
-	SuccessCount int64  `json:"success_count"`
-	ErrorCount   int64  `json:"error_count"`
-	TotalTokens  int64  `json:"total_tokens"`
-	TotalCost    string `json:"total_cost"`
-	DurationMs   int64  `json:"duration_ms"`
+	UserID          *int   `json:"user_id"`
+	APIKeyID        *int   `json:"api_key_id"`
+	ChannelID       *int   `json:"channel_id"`
+	Model           string `json:"model"`
+	RequestCount    int64  `json:"request_count"`
+	SuccessCount    int64  `json:"success_count"`
+	ErrorCount      int64  `json:"error_count"`
+	TotalTokens     int64  `json:"total_tokens"`
+	ActualTokens    int64  `json:"actual_tokens"`
+	EstimatedTokens int64  `json:"estimated_tokens"`
+	TotalCost       string `json:"total_cost"`
+	DurationMs      int64  `json:"duration_ms"`
 }
 
 type UsageLogFilter struct {

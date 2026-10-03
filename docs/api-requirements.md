@@ -154,6 +154,15 @@ Cookie 属性为 `HttpOnly; SameSite=Lax; Path=/`；`Secure` 由 `SESSION_COOKIE
 
 ## 统计接口
 
+统计消耗统一采用已结算口径，适用于 overview、daily、channels 和 usage：
+
+- `actual_tokens` 汇总 `status=success` 和已结算 `partial_actual_*` 的上游确认 usage（排除 `pricing_error` / `settlement_failed` 后缀）；`total_tokens = actual_tokens`。`estimated_tokens` 独立汇总所有 `status!=success` 且 `error_code=partial_estimated_*` 的本地估算审计计数，包括诊断后缀，不参与 total 的不变量。所有 `partial_estimated_*` 均未结算，只记录零费用审计，不计费用、quota used、限流 Token 消耗或渠道余额扣减。
+- `total_cost` 与 Token 使用同一已结算集合；daily 的 `input_tokens`、`output_tokens`、`cached_input_tokens` 也只汇总该集合。输入包含缓存子集，不重复累加缓存 Token。
+- `pricing_error`、`settlement_failed` 及以这两者结尾的 `partial_actual_*` / `partial_estimated_*` 日志仅用于审计，不计入 Token 或费用消耗；日志详情即使保留上游 usage，也不代表结算成功。
+- `request_count`、`success_count`、`error_count` 仍按日志状态计数；已部分结算的日志保持 `status=error`，因此错误请求也可能有消耗。
+- stats 按完成时写入日志的 `created_at` 归属时间；overview、channels 的 RFC3339 范围为半开区间 `[start_time,end_time)`。不要将该规则泛化到日志列表或 TTFT 的结束边界。
+- 历史记录不会自动补结算、修复或重新分类，本次口径调整不创建迁移或补数据。quota 按请求开始时预留的 UTC 桶和当时启用的 policy 记账，stats 按完成时间聚合；跨日/月、策略创建/删除或未启用策略等情况下，两者不能保证绝对相等。
+
 ### GET /admin/stats/overview
 
 查询参数：
@@ -171,6 +180,8 @@ end_time=RFC3339
   "success_count": 0,
   "error_count": 0,
   "total_tokens": 0,
+  "actual_tokens": 0,
+  "estimated_tokens": 0,
   "total_cost": "0.000000",
   "active_key_count": 0
 }
@@ -198,6 +209,8 @@ page_size=100
       "success_count": 0,
       "error_count": 0,
       "total_tokens": 0,
+      "actual_tokens": 0,
+      "estimated_tokens": 0,
       "input_tokens": 0,
       "output_tokens": 0,
       "cached_input_tokens": 0,
@@ -231,6 +244,8 @@ end_time=RFC3339
       "success_count": 0,
       "error_count": 0,
       "total_tokens": 0,
+      "actual_tokens": 0,
+      "estimated_tokens": 0,
       "total_cost": "0.000000"
     }
   ]
@@ -800,7 +815,7 @@ end_time=RFC3339
 
 ### GET /admin/stats/usage
 
-对 `usage_logs` 执行 PostgreSQL 实时聚合。必须提供 `group_by=user|api_key|model|channel`，返回 `{list,total}`；每项包含对应维度 ID 或模型名，以及 `request_count`、`success_count`、`error_count`、`total_tokens`、字符串 `total_cost` 和 `duration_ms`。
+对 `usage_logs` 执行 PostgreSQL 实时聚合。必须提供 `group_by=user|api_key|model|channel`，返回 `{list,total}`；每项包含对应维度 ID 或模型名，以及 `request_count`、`success_count`、`error_count`、`total_tokens`、`actual_tokens`、`estimated_tokens`、字符串 `total_cost` 和 `duration_ms`。
 
 可选过滤：`user_id`、`api_key_id`、`channel_id`、`model`、`status`。`api_key_id` 是日志保存的内部数值 ID，仅接受正整数；不能传递 Gateway Key 明文、前缀或哈希。支持分页。
 
@@ -851,9 +866,13 @@ Authorization: Bearer <gateway-key>
 - 请求上游并透传 OpenAI 风格响应。
 - `stream=true` 返回 `text/event-stream`，按 SSE 事件持续 flush，并保持 OpenAI `data:` 与 `[DONE]` 语义。
 - 流式请求会强制向上游设置 `stream_options.include_usage=true`；首个合法 JSON `data:` 帧记录 `ttft_ms`。SSE 空帧、心跳和注释不会被计为首个 token；非流式请求保持 `ttft_ms=null`。
-- 上游可切换故障仅包括传输错误、429、401/402/403 和 5xx；400/404/409/422 等调用方错误保持透传。请求级配额预留只执行一次，只有最终成功候选结算；流式响应收到 2xx 后不再切换渠道。
-- RPM/TPM/concurrency 限流拒绝统一返回 OpenAI `rate_limit_exceeded` 错误；Token 预检失败采用输入 Token 加 `max_tokens` 的保守估算，无法解析请求 Token 时对 Token 规则稳定拒绝。只加载该 Key 所属用户的规则（`target_type` 为 `user`/`api_key`/`model`/`channel`，不含 `global`）；Key override 仅覆盖 `api_key` 级对应规则。
-- 流式成功必须同时收到 usage 与 `[DONE]`，随后按上游实际 usage 一次原子结算。中途断流、客户端取消或流协议错误时，网关仅对已成功写入下游的文本 delta 以本地 tokenizer 估算 completion token，并连同请求 prompt 估算结算；用量日志以 `partial_estimated_*` 标识。未写出文本、缺 usage 或估算失败时不扣费；客户端取消会及时取消上游请求。
+- 上游可切换故障仅包括传输错误、429、401/402/403 和 5xx；400/404/409/422 等调用方错误保持透传。请求级配额预留只执行一次，只有最终候选按成功或部分结算口径记账；流式响应收到 2xx 后不再切换渠道。
+- RPM/TPM/concurrency 限流拒绝统一返回 OpenAI `rate_limit_exceeded` 错误；Token 预检采用保守 `InputTokens` 加最大输出预留的估算，无法解析请求 Token 时对 Token 规则稳定拒绝。只加载该 Key 所属用户的规则（`target_type` 为 `user`/`api_key`/`model`/`channel`，不含 `global`）；Key override 仅覆盖 `api_key` 级对应规则。
+- 请求总 timeout 默认 600 秒（`UPSTREAM_REQUEST_TIMEOUT`，兼容旧 `UPSTREAM_TIMEOUT_SECONDS`）；所有候选尝试和流式读取共享 deadline。quota TTL 至少为 timeout + 60 秒，默认 660 秒，低于下限会自动提升。普通与 TLS 示例 nginx 的 `/v1` 均关闭缓冲，读写等待时限（`proxy_read_timeout` / `proxy_send_timeout`）均为 600 秒，不是请求总时限。
+- Token 估算区分准入预留与本地审计：`InputTokens` 是保守预留量，至少采用完整请求 JSON 字节数 + 16 的上界，再加媒体预算；`PromptTokens` 是完整请求 JSON 的 tokenizer estimate + 16 和媒体预算，不使用字节上界。未知模型回退到 `cl100k_base`；每个 `image_url` / `input_audio` 标记加 8192 Token。输出按 `max_completion_tokens > max_tokens > QUOTA_DEFAULT_MAX_TOKENS` 并乘 `n` 预留；准入使用 `InputTokens + OutputTokens`，不能把保守预留直接当作 prompt 消耗。
+- 流式正常成功必须同时收到 usage 与 `[DONE]`，随后按上游实际 usage 一次原子结算。中途断流、超时、缺 `[DONE]`、协议错误或客户端断开时，只要已经收到 usage，就优先按该实际用量部分结算，即使没有成功写出文本；日志以 `partial_actual_*` 标识，保持 `status=error`。
+- 只有异常结束且没有上游 usage 时，才对确认成功写入下游的文本 delta 本地 tokenizer 估算 completion Token，并与合理的 `PromptTokens` estimate 一起记录零费用审计；日志以 `partial_estimated_*` 标识，保持 `status=error`，不结算、不计消耗。没有上游 usage 时释放 quota 与限流 reservation，不将估算转为 used 或扣减渠道余额。没有确认写出的文本或本地估算失败时不扣费；收到 `[DONE]` 但缺 usage 的正常解析结束仍报 `upstream_usage_missing`，不使用估算补齐。客户端取消及时传播到上游，但定价与结算使用独立、有限时的 context，避免取消直接中止记账。
+- 定价或结算失败记录的 `pricing_error` / `settlement_failed`（含 `partial_actual_*`、`partial_estimated_*` 前缀）仅用于审计，不计入已结算消耗；结算事务失败回滚 quota、渠道余额和用量日志的变化。
 - 记录 `usage_logs`。
 - 按 `model_pricing` 计算费用并近似扣减渠道余额（不向用户计费）。
 - 执行该用户的限流规则。
@@ -890,7 +909,8 @@ GET    /admin/quota-usage
 - `scope_type` 为 `user` 或 `api_key`；同一 scope 的日/月策略各最多一条。
 - `period_type` 为 `day` 或 `month`，全部按 UTC 自然周期和 `[start,end)` 边界计算。
 - `token_limit`、`cost_limit` 至少提供一个；金额始终使用字符串。
-- 用户与 Key 的所有启用策略必须同时满足，不存在 Key 覆盖用户配额的语义。
+- 用户与 Key 的所有启用策略必须同时满足，不存在 Key 覆盖用户配额的语义。请求开始阶段预留时确定当时启用的 policy 和 UTC bucket，结算沿用 reservation 中保存的桶，不按完成时间重新选桶；无匹配启用策略时不创建配额占用，也不追溯记账。
+- quota 仍按保守估算预留；只有上游确认 usage 才将 reserved 转为 used，没有 usage 则释放 reservation。释放的是准入预留，不存在“释放 usage”；usage log 是审计事实。本地估算仅零费用审计。quota 的 `used_*` 与 stats 使用同一结算用量来源，但归桶时间和策略适用范围不同；跨周期请求、策略生命周期变化和历史未结算错误日志会造成差异，不能承诺任意范围内 quota 与 stats 绝对相等。
 - `GET /admin/quota-usage` 返回当前 bucket 的 `used_tokens`、`reserved_tokens`、`used_cost`、`reserved_cost` 和周期边界；`period_start`、`period_end` 使用 UTC RFC3339 时间戳，不是 `YYYY-MM-DD` 日期。
 
 ## 前端相关注意事项

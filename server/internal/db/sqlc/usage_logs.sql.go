@@ -12,7 +12,7 @@ import (
 )
 
 const aggregateUsageByAPIKey = `-- name: AggregateUsageByAPIKey :many
-SELECT api_key_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+SELECT api_key_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens, coalesce(sum(total_tokens) FILTER (WHERE status <> 'success' AND starts_with(error_code, 'partial_estimated_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens, coalesce(sum(total_cost) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
 FROM usage_logs
 WHERE user_id = $1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz
   AND ($4::bigint IS NULL OR user_id = $4::bigint) AND ($5::bigint IS NULL OR api_key_id = $5::bigint) AND ($6::bigint IS NULL OR channel_id = $6::bigint) AND ($7::text IS NULL OR model = $7::text) AND ($8::text IS NULL OR status = $8::text)
@@ -33,14 +33,16 @@ type AggregateUsageByAPIKeyParams struct {
 }
 
 type AggregateUsageByAPIKeyRow struct {
-	ApiKeyID       pgtype.Int8 `json:"api_key_id"`
-	RequestCount   int64       `json:"request_count"`
-	SuccessCount   int64       `json:"success_count"`
-	ErrorCount     int64       `json:"error_count"`
-	TotalTokens    int64       `json:"total_tokens"`
-	TotalCost      string      `json:"total_cost"`
-	DurationMs     int64       `json:"duration_ms"`
-	AggregateTotal int64       `json:"aggregate_total"`
+	ApiKeyID        pgtype.Int8 `json:"api_key_id"`
+	RequestCount    int64       `json:"request_count"`
+	SuccessCount    int64       `json:"success_count"`
+	ErrorCount      int64       `json:"error_count"`
+	TotalTokens     int64       `json:"total_tokens"`
+	ActualTokens    int64       `json:"actual_tokens"`
+	EstimatedTokens int64       `json:"estimated_tokens"`
+	TotalCost       string      `json:"total_cost"`
+	DurationMs      int64       `json:"duration_ms"`
+	AggregateTotal  int64       `json:"aggregate_total"`
 }
 
 func (q *Queries) AggregateUsageByAPIKey(ctx context.Context, arg AggregateUsageByAPIKeyParams) ([]AggregateUsageByAPIKeyRow, error) {
@@ -69,6 +71,8 @@ func (q *Queries) AggregateUsageByAPIKey(ctx context.Context, arg AggregateUsage
 			&i.SuccessCount,
 			&i.ErrorCount,
 			&i.TotalTokens,
+			&i.ActualTokens,
+			&i.EstimatedTokens,
 			&i.TotalCost,
 			&i.DurationMs,
 			&i.AggregateTotal,
@@ -84,7 +88,7 @@ func (q *Queries) AggregateUsageByAPIKey(ctx context.Context, arg AggregateUsage
 }
 
 const aggregateUsageByChannel = `-- name: AggregateUsageByChannel :many
-SELECT channel_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+SELECT channel_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens, coalesce(sum(total_tokens) FILTER (WHERE status <> 'success' AND starts_with(error_code, 'partial_estimated_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens, coalesce(sum(total_cost) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
 FROM usage_logs
 WHERE user_id = $1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz
   AND ($4::bigint IS NULL OR user_id = $4::bigint) AND ($5::bigint IS NULL OR api_key_id = $5::bigint) AND ($6::bigint IS NULL OR channel_id = $6::bigint) AND ($7::text IS NULL OR model = $7::text) AND ($8::text IS NULL OR status = $8::text)
@@ -105,14 +109,16 @@ type AggregateUsageByChannelParams struct {
 }
 
 type AggregateUsageByChannelRow struct {
-	ChannelID      pgtype.Int8 `json:"channel_id"`
-	RequestCount   int64       `json:"request_count"`
-	SuccessCount   int64       `json:"success_count"`
-	ErrorCount     int64       `json:"error_count"`
-	TotalTokens    int64       `json:"total_tokens"`
-	TotalCost      string      `json:"total_cost"`
-	DurationMs     int64       `json:"duration_ms"`
-	AggregateTotal int64       `json:"aggregate_total"`
+	ChannelID       pgtype.Int8 `json:"channel_id"`
+	RequestCount    int64       `json:"request_count"`
+	SuccessCount    int64       `json:"success_count"`
+	ErrorCount      int64       `json:"error_count"`
+	TotalTokens     int64       `json:"total_tokens"`
+	ActualTokens    int64       `json:"actual_tokens"`
+	EstimatedTokens int64       `json:"estimated_tokens"`
+	TotalCost       string      `json:"total_cost"`
+	DurationMs      int64       `json:"duration_ms"`
+	AggregateTotal  int64       `json:"aggregate_total"`
 }
 
 func (q *Queries) AggregateUsageByChannel(ctx context.Context, arg AggregateUsageByChannelParams) ([]AggregateUsageByChannelRow, error) {
@@ -141,6 +147,8 @@ func (q *Queries) AggregateUsageByChannel(ctx context.Context, arg AggregateUsag
 			&i.SuccessCount,
 			&i.ErrorCount,
 			&i.TotalTokens,
+			&i.ActualTokens,
+			&i.EstimatedTokens,
 			&i.TotalCost,
 			&i.DurationMs,
 			&i.AggregateTotal,
@@ -156,7 +164,7 @@ func (q *Queries) AggregateUsageByChannel(ctx context.Context, arg AggregateUsag
 }
 
 const aggregateUsageByModel = `-- name: AggregateUsageByModel :many
-SELECT model, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+SELECT model, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens, coalesce(sum(total_tokens) FILTER (WHERE status <> 'success' AND starts_with(error_code, 'partial_estimated_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens, coalesce(sum(total_cost) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
 FROM usage_logs
 WHERE user_id = $1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz
   AND ($4::bigint IS NULL OR user_id = $4::bigint) AND ($5::bigint IS NULL OR api_key_id = $5::bigint) AND ($6::bigint IS NULL OR channel_id = $6::bigint) AND ($7::text IS NULL OR model = $7::text) AND ($8::text IS NULL OR status = $8::text)
@@ -177,14 +185,16 @@ type AggregateUsageByModelParams struct {
 }
 
 type AggregateUsageByModelRow struct {
-	Model          string `json:"model"`
-	RequestCount   int64  `json:"request_count"`
-	SuccessCount   int64  `json:"success_count"`
-	ErrorCount     int64  `json:"error_count"`
-	TotalTokens    int64  `json:"total_tokens"`
-	TotalCost      string `json:"total_cost"`
-	DurationMs     int64  `json:"duration_ms"`
-	AggregateTotal int64  `json:"aggregate_total"`
+	Model           string `json:"model"`
+	RequestCount    int64  `json:"request_count"`
+	SuccessCount    int64  `json:"success_count"`
+	ErrorCount      int64  `json:"error_count"`
+	TotalTokens     int64  `json:"total_tokens"`
+	ActualTokens    int64  `json:"actual_tokens"`
+	EstimatedTokens int64  `json:"estimated_tokens"`
+	TotalCost       string `json:"total_cost"`
+	DurationMs      int64  `json:"duration_ms"`
+	AggregateTotal  int64  `json:"aggregate_total"`
 }
 
 func (q *Queries) AggregateUsageByModel(ctx context.Context, arg AggregateUsageByModelParams) ([]AggregateUsageByModelRow, error) {
@@ -213,6 +223,8 @@ func (q *Queries) AggregateUsageByModel(ctx context.Context, arg AggregateUsageB
 			&i.SuccessCount,
 			&i.ErrorCount,
 			&i.TotalTokens,
+			&i.ActualTokens,
+			&i.EstimatedTokens,
 			&i.TotalCost,
 			&i.DurationMs,
 			&i.AggregateTotal,
@@ -228,7 +240,7 @@ func (q *Queries) AggregateUsageByModel(ctx context.Context, arg AggregateUsageB
 }
 
 const aggregateUsageByUser = `-- name: AggregateUsageByUser :many
-SELECT user_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+SELECT user_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens, coalesce(sum(total_tokens) FILTER (WHERE status <> 'success' AND starts_with(error_code, 'partial_estimated_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens, coalesce(sum(total_cost) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
 FROM usage_logs
 WHERE user_id = $1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz
   AND ($4::bigint IS NULL OR user_id = $4::bigint) AND ($5::bigint IS NULL OR api_key_id = $5::bigint) AND ($6::bigint IS NULL OR channel_id = $6::bigint) AND ($7::text IS NULL OR model = $7::text) AND ($8::text IS NULL OR status = $8::text)
@@ -249,14 +261,16 @@ type AggregateUsageByUserParams struct {
 }
 
 type AggregateUsageByUserRow struct {
-	UserID         pgtype.Int8 `json:"user_id"`
-	RequestCount   int64       `json:"request_count"`
-	SuccessCount   int64       `json:"success_count"`
-	ErrorCount     int64       `json:"error_count"`
-	TotalTokens    int64       `json:"total_tokens"`
-	TotalCost      string      `json:"total_cost"`
-	DurationMs     int64       `json:"duration_ms"`
-	AggregateTotal int64       `json:"aggregate_total"`
+	UserID          pgtype.Int8 `json:"user_id"`
+	RequestCount    int64       `json:"request_count"`
+	SuccessCount    int64       `json:"success_count"`
+	ErrorCount      int64       `json:"error_count"`
+	TotalTokens     int64       `json:"total_tokens"`
+	ActualTokens    int64       `json:"actual_tokens"`
+	EstimatedTokens int64       `json:"estimated_tokens"`
+	TotalCost       string      `json:"total_cost"`
+	DurationMs      int64       `json:"duration_ms"`
+	AggregateTotal  int64       `json:"aggregate_total"`
 }
 
 func (q *Queries) AggregateUsageByUser(ctx context.Context, arg AggregateUsageByUserParams) ([]AggregateUsageByUserRow, error) {
@@ -285,6 +299,8 @@ func (q *Queries) AggregateUsageByUser(ctx context.Context, arg AggregateUsageBy
 			&i.SuccessCount,
 			&i.ErrorCount,
 			&i.TotalTokens,
+			&i.ActualTokens,
+			&i.EstimatedTokens,
 			&i.TotalCost,
 			&i.DurationMs,
 			&i.AggregateTotal,
@@ -355,7 +371,7 @@ func (q *Queries) CountStatsDaily(ctx context.Context, arg CountStatsDailyParams
 }
 
 const countTokensSince = `-- name: CountTokensSince :one
-SELECT COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens
+SELECT COALESCE(SUM(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens
 FROM usage_logs
 WHERE ($1::bigint = 0 OR user_id = $1::bigint)
   AND created_at >= $2::timestamptz
@@ -722,13 +738,15 @@ SELECT
     count(*)::bigint AS request_count,
     count(*) FILTER (WHERE l.status = 'success')::bigint AS success_count,
     count(*) FILTER (WHERE l.status <> 'success')::bigint AS error_count,
-    coalesce(sum(l.total_tokens), 0)::bigint AS total_tokens,
-    coalesce(sum(l.total_cost), 0)::numeric(20, 6)::text AS total_cost
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens,
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens,
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status <> 'success' AND starts_with(l.error_code, 'partial_estimated_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens,
+    coalesce(sum(l.total_cost) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost
 FROM usage_logs l
-JOIN channels c ON c.id = l.channel_id
+LEFT JOIN channels c ON c.id = l.channel_id
 WHERE l.user_id = $1
   AND l.created_at >= $2::timestamptz
-  AND l.created_at <= $3::timestamptz
+  AND l.created_at < $3::timestamptz
 GROUP BY l.channel_id, c.name
 ORDER BY request_count DESC, l.channel_id
 `
@@ -740,13 +758,15 @@ type StatsChannelsParams struct {
 }
 
 type StatsChannelsRow struct {
-	ChannelID    pgtype.Int8 `json:"channel_id"`
-	ChannelName  string      `json:"channel_name"`
-	RequestCount int64       `json:"request_count"`
-	SuccessCount int64       `json:"success_count"`
-	ErrorCount   int64       `json:"error_count"`
-	TotalTokens  int64       `json:"total_tokens"`
-	TotalCost    string      `json:"total_cost"`
+	ChannelID       pgtype.Int8 `json:"channel_id"`
+	ChannelName     string      `json:"channel_name"`
+	RequestCount    int64       `json:"request_count"`
+	SuccessCount    int64       `json:"success_count"`
+	ErrorCount      int64       `json:"error_count"`
+	TotalTokens     int64       `json:"total_tokens"`
+	ActualTokens    int64       `json:"actual_tokens"`
+	EstimatedTokens int64       `json:"estimated_tokens"`
+	TotalCost       string      `json:"total_cost"`
 }
 
 func (q *Queries) StatsChannels(ctx context.Context, arg StatsChannelsParams) ([]StatsChannelsRow, error) {
@@ -765,6 +785,8 @@ func (q *Queries) StatsChannels(ctx context.Context, arg StatsChannelsParams) ([
 			&i.SuccessCount,
 			&i.ErrorCount,
 			&i.TotalTokens,
+			&i.ActualTokens,
+			&i.EstimatedTokens,
 			&i.TotalCost,
 		); err != nil {
 			return nil, err
@@ -783,11 +805,13 @@ SELECT
     count(*)::bigint AS request_count,
     count(*) FILTER (WHERE l.status = 'success')::bigint AS success_count,
     count(*) FILTER (WHERE l.status <> 'success')::bigint AS error_count,
-    coalesce(sum(l.total_tokens), 0)::bigint AS total_tokens,
-    coalesce(sum(l.input_tokens), 0)::bigint AS input_tokens,
-    coalesce(sum(l.output_tokens), 0)::bigint AS output_tokens,
-    coalesce(sum(l.cached_input_tokens), 0)::bigint AS cached_input_tokens,
-    coalesce(sum(l.total_cost), 0)::numeric(20, 6)::text AS total_cost
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens,
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens,
+    coalesce(sum(l.total_tokens) FILTER (WHERE l.status <> 'success' AND starts_with(l.error_code, 'partial_estimated_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens,
+    coalesce(sum(l.input_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS input_tokens,
+    coalesce(sum(l.output_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS output_tokens,
+    coalesce(sum(l.cached_input_tokens) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::bigint AS cached_input_tokens,
+    coalesce(sum(l.total_cost) FILTER (WHERE l.status = 'success' OR starts_with(l.error_code, 'partial_actual_') AND l.error_code NOT LIKE '%settlement_failed' AND l.error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost
 FROM usage_logs l
 WHERE l.user_id = $1
   AND (l.created_at AT TIME ZONE 'UTC')::date >= $2::text::date
@@ -811,6 +835,8 @@ type StatsDailyRow struct {
 	SuccessCount      int64       `json:"success_count"`
 	ErrorCount        int64       `json:"error_count"`
 	TotalTokens       int64       `json:"total_tokens"`
+	ActualTokens      int64       `json:"actual_tokens"`
+	EstimatedTokens   int64       `json:"estimated_tokens"`
 	InputTokens       int64       `json:"input_tokens"`
 	OutputTokens      int64       `json:"output_tokens"`
 	CachedInputTokens int64       `json:"cached_input_tokens"`
@@ -838,6 +864,8 @@ func (q *Queries) StatsDaily(ctx context.Context, arg StatsDailyParams) ([]Stats
 			&i.SuccessCount,
 			&i.ErrorCount,
 			&i.TotalTokens,
+			&i.ActualTokens,
+			&i.EstimatedTokens,
 			&i.InputTokens,
 			&i.OutputTokens,
 			&i.CachedInputTokens,
@@ -858,15 +886,15 @@ SELECT
     count(*)::bigint AS request_count,
     count(*) FILTER (WHERE status = 'success')::bigint AS success_count,
     count(*) FILTER (WHERE status <> 'success')::bigint AS error_count,
-    coalesce(sum(total_tokens), 0)::bigint AS total_tokens,
-    coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost,
+    coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS total_tokens, coalesce(sum(total_tokens) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS actual_tokens, coalesce(sum(total_tokens) FILTER (WHERE status <> 'success' AND starts_with(error_code, 'partial_estimated_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::bigint AS estimated_tokens,
+    coalesce(sum(total_cost) FILTER (WHERE status = 'success' OR starts_with(error_code, 'partial_actual_') AND error_code NOT LIKE '%settlement_failed' AND error_code NOT LIKE '%pricing_error'), 0)::numeric(20, 6)::text AS total_cost,
     (SELECT count(*) FROM client_api_keys k
       WHERE k.user_id = $1 AND k.is_active = true
         AND (k.expires_at IS NULL OR k.expires_at > now()))::bigint AS active_key_count
 FROM usage_logs
 WHERE user_id = $1
   AND created_at >= $2::timestamptz
-  AND created_at <= $3::timestamptz
+  AND created_at < $3::timestamptz
 `
 
 type StatsOverviewParams struct {
@@ -876,12 +904,14 @@ type StatsOverviewParams struct {
 }
 
 type StatsOverviewRow struct {
-	RequestCount   int64  `json:"request_count"`
-	SuccessCount   int64  `json:"success_count"`
-	ErrorCount     int64  `json:"error_count"`
-	TotalTokens    int64  `json:"total_tokens"`
-	TotalCost      string `json:"total_cost"`
-	ActiveKeyCount int64  `json:"active_key_count"`
+	RequestCount    int64  `json:"request_count"`
+	SuccessCount    int64  `json:"success_count"`
+	ErrorCount      int64  `json:"error_count"`
+	TotalTokens     int64  `json:"total_tokens"`
+	ActualTokens    int64  `json:"actual_tokens"`
+	EstimatedTokens int64  `json:"estimated_tokens"`
+	TotalCost       string `json:"total_cost"`
+	ActiveKeyCount  int64  `json:"active_key_count"`
 }
 
 func (q *Queries) StatsOverview(ctx context.Context, arg StatsOverviewParams) (StatsOverviewRow, error) {
@@ -892,6 +922,8 @@ func (q *Queries) StatsOverview(ctx context.Context, arg StatsOverviewParams) (S
 		&i.SuccessCount,
 		&i.ErrorCount,
 		&i.TotalTokens,
+		&i.ActualTokens,
+		&i.EstimatedTokens,
 		&i.TotalCost,
 		&i.ActiveKeyCount,
 	)

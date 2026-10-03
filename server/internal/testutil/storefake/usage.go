@@ -140,7 +140,7 @@ func (s *Store) CountTokensSince(_ context.Context, filter domain.TokenCountFilt
 			continue
 		}
 		created, err := time.Parse(time.RFC3339, log.CreatedAt)
-		if err == nil && !created.Before(since) {
+		if err == nil && !created.Before(since) && domain.IsSettledUsage(log.Status, log.ErrorCode) {
 			total += int64(log.TotalTokens)
 		}
 	}
@@ -156,13 +156,13 @@ func (s *Store) StatsOverview(_ context.Context, ownerUserID int, startTime, end
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var requests, success, errors, tokens int
+	var requests, success, errors, tokens, actual, estimated int
 	cost := money.Amount(0)
 	for _, log := range s.usageLogs {
 		if log.UserID == nil || *log.UserID != ownerUserID {
 			continue
 		}
-		if !withinRange(log.CreatedAt, start, end) {
+		if !withinConsumptionRange(log.CreatedAt, start, end) {
 			continue
 		}
 		requests++
@@ -171,13 +171,20 @@ func (s *Store) StatsOverview(_ context.Context, ownerUserID int, startTime, end
 		} else {
 			errors++
 		}
+		if domain.IsEstimatedUsage(log.Status, log.ErrorCode) {
+			estimated += log.TotalTokens
+		}
+		if !domain.IsSettledUsage(log.Status, log.ErrorCode) {
+			continue
+		}
+		actual += log.TotalTokens
 		tokens += log.TotalTokens
 		if parsed, err := money.Parse6(log.TotalCost); err == nil {
 			cost = cost.Add(parsed)
 		}
 	}
 
-	return domain.StatsOverviewDTO{RequestCount: int64(requests), SuccessCount: int64(success), ErrorCount: int64(errors), TotalTokens: int64(tokens), TotalCost: money.Format6(cost), ActiveKeyCount: s.activeKeyCountLocked(ownerUserID)}, nil
+	return domain.StatsOverviewDTO{RequestCount: int64(requests), SuccessCount: int64(success), ErrorCount: int64(errors), TotalTokens: int64(tokens), ActualTokens: int64(actual), EstimatedTokens: int64(estimated), TotalCost: money.Format6(cost), ActiveKeyCount: s.activeKeyCountLocked(ownerUserID)}, nil
 }
 
 // activeKeyCountLocked counts the owner's active, unexpired gateway keys.
@@ -208,9 +215,9 @@ func (s *Store) StatsDaily(_ context.Context, ownerUserID int, dateFrom, dateTo 
 	defer s.mu.Unlock()
 
 	type bucket struct {
-		requests, success, errors, tokens int
-		input, output, cached             int
-		cost                              money.Amount
+		requests, success, errors, tokens, actual, estimated int
+		input, output, cached                                int
+		cost                                                 money.Amount
 	}
 	byDate := map[string]*bucket{}
 	for _, log := range s.usageLogs {
@@ -232,6 +239,13 @@ func (s *Store) StatsDaily(_ context.Context, ownerUserID int, dateFrom, dateTo 
 		} else {
 			entry.errors++
 		}
+		if domain.IsEstimatedUsage(log.Status, log.ErrorCode) {
+			entry.estimated += log.TotalTokens
+		}
+		if !domain.IsSettledUsage(log.Status, log.ErrorCode) {
+			continue
+		}
+		entry.actual += log.TotalTokens
 		entry.tokens += log.TotalTokens
 		entry.input += log.InputTokens
 		entry.output += log.OutputTokens
@@ -251,7 +265,7 @@ func (s *Store) StatsDaily(_ context.Context, ownerUserID int, dateFrom, dateTo 
 	list := []domain.StatsDailyDTO{}
 	for _, date := range dates[start:end] {
 		entry := byDate[date]
-		list = append(list, domain.StatsDailyDTO{StatDate: date, RequestCount: int64(entry.requests), SuccessCount: int64(entry.success), ErrorCount: int64(entry.errors), TotalTokens: int64(entry.tokens), InputTokens: int64(entry.input), OutputTokens: int64(entry.output), CachedInputTokens: int64(entry.cached), TotalCost: money.Format6(entry.cost)})
+		list = append(list, domain.StatsDailyDTO{StatDate: date, RequestCount: int64(entry.requests), SuccessCount: int64(entry.success), ErrorCount: int64(entry.errors), TotalTokens: int64(entry.tokens), ActualTokens: int64(entry.actual), EstimatedTokens: int64(entry.estimated), InputTokens: int64(entry.input), OutputTokens: int64(entry.output), CachedInputTokens: int64(entry.cached), TotalCost: money.Format6(entry.cost)})
 	}
 	return domain.ListResponse[domain.StatsDailyDTO]{List: list, Total: len(dates)}, nil
 }
@@ -266,9 +280,9 @@ func (s *Store) StatsChannels(_ context.Context, ownerUserID int, startTime, end
 	defer s.mu.Unlock()
 
 	type bucket struct {
-		name                              string
-		requests, success, errors, tokens int
-		cost                              money.Amount
+		name                                                 string
+		requests, success, errors, tokens, actual, estimated int
+		cost                                                 money.Amount
 	}
 	byChannel := map[int]*bucket{}
 	order := []int{}
@@ -276,7 +290,7 @@ func (s *Store) StatsChannels(_ context.Context, ownerUserID int, startTime, end
 		if log.UserID == nil || *log.UserID != ownerUserID {
 			continue
 		}
-		if !withinRange(log.CreatedAt, start, end) {
+		if !withinConsumptionRange(log.CreatedAt, start, end) {
 			continue
 		}
 		channelID := 0
@@ -295,6 +309,13 @@ func (s *Store) StatsChannels(_ context.Context, ownerUserID int, startTime, end
 		} else {
 			entry.errors++
 		}
+		if domain.IsEstimatedUsage(log.Status, log.ErrorCode) {
+			entry.estimated += log.TotalTokens
+		}
+		if !domain.IsSettledUsage(log.Status, log.ErrorCode) {
+			continue
+		}
+		entry.actual += log.TotalTokens
 		entry.tokens += log.TotalTokens
 		if parsed, err := money.Parse6(log.TotalCost); err == nil {
 			entry.cost = entry.cost.Add(parsed)
@@ -311,7 +332,7 @@ func (s *Store) StatsChannels(_ context.Context, ownerUserID int, startTime, end
 	list := []domain.StatsChannelDTO{}
 	for _, channelID := range order {
 		entry := byChannel[channelID]
-		list = append(list, domain.StatsChannelDTO{ChannelID: channelID, ChannelName: entry.name, RequestCount: int64(entry.requests), SuccessCount: int64(entry.success), ErrorCount: int64(entry.errors), TotalTokens: int64(entry.tokens), TotalCost: money.Format6(entry.cost)})
+		list = append(list, domain.StatsChannelDTO{ChannelID: channelID, ChannelName: entry.name, RequestCount: int64(entry.requests), SuccessCount: int64(entry.success), ErrorCount: int64(entry.errors), TotalTokens: int64(entry.tokens), ActualTokens: int64(entry.actual), EstimatedTokens: int64(entry.estimated), TotalCost: money.Format6(entry.cost)})
 	}
 	return domain.ListResponse[domain.StatsChannelDTO]{List: list}, nil
 }
@@ -399,8 +420,18 @@ func (s *Store) AggregateUsage(_ context.Context, ownerUserID int, filter domain
 		} else {
 			entry.ErrorCount++
 		}
-		entry.TotalTokens += int64(log.TotalTokens)
 		entry.DurationMs += int64(log.DurationMs)
+		if entry.TotalCost == "" {
+			entry.TotalCost = "0.000000"
+		}
+		if domain.IsEstimatedUsage(log.Status, log.ErrorCode) {
+			entry.EstimatedTokens += int64(log.TotalTokens)
+		}
+		if !domain.IsSettledUsage(log.Status, log.ErrorCode) {
+			continue
+		}
+		entry.TotalTokens += int64(log.TotalTokens)
+		entry.ActualTokens += int64(log.TotalTokens)
 		if cost, err := money.Parse6(log.TotalCost); err == nil {
 			current, _ := money.Parse6(entry.TotalCost)
 			entry.TotalCost = money.Format6(current.Add(cost))
@@ -492,7 +523,7 @@ func (s *Store) filterUsageLogsLocked(ownerUserID int, filter domain.UsageLogFil
 		if filter.Status != "" && log.Status != filter.Status {
 			continue
 		}
-		if !withinRange(log.CreatedAt, start, end) {
+		if !withinConsumptionRange(log.CreatedAt, start, end) {
 			continue
 		}
 		rows = append(rows, log)
@@ -530,6 +561,11 @@ func parseRange(startTime, endTime string) (time.Time, time.Time, error) {
 		}
 	}
 	return start, end, nil
+}
+
+func withinConsumptionRange(createdAt string, start, end time.Time) bool {
+	created, err := time.Parse(time.RFC3339, createdAt)
+	return err == nil && (start.IsZero() || !created.Before(start)) && (end.IsZero() || created.Before(end))
 }
 
 func withinRange(createdAt string, start, end time.Time) bool {

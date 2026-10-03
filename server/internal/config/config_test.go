@@ -52,7 +52,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ChannelKeyEncryptionKey != "" {
 		t.Fatalf("ChannelKeyEncryptionKey = %q, want empty", cfg.ChannelKeyEncryptionKey)
 	}
-	if cfg.UpstreamTimeoutSeconds != 60 || cfg.UpstreamMaxAttempts != 3 || cfg.QuotaDefaultMaxTokens != 4096 || cfg.QuotaReservationTTLSeconds != 120 || cfg.QuotaReaperIntervalSeconds != 30 || cfg.QuotaReaperBatchSize != 100 || cfg.ChannelMinRouteBalance != "0.000000" {
+	if cfg.UpstreamTimeoutSeconds != 600 || cfg.UpstreamMaxAttempts != 3 || cfg.QuotaDefaultMaxTokens != 4096 || cfg.QuotaReservationTTLSeconds != 660 || cfg.QuotaReaperIntervalSeconds != 30 || cfg.QuotaReaperBatchSize != 100 || cfg.ChannelMinRouteBalance != "0.000000" {
 		t.Fatalf("quota defaults = %+v", cfg)
 	}
 	if cfg.ChannelBreakerFailureThreshold != 5 || cfg.ChannelBreakerCooldownSeconds != 30 || cfg.ChannelBreakerWindowSeconds != 60 || cfg.ChannelBreakerMinimumSamples != 10 || cfg.ChannelBreakerErrorRatePercent != 50 || cfg.ChannelBreakerTimeoutRatePercent != 50 || cfg.ChannelBreakerBucketRetentionSeconds != 600 {
@@ -162,10 +162,30 @@ func TestLoadMinimumRouteBalanceRejectsInvalidValues(t *testing.T) {
 }
 
 func TestQuotaReservationTTLExceedsUpstreamTimeout(t *testing.T) {
-	t.Setenv("UPSTREAM_TIMEOUT_SECONDS", "90")
-	t.Setenv("QUOTA_RESERVATION_TTL_SECONDS", "60")
-	cfg := loadOrFatal(t)
-	if cfg.QuotaReservationTTLSeconds != 150 {
-		t.Fatalf("QuotaReservationTTLSeconds = %d, want 150", cfg.QuotaReservationTTLSeconds)
+	tests := []struct {
+		name    string
+		timeout string
+		legacy  string
+		ttl     string
+		want    int
+	}{
+		{"default timeout with short TTL", "", "", "60", 660},
+		{"legacy timeout", "", "90", "60", 150},
+		{"custom timeout", "900", "90", "120", 960},
+		{"insufficient safety margin", "90", "", "149", 150},
+		{"exact safety margin", "90", "", "150", 150},
+		{"longer TTL", "90", "", "180", 180},
+		{"automatic TTL", "900", "", "", 960},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvUpstreamRequestTimeout, tt.timeout)
+			t.Setenv("UPSTREAM_TIMEOUT_SECONDS", tt.legacy)
+			t.Setenv("QUOTA_RESERVATION_TTL_SECONDS", tt.ttl)
+			cfg := loadOrFatal(t)
+			if cfg.QuotaReservationTTLSeconds != tt.want {
+				t.Fatalf("QuotaReservationTTLSeconds = %d, want %d", cfg.QuotaReservationTTLSeconds, tt.want)
+			}
+		})
 	}
 }

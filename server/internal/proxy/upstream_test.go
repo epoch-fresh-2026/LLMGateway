@@ -3,6 +3,9 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
+
+	"LLMGateway/server/internal/catalog"
 	"io"
 	"net/http"
 	"strings"
@@ -118,6 +121,86 @@ func TestChatCompletionsReadErrorFailsOverToNextCandidate(t *testing.T) {
 	}
 	if logs.Total != 1 || logs.List[0].ChannelID == nil || *logs.List[0].ChannelID != fallback {
 		t.Fatalf("usage logs = %+v, want one success on fallback channel %d", logs, fallback)
+	}
+}
+
+type contextReadCloser struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func (r contextReadCloser) Read([]byte) (int, error) {
+	if r.cancel != nil {
+		r.cancel()
+	}
+	<-r.ctx.Done()
+	return 0, r.ctx.Err()
+}
+func (r contextReadCloser) Close() error { return nil }
+
+func TestUpstreamContextErrorsLogged(t *testing.T) {
+	for _, phase := range []string{"do", "read", "next_attempt"} {
+		for _, deadline := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/deadline=%v", phase, deadline), func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					stop := cancel
+					if deadline {
+						stop = nil
+					}
+					body := contextReadCloser{ctx: r.Context(), cancel: stop}
+					if phase == "read" {
+						return &http.Response{StatusCode: 200, Body: body, Header: make(http.Header)}, nil
+					}
+					_, err := body.Read(nil)
+					return nil, err
+				})
+				service, st, auth := newProtocolSeamService(t, transport, seamAdapter())
+				if deadline {
+					service.ConfigureRequest(30*time.Millisecond, 1)
+				}
+				var err error
+				if phase == "next_attempt" {
+					attemptCtx := ctx
+					if deadline {
+						var stop context.CancelFunc
+						attemptCtx, stop = context.WithDeadline(ctx, time.Now().Add(-time.Second))
+						defer stop()
+					} else {
+						cancel()
+					}
+					_, err = service.attemptUpstreams(attemptCtx, upstreamAttemptInput{requestID: "next-attempt", auth: auth, req: ChatRequest{Model: "public-model"}, candidates: []catalog.RouteCandidate{{ChannelID: 1, UpstreamModel: "configured-model"}}, start: time.Now()})
+				} else {
+					_, err = service.ChatCompletions(ctx, auth, ChatRequest{Model: "public-model", Body: []byte(`{}`)}, "")
+				}
+				wantErr, code := context.Canceled, "client_canceled"
+				if deadline {
+					wantErr, code = context.DeadlineExceeded, "upstream_timeout"
+				}
+				if !errors.Is(err, wantErr) {
+					t.Fatalf("err = %v, want %v", err, wantErr)
+				}
+				logs, err := st.ListUsageLogs(context.Background(), 1, domain.UsageLogFilter{Page: 1, PageSize: 10})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if logs.Total != 1 || logs.List[0].Status != "error" || logs.List[0].ErrorCode != code {
+					t.Fatalf("logs = %+v", logs)
+				}
+				health, err := service.catalog.GetChannelHealth(context.Background(), 1)
+				if err != nil {
+					t.Fatal(err)
+				}
+				failures := 0
+				if deadline && phase != "next_attempt" {
+					failures = 1
+				}
+				if health.ConsecutiveFailures != failures {
+					t.Fatalf("health = %+v", health)
+				}
+			})
+		}
 	}
 }
 

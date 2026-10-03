@@ -78,6 +78,9 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	done := false
 	var forwardedText strings.Builder
 	err := s.service.adapter.ParseStream(s.body, s.publicModel, func(event StreamEvent) error {
+		if event.Usage != nil {
+			usage = event.Usage
+		}
 		if event.Done {
 			done = true
 			return nil
@@ -86,9 +89,6 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 			value := elapsedMs(s.start, s.service.now())
 			ttft = &value
 		}
-		if event.Usage != nil {
-			usage = event.Usage
-		}
 		if err := emit(event.Frame); err != nil {
 			return fmt.Errorf("%w: %v", errDownstreamWrite, err)
 		}
@@ -96,39 +96,58 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, errDownstreamWrite) || errors.Is(s.ctx.Err(), context.Canceled) {
-			if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_client_canceled") {
+		if errors.Is(err, errDownstreamWrite) || errors.Is(err, context.Canceled) || errors.Is(s.ctx.Err(), context.Canceled) {
+			if s.settlePartial(usage, forwardedText.String(), ttft, "client_canceled") {
 				settled = true
+			}
+			if s.ctx.Err() != nil {
+				return s.ctx.Err()
 			}
 			return err
 		}
 		reason := catalog.FailureUpstreamUnreachable
 		code := "upstream_stream_interrupted"
 		message := "upstream stream was interrupted"
-		if errors.Is(err, ErrInvalidStream) {
+		if errors.Is(s.ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+			reason = catalog.FailureUpstreamTimeout
+			code = "upstream_timeout"
+			message = "upstream stream timed out"
+		} else if errors.Is(err, ErrInvalidStream) {
 			reason = catalog.FailureUpstreamProtocol
 			code = "upstream_stream_protocol_error"
 			message = "upstream stream contained invalid data"
 		}
 		s.service.recordChannelHealth(s.ctx, s.candidate.ChannelID, false, reason)
-		if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_"+code) {
+		if s.settlePartial(usage, forwardedText.String(), ttft, code) {
 			settled = true
 		}
 		s.emitError(emit, code, message)
+		if s.ctx.Err() != nil {
+			return s.ctx.Err()
+		}
 		return err
 	}
 	if !done {
 		if errors.Is(s.ctx.Err(), context.Canceled) {
-			if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_client_canceled") {
+			if s.settlePartial(usage, forwardedText.String(), ttft, "client_canceled") {
 				settled = true
 			}
 			return s.ctx.Err()
 		}
-		s.service.recordChannelHealth(s.ctx, s.candidate.ChannelID, false, catalog.FailureUpstreamProtocol)
-		if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_upstream_stream_interrupted") {
+		reason := catalog.FailureUpstreamProtocol
+		code := "upstream_stream_interrupted"
+		if errors.Is(s.ctx.Err(), context.DeadlineExceeded) {
+			reason = catalog.FailureUpstreamTimeout
+			code = "upstream_timeout"
+		}
+		s.service.recordChannelHealth(s.ctx, s.candidate.ChannelID, false, reason)
+		if s.settlePartial(usage, forwardedText.String(), ttft, code) {
 			settled = true
 		}
-		s.emitError(emit, "upstream_stream_interrupted", "upstream stream ended before [DONE]")
+		s.emitError(emit, code, "upstream stream ended before [DONE]")
+		if s.ctx.Err() != nil {
+			return s.ctx.Err()
+		}
 		return ErrUpstream
 	}
 	if usage == nil {
@@ -173,27 +192,30 @@ func (s *completionStream) logError(usage *Usage, ttft *int, code string) {
 	cancel()
 }
 
-// settlePartial charges only text frames confirmed written to the downstream
-// caller when the upstream final usage frame is unavailable. A missing or failed
-// local token estimate remains uncharged rather than inventing a token count.
-func (s *completionStream) settlePartial(text string, ttft *int, code string) bool {
-	if text == "" || s.service.adapter.CountTextTokens == nil {
-		s.logError(nil, ttft, code)
+func (s *completionStream) settlePartial(usage *Usage, text string, ttft *int, code string) bool {
+	prefix := "partial_actual_"
+	if usage == nil {
+		prefix = "partial_estimated_"
+		if text == "" || s.service.adapter.CountTextTokens == nil {
+			s.logError(nil, ttft, prefix+code)
+			return false
+		}
+		completionTokens, err := s.service.adapter.CountTextTokens(s.publicModel, text)
+		if err != nil || completionTokens <= 0 {
+			s.logError(nil, ttft, prefix+code)
+			return false
+		}
+		usage = &Usage{
+			PromptTokens: s.estimatedPromptTokens, CompletionTokens: completionTokens,
+			TotalTokens: s.estimatedPromptTokens + completionTokens,
+		}
+		s.logError(usage, ttft, prefix+code)
 		return false
 	}
-	completionTokens, err := s.service.adapter.CountTextTokens(s.publicModel, text)
-	if err != nil || completionTokens <= 0 {
-		s.logError(nil, ttft, code)
-		return false
-	}
-	usage := &Usage{
-		PromptTokens:     s.estimatedPromptTokens,
-		CompletionTokens: completionTokens,
-		TotalTokens:      s.estimatedPromptTokens + completionTokens,
-	}
+	code = prefix + code
 	cost, inputPrice, outputPrice, err := s.service.priceFor(s.ctx, s.candidate.ChannelID, s.candidate.UpstreamModel, usage)
 	if err != nil {
-		s.logError(usage, ttft, code)
+		s.logError(usage, ttft, prefix+"pricing_error")
 		return false
 	}
 	input, err := s.service.settleUsage(s.ctx, settleUsageInput{
@@ -203,13 +225,11 @@ func (s *completionStream) settlePartial(text string, ttft *int, code string) bo
 		cost: cost, inputPrice: inputPrice, outputPrice: outputPrice, usage: usage,
 	})
 	if err != nil {
-		// The atomic settlement did not create a usage log, so record the failed
-		// partial charge with a distinct request id instead of colliding with it.
 		input.RequestID += "_settlement_failed"
 		input.TotalCost = "0.000000"
 		input.UnitPriceInputPer1M = ""
 		input.UnitPriceOutputPer1M = ""
-		input.ErrorCode = "partial_estimated_settlement_failed"
+		input.ErrorCode = prefix + "settlement_failed"
 		logCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
 		_, _ = s.service.store.InsertUsageLog(logCtx, input)
 		cancel()

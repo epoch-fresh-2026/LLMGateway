@@ -10,6 +10,19 @@ export type DailyPoint = {
   total_cost: string
 }
 
+export function isSettled(usage: { status: string; error_code: string }): boolean {
+  return usage.status === 'success' || (usage.error_code.startsWith('partial_actual_') && !usage.error_code.endsWith('settlement_failed') && !usage.error_code.endsWith('pricing_error'))
+}
+
+export function settlementLabel(usage: { status: string; error_code: string }): string {
+  if (usage.status !== 'success' && usage.error_code.startsWith('partial_estimated_')) return '本地估算·未结算'
+  return isSettled(usage) ? '已结算 · 上游确认' : '未入账诊断'
+}
+
+export function liveTokens(rows: ({ actual_tokens: number } | { status: string; error_code: string; total_tokens: number })[]): number {
+  return rows.reduce((sum, row) => sum + ('actual_tokens' in row ? row.actual_tokens : isSettled(row) ? row.total_tokens : 0), 0)
+}
+
 export type TrendDirection = 'up' | 'down' | 'flat' | 'none'
 
 export const utcDayKey = (date: Date): string => date.toISOString().slice(0, 10)
@@ -73,16 +86,16 @@ export function tokenTrend(rows: { stat_date: string; input_tokens: number; outp
   })
 }
 
-export type ModelSlice = { name: string; requests: number; tokens: number; cost: string }
+export type ModelSlice = { name: string; requests: number; tokens: number; actual: number; estimated: number; cost: string }
 
 export const MODEL_TOP_N = 6
 
 // modelDistribution shapes the ranged model aggregate into donut slices/table
 // rows: the top MODEL_TOP_N models by tokens plus an aggregated "其他" row. It
 // only uses the ranged aggregate, so an empty range yields no rows.
-export function modelDistribution(rows: { model: string; request_count: number; total_tokens: number; total_cost: string }[]): { slices: ModelSlice[]; total: number } {
+export function modelDistribution(rows: { model: string; request_count: number; total_tokens: number; actual_tokens?: number; estimated_tokens?: number; total_cost: string }[]): { slices: ModelSlice[]; total: number } {
   const sorted = rows
-    .map(row => ({ name: row.model || 'unknown', requests: Number(row.request_count || 0), tokens: Number(row.total_tokens || 0), cost: row.total_cost || '0' }))
+    .map(row => ({ name: row.model || 'unknown', requests: Number(row.request_count || 0), tokens: Number(row.total_tokens || 0), actual: Number(row.actual_tokens || 0), estimated: Number(row.estimated_tokens || 0), cost: row.total_cost || '0' }))
     .sort((a, b) => b.tokens - a.tokens)
   const total = sorted.reduce((sum, row) => sum + row.tokens, 0)
   const top = sorted.slice(0, MODEL_TOP_N)
@@ -92,8 +105,10 @@ export function modelDistribution(rows: { model: string; request_count: number; 
       name: '其他',
       requests: acc.requests + row.requests,
       tokens: acc.tokens + row.tokens,
+      actual: acc.actual + row.actual,
+      estimated: acc.estimated + row.estimated,
       cost: (Number(acc.cost || 0) + Number(row.cost || 0)).toFixed(6),
-    }), { name: '其他', requests: 0, tokens: 0, cost: '0' }))
+    }), { name: '其他', requests: 0, tokens: 0, actual: 0, estimated: 0, cost: '0' }))
   }
   return { slices: top, total }
 }

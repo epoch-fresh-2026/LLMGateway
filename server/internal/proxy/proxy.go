@@ -71,7 +71,7 @@ func NewService(st Port, catalog Catalog, quota Quota, rateLimit RateLimit, clie
 }
 
 func NewServiceWithConfig(cfg Config) *Service {
-	return &Service{store: cfg.Store, catalog: cfg.Catalog, quota: cfg.Quota, ratelimit: cfg.RateLimit, settleTx: cfg.Store.SettlementTx(), client: cfg.Client, randIntN: cfg.RandIntN, now: cfg.Now, adapter: cfg.Adapter, defaultMaxTokens: 4096, reservationTTL: 2 * time.Minute, requestTimeout: 60 * time.Second, maxAttempts: 3}
+	return &Service{store: cfg.Store, catalog: cfg.Catalog, quota: cfg.Quota, ratelimit: cfg.RateLimit, settleTx: cfg.Store.SettlementTx(), client: cfg.Client, randIntN: cfg.RandIntN, now: cfg.Now, adapter: cfg.Adapter, defaultMaxTokens: 4096, reservationTTL: 660 * time.Second, requestTimeout: 600 * time.Second, maxAttempts: 3}
 }
 
 func (a *Service) ConfigureRequest(timeout time.Duration, maxAttempts int) {
@@ -80,6 +80,9 @@ func (a *Service) ConfigureRequest(timeout time.Duration, maxAttempts int) {
 	}
 	if maxAttempts > 0 {
 		a.maxAttempts = maxAttempts
+	}
+	if a.reservationTTL < a.requestTimeout+60*time.Second {
+		a.reservationTTL = a.requestTimeout + 60*time.Second
 	}
 }
 
@@ -98,6 +101,9 @@ func (a *Service) ConfigureQuota(defaultMaxTokens int, reservationTTL time.Durat
 	}
 	if reservationTTL > 0 {
 		a.reservationTTL = reservationTTL
+	}
+	if a.reservationTTL < a.requestTimeout+60*time.Second {
+		a.reservationTTL = a.requestTimeout + 60*time.Second
 	}
 }
 
