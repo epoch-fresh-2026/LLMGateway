@@ -8,7 +8,7 @@ import (
 	"github.com/tiktoken-go/tokenizer"
 )
 
-func TestEstimateRequestUsageSeparatesPromptFromReservation(t *testing.T) {
+func TestEstimateRequestUsageUsesTokenCountForReservation(t *testing.T) {
 	encoding, err := tokenizer.Get(tokenizer.Cl100kBase)
 	if err != nil {
 		t.Fatal(err)
@@ -46,8 +46,8 @@ func TestEstimateRequestUsageSeparatesPromptFromReservation(t *testing.T) {
 			if estimate.PromptTokens != count+16+tt.media {
 				t.Fatalf("prompt tokens = %d, want %d", estimate.PromptTokens, count+16+tt.media)
 			}
-			if estimate.InputTokens != len(body)+16+tt.media || estimate.InputTokens <= estimate.PromptTokens {
-				t.Fatalf("estimate = %+v, want conservative input %d > prompt", estimate, len(body)+16+tt.media)
+			if estimate.InputTokens != count+16+tt.media {
+				t.Fatalf("estimate = %+v, want input %d", estimate, count+16+tt.media)
 			}
 			if estimate.TotalTokens != estimate.InputTokens+estimate.OutputTokens {
 				t.Fatalf("total does not preserve reservation: %+v", estimate)

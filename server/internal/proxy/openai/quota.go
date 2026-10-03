@@ -47,9 +47,6 @@ func estimateRequestUsage(body []byte, defaultMaxTokens int) (proxy.EstimatedUsa
 	// represented verbatim in JSON. Keep a fixed conservative safety margin.
 	input += 16
 	prompt := input
-	if byteUpperBound := len(body) + 16; byteUpperBound > input {
-		input = byteUpperBound
-	}
 	// Remote image/audio payloads are represented by short URLs but billed from
 	// media content. Reserve a conservative budget for each multimodal part.
 	media := (strings.Count(string(body), `"image_url"`) + strings.Count(string(body), `"input_audio"`)) * 8192
