@@ -63,6 +63,7 @@ type Querier interface {
 	GetPricing(ctx context.Context, arg GetPricingParams) (GetPricingRow, error)
 	GetQuotaPolicy(ctx context.Context, arg GetQuotaPolicyParams) (GetQuotaPolicyRow, error)
 	GetRateLimitRule(ctx context.Context, arg GetRateLimitRuleParams) (GetRateLimitRuleRow, error)
+	GetRouteCandidate(ctx context.Context, arg GetRouteCandidateParams) (GetRouteCandidateRow, error)
 	// GetSessionByTokenHash only returns live sessions; an expired token must not
 	// authenticate even if its row has not been reaped yet.
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (GetSessionByTokenHashRow, error)

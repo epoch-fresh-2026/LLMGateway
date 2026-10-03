@@ -46,6 +46,7 @@ type Service struct {
 	reservationTTL   time.Duration
 	requestTimeout   time.Duration
 	maxAttempts      int
+	sticky           stickyCache
 }
 
 // Config is the named composition input for a Service. Production assembly uses

@@ -6,11 +6,13 @@ import (
 	"fmt"
 
 	"LLMGateway/server/internal/catalog"
+	"LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/ratelimit"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -363,6 +365,202 @@ func TestUpstreamContextErrorsLogged(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+type stickyFailSettlement struct{}
+
+func (stickyFailSettlement) InTx(context.Context, func(settlement.Tx) error) error {
+	return errors.New("settlement failed")
+}
+
+func TestStickySettlementFailureDoesNotBind(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		adapter := seamAdapter()
+		if stream {
+			adapter = streamAdapter(func(_ io.Reader, _ string, emit func(StreamEvent) error) error {
+				if err := emit(StreamEvent{Usage: &Usage{TotalTokens: 15}}); err != nil {
+					return err
+				}
+				return emit(StreamEvent{Done: true})
+			})
+		}
+		service, st, auth := newProtocolSeamService(t, streamTransport(), adapter)
+		service.settleTx = stickyFailSettlement{}
+		key := stickyKey{owner: auth.UserID, key: auth.KeyID, model: "public-model"}
+		service.sticky.put(key, 1, service.now())
+		response, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: key.model, Stream: stream, Body: []byte(`{}`)}, "")
+		if stream {
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = response.Stream.Forward(func([]byte) error { return nil })
+			response.Stream.Close()
+		}
+		if err == nil || service.sticky.get(key, service.now()).channelID != 0 {
+			t.Fatalf("failed settlement bound: stream=%v err=%v", stream, err)
+		}
+		active, err := st.CountActiveRateLimitReservations(context.Background(), auth.UserID, &auth.KeyID, key.model, nil)
+		if err != nil || active != 0 {
+			t.Fatalf("reservation leaked: %d %v", active, err)
+		}
+	}
+}
+
+func TestStickyCacheLifecycle(t *testing.T) {
+	var cache stickyCache
+	now := time.Now()
+	key := stickyKey{owner: 1, key: 1, model: "m"}
+	cache.put(key, 1, now)
+	old := cache.get(key, now)
+	cache.put(key, 1, now)
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cache.invalidate(key, old)
+			cache.get(key, now)
+		}()
+	}
+	wg.Wait()
+	if cache.get(key, now).channelID != 1 {
+		t.Fatal("late invalidation removed newer success")
+	}
+	if cache.get(key, now.Add(stickyTTL)).channelID != 0 {
+		t.Fatal("expired binding survived")
+	}
+	for i := 0; i <= stickyCapacity; i++ {
+		cache.put(stickyKey{key: i}, i+1, now)
+	}
+	if len(cache.entries) != stickyCapacity || cache.get(stickyKey{key: 0}, now).channelID != 0 {
+		t.Fatal("capacity not enforced")
+	}
+	cache.get(stickyKey{key: 1}, now)
+	cache.put(stickyKey{key: stickyCapacity + 1}, 1, now)
+	if cache.get(stickyKey{key: 1}, now).channelID == 0 || cache.get(stickyKey{key: 2}, now).channelID != 0 {
+		t.Fatal("LRU eviction mismatch")
+	}
+}
+
+func TestStickyFastPathAndRetry(t *testing.T) {
+	for _, mode := range []string{"success", "retry", "limit", "caller", "cancel", "read", "transport", "channel"} {
+		t.Run(mode, func(t *testing.T) {
+			calls := []string{}
+			phase := false
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			service, st, auth := newProtocolSeamService(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				calls = append(calls, r.URL.Host)
+				status := 200
+				if phase {
+					switch mode {
+					case "retry", "limit":
+						status = 502
+					case "caller":
+						status = 400
+					case "cancel":
+						cancel()
+						return nil, context.Canceled
+					case "read":
+						if len(calls) == 1 {
+							return &http.Response{StatusCode: 200, Body: errReadCloser{}, Header: make(http.Header)}, nil
+						}
+					case "transport":
+						if len(calls) == 1 {
+							return nil, errors.New("connection failed")
+						}
+					}
+				}
+				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header)}, nil
+			}), seamAdapter())
+			fallback := addSeamFallback(t, st, "fallback", "http://fallback.test")
+			third := addSeamFallback(t, st, "third", "http://third.test")
+			fourth := addSeamFallback(t, st, "fourth", "http://fourth.test")
+			counted := &routingCountCatalog{Catalog: service.catalog, duplicate: true}
+			service.catalog = counted
+			rates := &countingRateLimit{RateLimit: service.ratelimit}
+			quotas := &countingQuota{Quota: service.quota}
+			service.ratelimit, service.quota = rates, quotas
+			request := ChatRequest{Model: "public-model", Body: []byte(`{}`)}
+			if _, err := service.ChatCompletions(ctx, auth, request, ""); err != nil {
+				t.Fatal(err)
+			}
+			key := stickyKey{owner: auth.UserID, key: auth.KeyID, model: request.Model}
+			if service.sticky.get(key, service.now()).channelID != 1 {
+				t.Fatal("successful settlement not bound")
+			}
+			phase, calls = true, nil
+			if mode == "limit" {
+				service.ConfigureRequest(time.Minute, 1)
+			}
+			if mode == "retry" {
+				counted.halfOpen = true
+			}
+			if mode == "channel" {
+				_, err := newTestRateLimit(st, nil).CreateRateLimit(ctx, 1, domain.RateLimitInput{RuleName: strPtr("channel"), TargetType: strPtr("channel"), TargetValue: strPtr("1"), Metric: strPtr("rpm"), LimitValue: int64Ptr(1), Action: strPtr("reject")})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := service.ChatCompletions(ctx, auth, request, "")
+			wantList, wantCalls := 1, 1
+			if mode == "retry" {
+				wantList, wantCalls = 2, 3
+			}
+			if mode == "read" || mode == "transport" {
+				wantList, wantCalls = 2, 2
+			}
+			if mode == "channel" {
+				wantList = 2
+			}
+			if counted.listCalls != wantList || counted.singleCalls != 1 || len(calls) != wantCalls {
+				t.Fatalf("lists=%d singles=%d calls=%v err=%v", counted.listCalls, counted.singleCalls, calls, err)
+			}
+			seen := map[string]bool{}
+			for _, host := range calls {
+				if seen[host] {
+					t.Fatal("duplicate attempt")
+				}
+				seen[host] = true
+			}
+			if mode == "retry" && len(counted.released) != 3 {
+				t.Fatalf("fallback probes leaked: %v", counted.released)
+			}
+			binding := service.sticky.get(key, service.now())
+			if mode == "success" && binding.channelID != 1 {
+				t.Fatal("fast success not bound")
+			}
+			if (mode == "read" || mode == "transport" || mode == "channel") && binding.channelID != fallback && binding.channelID != third && binding.channelID != fourth {
+				t.Fatal("fallback success not preferred")
+			}
+			if (mode == "cancel" || mode == "caller" || mode == "limit" || mode == "retry") && binding.channelID != 0 {
+				t.Fatal("failed request bound")
+			}
+			if len(rates.reservations) != 2 || len(quotas.reservations) != 2 {
+				t.Fatal("admission repeated during fallback")
+			}
+			if binding.channelID != 0 {
+				phase, calls = false, nil
+				lists, singles := counted.listCalls, counted.singleCalls
+				if _, err := service.ChatCompletions(ctx, auth, request, ""); err != nil {
+					t.Fatal(err)
+				}
+				wantHost := "upstream.test"
+				if binding.channelID == fallback {
+					wantHost = "fallback.test"
+				}
+				if binding.channelID == third {
+					wantHost = "third.test"
+				}
+				if binding.channelID == fourth {
+					wantHost = "fourth.test"
+				}
+				if counted.listCalls != lists || counted.singleCalls != singles+1 || len(calls) != 1 || calls[0] != wantHost {
+					t.Fatalf("recent success not reused: %v lists=%d singles=%d", calls, counted.listCalls, counted.singleCalls)
+				}
+			}
+		})
 	}
 }
 

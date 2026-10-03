@@ -41,6 +41,7 @@ type RateLimit interface {
 type Catalog interface {
 	ListCatalogModels(ctx context.Context, ownerUserID int, enabledOnly bool) (catalog.ListResponse[catalog.CatalogModelDTO], error)
 	RouteCandidates(ctx context.Context, ownerUserID int, modelName string) (catalog.ListResponse[catalog.RouteCandidate], error)
+	RouteCandidate(ctx context.Context, ownerUserID int, modelName string, channelID int) (catalog.RouteCandidate, bool, error)
 	GetChannelHealth(ctx context.Context, channelID int) (catalog.ChannelHealth, error)
 	AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (string, bool, error)
 	ReleaseChannelProbe(ctx context.Context, channelID int, leaseID string) (bool, error)

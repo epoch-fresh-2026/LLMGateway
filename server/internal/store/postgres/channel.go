@@ -277,6 +277,22 @@ func (s *Store) ChannelUpstreamExists(ctx context.Context, ownerUserID, channelI
 	return true, nil
 }
 
+func (s *Store) RouteCandidate(ctx context.Context, ownerUserID int, modelName string, channelID, cooldownSeconds int) (domain.RouteCandidate, bool, error) {
+	row, err := s.queries.GetRouteCandidate(ctx, sqlc.GetRouteCandidateParams{
+		ChannelID:              int64(channelID),
+		ModelName:              modelName,
+		OwnerUserID:            int64(ownerUserID),
+		DefaultCooldownSeconds: int32(cooldownSeconds),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.RouteCandidate{}, false, nil
+	}
+	if err != nil {
+		return domain.RouteCandidate{}, false, mapError(err)
+	}
+	return domain.RouteCandidate{ChannelID: int(row.ChannelID), ChannelName: row.ChannelName, UpstreamModel: row.UpstreamModel, Priority: int(row.Priority), Weight: int(row.Weight), Balance: optionalString(textValue(row.Balance)), HealthState: domain.HealthState(textValue(row.HealthState))}, true, nil
+}
+
 func (s *Store) RouteCandidates(ctx context.Context, ownerUserID int, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
 	rows, err := s.queries.ListRouteCandidates(ctx, sqlc.ListRouteCandidatesParams{
 		ModelName:              modelName,

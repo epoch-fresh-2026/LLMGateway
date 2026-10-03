@@ -864,7 +864,9 @@ Authorization: Bearer <gateway-key>
 - 校验网关 Key 是否存在、启用、未过期；不再校验用户状态或余额。
 - 只使用该 Key 所属用户自己的渠道与限流规则。
 - 按模型映射选择可用渠道。
-- 按渠道 `priority`、`weight`、余额、状态进行路由；同一 API Key + public model 在健康候选未变化时保持同一首选渠道，首选渠道失败时仍允许本次请求故障切换。可用 `CHANNEL_MIN_ROUTE_BALANCE` 设置全局渠道余额预留，余额低于该值的计费渠道不参与路由，未设置余额的渠道不受影响。
+- 路由 fast path 按 `owner_user_id + APIKeyID + public model` 使用最近成功渠道，每次以单 channel 新鲜 query 立即校验归属、禁用、模型映射、cooldown 和余额，half-open 仍须获取 probe lease；不缓存渠道密钥。cold route 在最高 `priority` 组内按 `APIKeyID + model` 稳定哈希结合 `weight` 选择首选。`CHANNEL_MIN_ROUTE_BALANCE` 以下的计费渠道不参与路由，阈值为 0 时仍排除非正余额，未设置余额不受影响。
+- 最近成功绑定使用进程本地 LRU（4096 条），多实例各自缓存；固定 5 分钟重选周期，同 channel 未过期的持续成功保留 expires，但更新 generation 防止 late failure 清除新 success；换 channel、过期或新 binding 从当前时间起算 TTL。候选集合、priority/weight 变更及高 priority 渠道恢复最多等待剩余周期，不保证立即应用；禁用、映射、cooldown 和余额仍逐请求立即校验。仅成功结算才 bind，流式还必须收到 usage 与 `[DONE]` 且正常成功结算，部分结算不 bind。
+- fast path 仅在故障允许 retry、总 deadline 未到且尝试预算尚有剩余时 lazy 加载 fallback；按 channel ID 去重并排除已尝试渠道，不重置 `UPSTREAM_MAX_ATTEMPTS` 预算或总 deadline。
 - 请求上游并透传 OpenAI 风格响应。
 - `stream=true` 返回 `text/event-stream`，按 SSE 事件持续 flush，并保持 OpenAI `data:` 与 `[DONE]` 语义。
 - 流式请求会强制向上游设置 `stream_options.include_usage=true`；首个合法 JSON `data:` 帧记录 `ttft_ms`。SSE 空帧、心跳和注释不会被计为首个 token；非流式请求保持 `ttft_ms=null`。

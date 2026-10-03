@@ -266,6 +266,70 @@ func (c checkedPricingCatalog) GetPricing(ctx context.Context, id int, model str
 	return c.Catalog.GetPricing(ctx, id, model)
 }
 
+func TestStickyStreamBindsOnlyCompletedSettlement(t *testing.T) {
+	for _, mode := range []string{"success", "cancel", "protocol", "pricing", "close", "write"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			adapter := streamAdapter(func(_ io.Reader, _ string, emit func(StreamEvent) error) error {
+				if err := emit(StreamEvent{Data: true, Frame: []byte("text"), Usage: &Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}}); err != nil {
+					return err
+				}
+				if mode == "cancel" {
+					cancel()
+				}
+				if mode == "protocol" {
+					return ErrInvalidStream
+				}
+				return emit(StreamEvent{Done: true})
+			})
+			service, st, auth := newProtocolSeamService(t, streamTransport(), adapter)
+			addSeamFallback(t, st, "fallback", "http://fallback.test")
+			counted := &routingCountCatalog{Catalog: service.catalog}
+			service.catalog = counted
+			key := stickyKey{owner: auth.UserID, key: auth.KeyID, model: "public-model"}
+			response, err := service.ChatCompletions(ctx, auth, ChatRequest{Model: key.model, Stream: true, Body: []byte(`{}`)}, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Stream.Close()
+			if service.sticky.get(key, service.now()).channelID != 0 {
+				t.Fatal("2xx headers bound before forwarding")
+			}
+			if mode == "close" {
+				response.Stream.Close()
+				return
+			}
+			if mode == "pricing" {
+				service.catalog = checkedPricingCatalog{Catalog: counted, t: t, fail: true}
+			}
+			err = response.Stream.Forward(func([]byte) error {
+				if service.sticky.get(key, service.now()).channelID != 0 {
+					t.Fatal("bound before terminal frame")
+				}
+				if mode == "write" {
+					return errors.New("client disconnected")
+				}
+				return nil
+			})
+			if mode == "success" {
+				if err != nil || service.sticky.get(key, service.now()).channelID != 1 {
+					t.Fatalf("success binding err=%v", err)
+				}
+				response.Stream.Close()
+				if service.sticky.get(key, service.now()).channelID != 1 {
+					t.Fatal("Close removed completed success")
+				}
+			} else if service.sticky.get(key, service.now()).channelID != 0 {
+				t.Fatal("incomplete stream bound")
+			}
+			if counted.listCalls != 1 || counted.singleCalls != 0 {
+				t.Fatal("stream failure triggered fallback")
+			}
+		})
+	}
+}
+
 func TestCompletionStreamInterruptedAuditsForwardedTextWithoutCharge(t *testing.T) {
 	adapter := streamAdapter(func(reader io.Reader, publicModel string, emit func(StreamEvent) error) error {
 		if err := emit(StreamEvent{Frame: []byte("data: {\"chunk\":1}\n\n"), Data: true, Text: "hello world"}); err != nil {

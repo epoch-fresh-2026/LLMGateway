@@ -271,6 +271,11 @@ type routingCountCatalog struct {
 	probeCalls  int
 	probeErr    error
 	routeErr    error
+	listCalls   int
+	singleCalls int
+	released    []int
+	duplicate   bool
+	halfOpen    bool
 }
 
 func (c *routingCountCatalog) GetChannelHealth(ctx context.Context, channelID int) (catalog.ChannelHealth, error) {
@@ -287,10 +292,30 @@ func (c *routingCountCatalog) AcquireChannelProbe(ctx context.Context, channelID
 }
 
 func (c *routingCountCatalog) RouteCandidates(ctx context.Context, ownerUserID int, modelName string) (catalog.ListResponse[catalog.RouteCandidate], error) {
+	c.listCalls++
 	if c.routeErr != nil {
 		return catalog.ListResponse[catalog.RouteCandidate]{}, c.routeErr
 	}
-	return c.Catalog.RouteCandidates(ctx, ownerUserID, modelName)
+	result, err := c.Catalog.RouteCandidates(ctx, ownerUserID, modelName)
+	if c.halfOpen {
+		for i := range result.List {
+			result.List[i].HealthState = catalog.HealthHalfOpen
+		}
+	}
+	if c.duplicate {
+		result.List = append(result.List, result.List...)
+	}
+	return result, err
+}
+
+func (c *routingCountCatalog) RouteCandidate(ctx context.Context, owner int, model string, id int) (catalog.RouteCandidate, bool, error) {
+	c.singleCalls++
+	return c.Catalog.RouteCandidate(ctx, owner, model, id)
+}
+
+func (c *routingCountCatalog) ReleaseChannelProbe(ctx context.Context, id int, lease string) (bool, error) {
+	c.released = append(c.released, id)
+	return c.Catalog.ReleaseChannelProbe(ctx, id, lease)
 }
 
 func TestOrderedCandidatesClosedChannelsAvoidHealthQueries(t *testing.T) {
@@ -340,6 +365,103 @@ func TestOrderedCandidatesHalfOpenProbeErrorFallsBack(t *testing.T) {
 	candidates, probes, err := a.orderedCandidates(ctx, 1, "gpt")
 	if err != nil || len(candidates) != 1 || candidates[0].ChannelName != "fallback" || len(probes) != 0 || counted.healthCalls != 0 || counted.probeCalls != 1 {
 		t.Fatalf("candidates=%v probes=%v err=%v healthCalls=%d probeCalls=%d", candidates, probes, err, counted.healthCalls, counted.probeCalls)
+	}
+}
+
+func TestStickyCandidateFreshGates(t *testing.T) {
+	for _, mode := range []string{"disabled", "mapping", "owner", "balance", "cooldown", "probe", "half_open", "remap"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			service, st, auth := newProtocolSeamService(t, nil, seamAdapter())
+			cat := newTestCatalog(st)
+			fallback := addSeamFallback(t, st, "fallback", "http://fallback.test")
+			key := stickyKey{owner: auth.UserID, key: auth.KeyID, model: "public-model"}
+			service.sticky.put(key, 1, service.now())
+			switch mode {
+			case "disabled":
+				if _, err := cat.UpdateChannelStatus(ctx, 1, 1, 0); err != nil {
+					t.Fatal(err)
+				}
+			case "mapping":
+				if _, err := cat.UpdateChannelModel(ctx, 1, 1, 1, "public-model", false); err != nil {
+					t.Fatal(err)
+				}
+			case "remap":
+				if err := cat.DeleteChannelModel(ctx, 1, 1, 1); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := cat.CreateChannelModel(ctx, 1, 1, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "new-upstream", Enabled: true}); err != nil {
+					t.Fatal(err)
+				}
+			case "owner":
+				key.owner = 2
+				service.sticky.put(key, 1, service.now())
+			case "balance":
+				service.ConfigureMinimumRouteBalance("11")
+			case "cooldown", "probe", "half_open":
+				clock := time.Now()
+				healthStore := storefake.NewWithClock(func() time.Time { return clock })
+				cipher, err := crypto.NewCipher([]byte(testEncryptionKey))
+				if err != nil {
+					t.Fatal(err)
+				}
+				healthCat := catalog.New(catalog.Deps{Store: healthStore, Health: healthStore, Tx: healthStore.CatalogTx(), Cipher: cipher, Now: func() time.Time { return clock }})
+				channel, err := healthCat.CreateChannel(ctx, 1, domain.ChannelInput{Name: "probe", BaseURL: "http://probe.test", APIKey: "x", Status: 1})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := healthCat.CreateChannelModel(ctx, 1, channel.ID, domain.ChannelModel{ModelName: key.model, UpstreamModel: "up", Enabled: true}); err != nil {
+					t.Fatal(err)
+				}
+				for i := 0; i < 5; i++ {
+					if _, err := healthCat.RecordChannelFailure(ctx, 1, catalog.FailureUpstream5xx); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if mode != "cooldown" {
+					clock = clock.Add(time.Minute)
+				}
+				if mode == "probe" {
+					lease, ok, err := healthCat.AcquireChannelProbe(ctx, 1, time.Minute)
+					if err != nil || !ok {
+						t.Fatalf("lease=%s ok=%v err=%v", lease, ok, err)
+					}
+					defer healthCat.ReleaseChannelProbe(ctx, 1, lease)
+				}
+				service.catalog = healthCat
+				fallback = 0
+			}
+			counted := &routingCountCatalog{Catalog: service.catalog}
+			service.catalog = counted
+			candidates, probes, _, lazy, err := service.stickyCandidates(ctx, key)
+			defer service.releaseProbes(ctx, probes)
+			if err != nil || counted.singleCalls != 1 {
+				t.Fatalf("candidates=%v err=%v singles=%d", candidates, err, counted.singleCalls)
+			}
+			valid := mode == "half_open" || mode == "remap"
+			if valid {
+				if !lazy || counted.listCalls != 0 || len(candidates) != 1 || candidates[0].ChannelID != 1 {
+					t.Fatalf("fast path rejected: %v", candidates)
+				}
+				if mode == "remap" && candidates[0].UpstreamModel != "new-upstream" {
+					t.Fatal("stale mapping")
+				}
+				if mode == "half_open" && probes[1] == "" {
+					t.Fatal("probe not acquired")
+				}
+			} else {
+				if lazy || counted.listCalls != 1 || service.sticky.get(key, service.now()).channelID != 0 {
+					t.Fatal("ineligible cache survived")
+				}
+				if mode == "owner" || fallback == 0 {
+					if len(candidates) != 0 {
+						t.Fatalf("ineligible channel routed: %v", candidates)
+					}
+				} else if len(candidates) != 1 || candidates[0].ChannelID != fallback {
+					t.Fatalf("fallback=%v", candidates)
+				}
+			}
+		})
 	}
 }
 

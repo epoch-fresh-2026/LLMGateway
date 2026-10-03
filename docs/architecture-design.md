@@ -34,7 +34,7 @@
 - 余额为零或负数的计费渠道。
 - 余额低于全局 `CHANNEL_MIN_ROUTE_BALANCE` 的计费渠道。
 
-剩余候选按 `priority` 分组，只在最高 priority 组内选择首选渠道。低 priority 渠道不是正常流量的竞争者，而是故障切换时的后备。
+cold route 将剩余候选按 `priority` 分组，只在最高 priority 组内选择首选渠道。低 priority 渠道是故障切换后备，成功后可在最近成功绑定的剩余周期内继续走 fast path（见 2.3）。
 
 这样设计的原因是：priority 通常表达用户的硬意图，例如主供应商、区域优先级或成本层级。如果把所有渠道放入一个动态分数池，低优先级渠道可能因为短期延迟更低而夺走主渠道流量，配置就失去可解释性。
 
@@ -44,19 +44,21 @@
 
 当前不实现按延迟和健康度动态改权重，原因是动态评分容易混合请求长度、输出速度和网络延迟，少量样本会造成抖动，用户也难以解释流量变化。熔断已经承担“异常渠道隔离”的职责。
 
-### 2.3 使用 API Key + public model 粘性首选
+### 2.3 最近成功渠道 fast path 与固定周期重选
 
-同一个 API Key 使用同一个 public model 时，系统用 `APIKeyID + model` 做稳定哈希，再映射到最高 priority 候选组的权重区间。候选集合稳定时，连续请求会尽量落到同一渠道。
+fast path 按 `owner_user_id + APIKeyID + public model` 查最近成功渠道，命中后只做单 channel 新鲜 query，立即校验归属、禁用、模型映射、cooldown 和余额，half-open 仍须取得单飞 probe lease。绑定不缓存密钥，实际尝试时另行获取。未命中、过期或渠道不再可用时走 cold route：仍用 `APIKeyID + model` 稳定哈希映射最高 priority 组的 weight 区间。
 
-粘性解决连接复用、上游会话习惯、缓存命中和行为稳定性问题，但不是硬绑定：渠道熔断、余额不满足阈值、被停用或本次请求失败时都会立即失效并故障切换。
+绑定只在成功结算后建立；流式还必须同时收到 usage 与 `[DONE]` 并正常成功结算，部分结算不建立绑定。进程本地 LRU 容量为 4096，重选周期固定 5 分钟。同 channel 且未过期时成功不会延长 expires，但仍更新 generation，避免旧请求的 late failure 清掉新 success；换 channel、已过期或新 binding 从当前时间起算 TTL。
 
-不把粘性写入数据库，是因为它是可重新计算的路由偏好，不是账务状态。代价是候选集合变化时可能重新分配，这是有意接受的。
+低 priority fallback 成功后可在剩余周期内继续承接请求，但持续成功不能无限续期；周期结束后的下一次 cold route 会重新考虑已恢复的高 priority 渠道。候选集合及 priority/weight 变更最多等待剩余周期，不保证立即应用；禁用、映射、cooldown 和余额则逐请求立即校验。
+
+粘性是可重建的路由优化而非账务状态，不写数据库。多实例各自持有缓存，绑定和淘汰互不共享。
 
 ## 3. 上游故障处理
 
 ### 3.1 请求级故障切换
 
-一次请求先生成去重后的候选顺序，最多尝试配置的 `UPSTREAM_MAX_ATTEMPTS` 次。可切换故障包括：
+cold route 先生成去重后的候选顺序；fast path 仅在故障允许 retry、总 deadline 未到且尝试预算尚有剩余时 lazy 加载 fallback，按 channel ID 去重并排除已尝试渠道。两条路径共享 `UPSTREAM_MAX_ATTEMPTS` 总尝试预算和请求 deadline，不因加载后备而重置。可切换故障包括：
 
 - 连接建立失败、DNS 失败、连接重置等传输错误。
 - 上游超时。

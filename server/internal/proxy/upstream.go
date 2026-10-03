@@ -14,8 +14,6 @@ import (
 	"LLMGateway/server/internal/catalog"
 )
 
-// upstreamAttemptInput bundles the request-scoped context needed by the
-// candidate failover loop. candidates is already truncated to maxAttempts.
 type upstreamAttemptInput struct {
 	requestID       string
 	auth            *accounts.AuthContext
@@ -26,6 +24,10 @@ type upstreamAttemptInput struct {
 	start           time.Time
 	clientIP        string
 	timing          *requestTiming
+	stickyKey       stickyKey
+	stickyBinding   stickyBinding
+	lazyFallback    bool
+	probes          map[int]string
 }
 
 // upstreamAttempt is the outcome of the candidate failover loop.
@@ -55,7 +57,33 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 	if in.rateLimits == nil {
 		in.rateLimits = &rateLimitSnapshot{}
 	}
-	for attempt, next := range in.candidates {
+	tried := map[int]bool{}
+	retry := func(attempt int) bool {
+		a.sticky.invalidate(in.stickyKey, in.stickyBinding)
+		if ctx.Err() != nil || attempt+1 >= a.maxAttempts {
+			return false
+		}
+		if in.lazyFallback {
+			in.lazyFallback = false
+			fallback, leases, lookupErr := a.orderedCandidatesExcluding(ctx, in.auth.UserID, in.req.Model, tried, in.auth.KeyID)
+			for id, lease := range leases {
+				in.probes[id] = lease
+			}
+			if lookupErr != nil {
+				return false
+			}
+			remaining := a.maxAttempts - len(in.candidates)
+			if len(fallback) > remaining {
+				fallback = fallback[:remaining]
+			}
+			in.candidates = append(in.candidates, fallback...)
+		}
+		return attempt+1 < len(in.candidates)
+	}
+	for attempt := 0; attempt < len(in.candidates); attempt++ {
+		next := in.candidates[attempt]
+		tried[next.ChannelID] = true
+		healthRecorded = false
 		if ctx.Err() != nil {
 			a.logAttemptContextError(ctx, in, candidate, false)
 			return upstreamAttempt{}, ctx.Err()
@@ -67,7 +95,7 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 		if err := rateErr; err != nil {
 			if errors.Is(err, ErrRateLimited) {
 				a.recordChannelHealth(ctx, candidate.ChannelID, false, catalog.FailureUpstreamUnreachable)
-				if attempt+1 < len(in.candidates) {
+				if retry(attempt) {
 					continue
 				}
 				a.logUsage(ctx, in.requestID, in.auth, &candidate.ChannelID, candidate.UpstreamModel, in.req.Model, nil, "0.000000", "", "", elapsedMs(in.start, a.now()), in.clientIP, "error", "rate_limited")
@@ -108,7 +136,7 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 			}
 			if reason := catalog.ClassifyUpstreamResult(0, err); reason.CountsAsChannelFailure() {
 				a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
-				if attempt+1 < len(in.candidates) {
+				if retry(attempt) {
 					continue
 				}
 			}
@@ -132,7 +160,7 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 			reason := catalog.ClassifyUpstreamResult(0, readErr)
 			if reason.CountsAsChannelFailure() {
 				a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
-				if attempt+1 < len(in.candidates) {
+				if retry(attempt) {
 					continue
 				}
 			}
@@ -145,7 +173,7 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 		if reason := catalog.ClassifyUpstreamResult(resp.StatusCode, nil); reason.CountsAsChannelFailure() {
 			a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
 			healthRecorded = true
-			if attempt+1 < len(in.candidates) {
+			if retry(attempt) {
 				continue
 			}
 		}

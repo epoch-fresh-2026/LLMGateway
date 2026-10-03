@@ -25,6 +25,18 @@ func (a *Service) releaseProbes(ctx context.Context, probes map[int]string) {
 // half-open channel it admits, acquires a single-flight probe lease. The
 // returned leases are keyed by channel id; the caller owns releasing them.
 func (a *Service) orderedCandidates(ctx context.Context, ownerUserID int, model string, stickyKey ...int) ([]catalog.RouteCandidate, map[int]string, error) {
+	return a.orderedCandidatesExcluding(ctx, ownerUserID, model, nil, stickyKey...)
+}
+
+func (a *Service) routeBalanceEligible(candidate catalog.RouteCandidate) bool {
+	if candidate.Balance == nil {
+		return true
+	}
+	amount, err := money.Parse6(*candidate.Balance)
+	return err == nil && amount.Cmp(0) > 0 && amount.Cmp(a.minRouteBalance) >= 0
+}
+
+func (a *Service) orderedCandidatesExcluding(ctx context.Context, ownerUserID int, model string, excluded map[int]bool, stickyKey ...int) ([]catalog.RouteCandidate, map[int]string, error) {
 	result, err := a.catalog.RouteCandidates(ctx, ownerUserID, model)
 	if err != nil {
 		return nil, nil, err
@@ -33,7 +45,7 @@ func (a *Service) orderedCandidates(ctx context.Context, ownerUserID int, model 
 	probes := map[int]string{}
 	seen := map[int]bool{}
 	for _, candidate := range result.List {
-		if seen[candidate.ChannelID] {
+		if seen[candidate.ChannelID] || excluded[candidate.ChannelID] {
 			continue
 		}
 		state := candidate.HealthState
@@ -43,7 +55,7 @@ func (a *Service) orderedCandidates(ctx context.Context, ownerUserID int, model 
 				state = health.State
 			}
 		}
-		if state == catalog.HealthOpen {
+		if state == catalog.HealthOpen || !a.routeBalanceEligible(candidate) {
 			continue
 		}
 		if state == catalog.HealthHalfOpen {
@@ -52,12 +64,6 @@ func (a *Service) orderedCandidates(ctx context.Context, ownerUserID int, model 
 				continue
 			}
 			probes[candidate.ChannelID] = leaseID
-		}
-		if candidate.Balance != nil {
-			parsed, err := money.Parse6(*candidate.Balance)
-			if err == nil && (parsed.Cmp(0) <= 0 || parsed.Cmp(a.minRouteBalance) < 0) {
-				continue
-			}
 		}
 		seen[candidate.ChannelID] = true
 		candidates = append(candidates, candidate)

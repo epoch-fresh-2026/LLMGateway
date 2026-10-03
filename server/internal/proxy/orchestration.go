@@ -94,7 +94,14 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 
 	timing.finish("rate_limit", stageStart)
 	stageStart = timing.begin()
-	candidates, probes, err := a.orderedCandidates(ctx, auth.UserID, req.Model, auth.KeyID)
+	stickyKey := stickyKey{owner: auth.UserID, key: auth.KeyID, model: req.Model}
+	candidates, probes, binding, lazyFallback, err := a.stickyCandidates(ctx, stickyKey)
+	stickySuccess := false
+	defer func() {
+		if !stickySuccess && !streamOwnsCancel {
+			a.sticky.invalidate(stickyKey, binding)
+		}
+	}()
 	timing.finish("route", stageStart)
 	defer a.releaseProbes(ctx, probes)
 	if err != nil {
@@ -135,6 +142,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	}
 	attempt, err := a.attemptUpstreams(ctx, upstreamAttemptInput{
 		requestID: requestID, auth: auth, req: req, candidates: candidates,
+		stickyKey: stickyKey, stickyBinding: binding, lazyFallback: lazyFallback, probes: probes,
 		estimatedTokens: *estimatedTokens, rateLimits: rateLimits, start: start, clientIP: clientIP, timing: timing,
 	})
 	if err != nil {
@@ -163,6 +171,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		}
 		return ChatResponse{Status: resp.StatusCode, Stream: &completionStream{
 			service: a, body: resp.Body, ctx: ctx, requestID: requestID, auth: auth, timing: attempt.timing,
+			stickyKey: stickyKey, stickyBinding: binding,
 			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID, rateReservationID: rateReservation.ID, estimatedPromptTokens: promptTokens, cancel: cancel, probeLeaseID: probeLeaseID,
 		}}, nil
 	}
@@ -216,6 +225,10 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	}
 	releaseReservation = false
 	rateReservationOpen = false
+	if ctx.Err() == nil {
+		a.sticky.put(stickyKey, candidate.ChannelID, a.now())
+		stickySuccess = true
+	}
 
 	return ChatResponse{Status: http.StatusOK, Body: a.adapter.RewriteResponse(responseBody, req.Model), Usage: usage}, nil
 }

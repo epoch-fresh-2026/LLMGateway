@@ -94,6 +94,10 @@ func (a *Server) ListCatalogModels(ctx context.Context, ownerUserID int, enabled
 	return a.store.ListCatalogModels(ctx, ownerUserID, enabledOnly)
 }
 
+func (a *Server) RouteCandidate(ctx context.Context, ownerUserID int, modelName string, channelID int) (RouteCandidate, bool, error) {
+	return a.store.RouteCandidate(ctx, ownerUserID, modelName, channelID, int(a.baseBreakerFor(ctx, ownerUserID).Cooldown.Seconds()))
+}
+
 func (a *Server) RouteCandidates(ctx context.Context, ownerUserID int, modelName string) (ListResponse[RouteCandidate], error) {
 	return a.store.RouteCandidates(ctx, ownerUserID, modelName, int(a.baseBreakerFor(ctx, ownerUserID).Cooldown.Seconds()))
 }

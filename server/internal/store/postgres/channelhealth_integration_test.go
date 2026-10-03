@@ -23,6 +23,90 @@ func createHealthTestChannel(t *testing.T, owner int, cat *catalog.Server) int {
 	return channelID
 }
 
+func TestPGRouteCandidateValidation(t *testing.T) {
+	st := testStore(t)
+	owner := testOwner(t, st)
+	otherOwner := testOwner(t, st)
+	cat := testCatalog(t, st)
+	ctx := context.Background()
+	balance := "0"
+	created, err := cat.CreateChannel(ctx, owner, domain.ChannelInput{Name: "route", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Priority: 7, Weight: 23, Balance: &balance})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := cat.CreateChannelModel(ctx, owner, created.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.CreateChannelModel(ctx, owner, created.ID, domain.ChannelModel{ModelName: "other", UpstreamModel: "other-up", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	check := func(user int, name string, id int, found bool, state catalog.HealthState) {
+		t.Helper()
+		candidate, ok, err := cat.RouteCandidate(ctx, user, name, id)
+		if err != nil || ok != found {
+			t.Fatalf("RouteCandidate(%d, %s, %d): ok=%v err=%v", user, name, id, ok, err)
+		}
+		if !found {
+			if candidate.ChannelID != 0 {
+				t.Fatalf("unexpected candidate: %+v", candidate)
+			}
+			return
+		}
+		if candidate.ChannelID != created.ID || candidate.UpstreamModel != "up" || candidate.Priority != 7 || candidate.Weight != 23 || candidate.Balance == nil || *candidate.Balance != "0.000000" || candidate.HealthState != state {
+			t.Fatalf("unexpected candidate: %+v", candidate)
+		}
+		list, err := cat.RouteCandidates(ctx, user, name)
+		if err != nil || list.Total != 1 || list.List[0].HealthState != candidate.HealthState || list.List[0].UpstreamModel != candidate.UpstreamModel {
+			t.Fatalf("list mismatch: %+v err=%v", list, err)
+		}
+	}
+	check(owner, "gpt", created.ID, true, catalog.HealthClosed)
+	check(otherOwner, "gpt", created.ID, false, "")
+	check(owner, "missing", created.ID, false, "")
+	check(owner, "gpt", 0, false, "")
+	if _, err := cat.UpdateChannelStatus(ctx, owner, created.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	check(owner, "gpt", created.ID, false, "")
+	if _, err := cat.UpdateChannelStatus(ctx, owner, created.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.UpdateChannelModel(ctx, owner, created.ID, model.ID, "gpt", false); err != nil {
+		t.Fatal(err)
+	}
+	check(owner, "gpt", created.ID, false, "")
+	if _, err := cat.UpdateChannelModel(ctx, owner, created.ID, model.ID, "gpt", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.UpdateUserBreakerConfig(ctx, owner, catalog.ChannelBreakerConfigInput{WindowSeconds: 60, MinimumSamples: 10, ErrorRatePercent: 50, TimeoutRatePercent: 50, CooldownSeconds: 300}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.RecordChannelFailure(ctx, created.ID, catalog.FailureUpstream401); err != nil {
+		t.Fatal(err)
+	}
+	check(owner, "gpt", created.ID, false, "")
+	if _, err := st.pool.Exec(ctx, "UPDATE channel_health SET opened_at = now() - interval '1 minute' WHERE channel_id = $1", created.ID); err != nil {
+		t.Fatal(err)
+	}
+	check(owner, "gpt", created.ID, false, "")
+	if _, err := st.pool.Exec(ctx, "UPDATE channel_health SET opened_at = now() - interval '6 minutes' WHERE channel_id = $1", created.ID); err != nil {
+		t.Fatal(err)
+	}
+	check(owner, "gpt", created.ID, true, catalog.HealthHalfOpen)
+	if _, err := st.pool.Exec(ctx, "UPDATE channel_health SET opened_at = NULL WHERE channel_id = $1", created.ID); err != nil {
+		t.Fatal(err)
+	}
+	check(owner, "gpt", created.ID, false, "")
+	if err := cat.ResetChannelHealth(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := cat.DeleteChannelModel(ctx, owner, created.ID, model.ID); err != nil {
+		t.Fatal(err)
+	}
+	check(owner, "gpt", created.ID, false, "")
+}
+
 func TestPGChannelHealthLifecycle(t *testing.T) {
 	st := testStore(t)
 	owner := testOwner(t, st)

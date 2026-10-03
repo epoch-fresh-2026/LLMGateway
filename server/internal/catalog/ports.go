@@ -42,6 +42,7 @@ type Port interface {
 	// a public model owned by ownerUserID, ordered by priority desc, weight desc,
 	// channel id. The caller supplies the breaker cooldown in seconds.
 	RouteCandidates(ctx context.Context, ownerUserID int, modelName string, cooldownSeconds int) (ListResponse[RouteCandidate], error)
+	RouteCandidate(ctx context.Context, ownerUserID int, modelName string, channelID, cooldownSeconds int) (RouteCandidate, bool, error)
 }
 
 // Tx is the transaction-scoped persistence surface for catalog writes. It

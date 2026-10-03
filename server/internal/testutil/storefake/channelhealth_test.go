@@ -389,6 +389,75 @@ func TestReapChannelHealthBuckets(t *testing.T) {
 	}
 }
 
+func TestRouteCandidateValidation(t *testing.T) {
+	st, clock := newHealthTestStore()
+	cat := newHealthCatalog(st, clock)
+	ctx := context.Background()
+	balance := "0"
+	created, err := cat.CreateChannel(ctx, 1, domain.ChannelInput{Name: "route", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Priority: 7, Weight: 23, Balance: &balance})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := cat.CreateChannelModel(ctx, 1, created.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.CreateChannelModel(ctx, 1, created.ID, domain.ChannelModel{ModelName: "other", UpstreamModel: "other-up", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	check := func(owner int, name string, id int, found bool, state catalog.HealthState) {
+		t.Helper()
+		candidate, ok, err := cat.RouteCandidate(ctx, owner, name, id)
+		if err != nil || ok != found {
+			t.Fatalf("RouteCandidate(%d, %s, %d): ok=%v err=%v", owner, name, id, ok, err)
+		}
+		if !found {
+			if candidate.ChannelID != 0 {
+				t.Fatalf("unexpected candidate: %+v", candidate)
+			}
+			return
+		}
+		if candidate.ChannelID != created.ID || candidate.UpstreamModel != "up" || candidate.Priority != 7 || candidate.Weight != 23 || candidate.Balance == nil || *candidate.Balance != "0.000000" || candidate.HealthState != state {
+			t.Fatalf("unexpected candidate: %+v", candidate)
+		}
+		list, err := cat.RouteCandidates(ctx, owner, name)
+		if err != nil || list.Total != 1 || list.List[0].HealthState != candidate.HealthState || list.List[0].UpstreamModel != candidate.UpstreamModel {
+			t.Fatalf("list mismatch: %+v err=%v", list, err)
+		}
+	}
+	check(1, "gpt", created.ID, true, catalog.HealthClosed)
+	check(2, "gpt", created.ID, false, "")
+	check(1, "missing", created.ID, false, "")
+	check(1, "gpt", created.ID+100, false, "")
+	if _, err := cat.UpdateChannelStatus(ctx, 1, created.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	check(1, "gpt", created.ID, false, "")
+	if _, err := cat.UpdateChannelStatus(ctx, 1, created.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.UpdateChannelModel(ctx, 1, created.ID, model.ID, "gpt", false); err != nil {
+		t.Fatal(err)
+	}
+	check(1, "gpt", created.ID, false, "")
+	if _, err := cat.UpdateChannelModel(ctx, 1, created.ID, model.ID, "gpt", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.UpdateUserBreakerConfig(ctx, 1, catalog.ChannelBreakerConfigInput{WindowSeconds: 60, MinimumSamples: 10, ErrorRatePercent: 50, TimeoutRatePercent: 50, CooldownSeconds: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.RecordChannelFailure(ctx, created.ID, catalog.FailureUpstream401); err != nil {
+		t.Fatal(err)
+	}
+	check(1, "gpt", created.ID, false, "")
+	*clock = clock.Add(5 * time.Second)
+	check(1, "gpt", created.ID, true, catalog.HealthHalfOpen)
+	if err := cat.DeleteChannelModel(ctx, 1, created.ID, model.ID); err != nil {
+		t.Fatal(err)
+	}
+	check(1, "gpt", created.ID, false, "")
+}
+
 func TestRouteCandidatesExcludeOpenChannel(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)

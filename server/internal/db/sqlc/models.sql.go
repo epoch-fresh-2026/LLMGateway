@@ -149,6 +149,72 @@ func (q *Queries) GetChannelModelByID(ctx context.Context, arg GetChannelModelBy
 	return i, err
 }
 
+const getRouteCandidate = `-- name: GetRouteCandidate :one
+SELECT
+    c.id AS channel_id,
+    c.name AS channel_name,
+    cm.upstream_model,
+    c.priority,
+    c.weight,
+    COALESCE(c.balance::text, '') AS balance,
+    CASE
+        WHEN h.state = 'open'
+            AND h.opened_at + ($1::int * interval '1 second') <= now()
+        THEN 'half-open'
+        ELSE COALESCE(h.state, 'closed')
+    END::text AS health_state
+FROM channel_models cm
+JOIN channels c ON c.id = cm.channel_id
+LEFT JOIN channel_health h ON h.channel_id = c.id
+WHERE c.id = $2
+  AND cm.model_name = $3 AND cm.enabled = true AND c.status = 1
+  AND c.owner_user_id = $4
+  AND NOT (
+      COALESCE(h.state, 'closed') = 'open'
+      AND (
+          h.opened_at IS NULL
+          OR h.opened_at + ($1::int * interval '1 second') > now()
+      )
+  )
+`
+
+type GetRouteCandidateParams struct {
+	DefaultCooldownSeconds int32  `json:"default_cooldown_seconds"`
+	ChannelID              int64  `json:"channel_id"`
+	ModelName              string `json:"model_name"`
+	OwnerUserID            int64  `json:"owner_user_id"`
+}
+
+type GetRouteCandidateRow struct {
+	ChannelID     int64       `json:"channel_id"`
+	ChannelName   string      `json:"channel_name"`
+	UpstreamModel string      `json:"upstream_model"`
+	Priority      int32       `json:"priority"`
+	Weight        int32       `json:"weight"`
+	Balance       interface{} `json:"balance"`
+	HealthState   string      `json:"health_state"`
+}
+
+func (q *Queries) GetRouteCandidate(ctx context.Context, arg GetRouteCandidateParams) (GetRouteCandidateRow, error) {
+	row := q.db.QueryRow(ctx, getRouteCandidate,
+		arg.DefaultCooldownSeconds,
+		arg.ChannelID,
+		arg.ModelName,
+		arg.OwnerUserID,
+	)
+	var i GetRouteCandidateRow
+	err := row.Scan(
+		&i.ChannelID,
+		&i.ChannelName,
+		&i.UpstreamModel,
+		&i.Priority,
+		&i.Weight,
+		&i.Balance,
+		&i.HealthState,
+	)
+	return i, err
+}
+
 const listCatalogModels = `-- name: ListCatalogModels :many
 SELECT
     cm.model_name,

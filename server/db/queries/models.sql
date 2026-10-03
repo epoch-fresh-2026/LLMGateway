@@ -73,6 +73,34 @@ WHERE cm.model_name = sqlc.arg(model_name) AND cm.enabled = true AND c.status = 
   )
 ORDER BY c.priority DESC, c.weight DESC, c.id;
 
+-- name: GetRouteCandidate :one
+SELECT
+    c.id AS channel_id,
+    c.name AS channel_name,
+    cm.upstream_model,
+    c.priority,
+    c.weight,
+    COALESCE(c.balance::text, '') AS balance,
+    CASE
+        WHEN h.state = 'open'
+            AND h.opened_at + (sqlc.arg(default_cooldown_seconds)::int * interval '1 second') <= now()
+        THEN 'half-open'
+        ELSE COALESCE(h.state, 'closed')
+    END::text AS health_state
+FROM channel_models cm
+JOIN channels c ON c.id = cm.channel_id
+LEFT JOIN channel_health h ON h.channel_id = c.id
+WHERE c.id = sqlc.arg(channel_id)
+  AND cm.model_name = sqlc.arg(model_name) AND cm.enabled = true AND c.status = 1
+  AND c.owner_user_id = sqlc.arg(owner_user_id)
+  AND NOT (
+      COALESCE(h.state, 'closed') = 'open'
+      AND (
+          h.opened_at IS NULL
+          OR h.opened_at + (sqlc.arg(default_cooldown_seconds)::int * interval '1 second') > now()
+      )
+  );
+
 -- name: ListCatalogModels :many
 SELECT
     cm.model_name,

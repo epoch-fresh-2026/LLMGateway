@@ -299,6 +299,28 @@ func (s *Store) ChannelUpstreamExists(_ context.Context, ownerUserID, channelID 
 	return s.hasChannelUpstreamLocked(channelID, upstreamModel), nil
 }
 
+func (s *Store) RouteCandidate(_ context.Context, ownerUserID int, modelName string, channelID, cooldownSeconds int) (domain.RouteCandidate, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	channel := s.channels[channelID]
+	if channel == nil || channel.OwnerUserID != ownerUserID || channel.Status != 1 {
+		return domain.RouteCandidate{}, false, nil
+	}
+	base := s.breaker
+	base.Cooldown = time.Duration(cooldownSeconds) * time.Second
+	health := s.channelHealthLocked(channelID, base)
+	if health.State == domain.HealthOpen {
+		return domain.RouteCandidate{}, false, nil
+	}
+	for _, model := range s.models[channelID] {
+		if model.ModelName == modelName && model.Enabled {
+			return domain.RouteCandidate{ChannelID: channelID, ChannelName: channel.Name, UpstreamModel: model.UpstreamModel, Priority: channel.Priority, Weight: channel.Weight, Balance: channel.Balance, HealthState: health.State}, true, nil
+		}
+	}
+	return domain.RouteCandidate{}, false, nil
+}
+
 func (s *Store) RouteCandidates(_ context.Context, ownerUserID int, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

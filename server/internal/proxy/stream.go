@@ -31,12 +31,24 @@ type completionStream struct {
 	estimatedPromptTokens int
 	cancel                context.CancelFunc
 	probeLeaseID          string
+	stickyKey             stickyKey
+	stickyBinding         stickyBinding
 
 	mu        sync.Mutex
 	forwarded bool
 }
 
 func (s *completionStream) Close() error {
+	s.mu.Lock()
+	unforwarded := !s.forwarded
+	s.forwarded = true
+	s.mu.Unlock()
+	if unforwarded && s.reservationID != 0 {
+		relCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
+		_ = s.service.quota.ReleaseQuota(relCtx, s.reservationID)
+		cancel()
+	}
+	s.service.sticky.invalidate(s.stickyKey, s.stickyBinding)
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -54,9 +66,6 @@ func (s *completionStream) Close() error {
 }
 
 func (s *completionStream) Forward(emit func([]byte) error) error {
-	if s.cancel != nil {
-		defer s.cancel()
-	}
 	s.mu.Lock()
 	if s.forwarded {
 		s.mu.Unlock()
@@ -64,7 +73,19 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	}
 	s.forwarded = true
 	s.mu.Unlock()
+	stickySuccess := false
+	defer func() {
+		if !stickySuccess {
+			s.service.sticky.invalidate(s.stickyKey, s.stickyBinding)
+		}
+	}()
+	if s.cancel != nil {
+		defer s.cancel()
+	}
 	defer s.body.Close()
+	if s.probeLeaseID != "" {
+		defer s.service.releaseProbes(s.ctx, map[int]string{s.candidate.ChannelID: s.probeLeaseID})
+	}
 	settled := false
 	defer func() {
 		if !settled && s.reservationID != 0 {
@@ -181,6 +202,10 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	s.rateReservationID = 0
 	if err := emit([]byte("data: [DONE]\n\n")); err != nil {
 		return fmt.Errorf("%w: %v", errDownstreamWrite, err)
+	}
+	if s.ctx.Err() == nil {
+		s.service.sticky.put(s.stickyKey, s.candidate.ChannelID, s.service.now())
+		stickySuccess = true
 	}
 	return nil
 }

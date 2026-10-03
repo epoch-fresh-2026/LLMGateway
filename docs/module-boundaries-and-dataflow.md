@@ -150,9 +150,13 @@ sequenceDiagram
     Proxy->>Store: 按 Key hash 查询 Key 权限（启用/未过期）
     Proxy->>Proxy: 估算输入/输出 Token
     Proxy->>Store: 申请限流 reservation（本人规则）
-    Proxy->>Store: 查询该用户健康路由候选
-    Proxy->>Proxy: 排除 open、停用、余额不足渠道
-    Proxy->>Proxy: API Key + model 粘性选择首选
+    Proxy->>Proxy: 按 owner + Key + model 查最近成功绑定
+    alt 未过期绑定命中
+        Proxy->>Store: 单 channel 新鲜 query 校验归属、状态、映射、cooldown、余额
+    else cold route
+        Proxy->>Store: 查询该用户健康候选
+        Proxy->>Proxy: 最高 priority 组内按 Key + model 哈希与 weight 选首选
+    end
     Proxy->>Store: 申请周期 quota reservation
     Proxy->>Store: 获取渠道密钥
     Proxy->>Upstream: 改写模型后发起请求
@@ -160,7 +164,8 @@ sequenceDiagram
     alt 可重试上游故障
         Upstream-->>Proxy: 网络错误 / 429 / 401-403 / 5xx
         Proxy->>Store: 记录渠道失败
-        Proxy->>Proxy: 尝试下一个候选
+        Proxy->>Store: fast path 仅在允许 retry 且预算/deadline 允许时 lazy 加载 fallback
+        Proxy->>Proxy: 去重并排除已尝试 channel，共享尝试预算
     else 成功响应
         Upstream-->>Proxy: 2xx + usage
         Proxy->>Proxy: 解析 usage、计算费用
@@ -176,6 +181,10 @@ sequenceDiagram
 
     HTTP-->>Client: 单一最终响应
 ```
+
+最近成功 fast path 由 proxy 的进程本地 LRU 持有，按 `owner_user_id + APIKeyID + public model` 隔离，容量 4096，仅缓存 channel ID、generation 和 expires，不缓存密钥；多实例各自缓存。命中后单 channel 新鲜 query 立即校验禁用、模型映射、cooldown 和余额，half-open 仍须获取 probe lease。cold route 保持最高 priority 组内的 Key + model 稳定哈希与 weight 选择。
+
+绑定只在成功结算后写入；流式还必须同时收到 usage 与 `[DONE]` 且正常成功结算，部分结算不 bind。重选周期固定 5 分钟：同 channel 且未过期时保留 expires，generation 仍更新以防 late failure 清除新 success；换 channel、过期或新 binding 从当前时间起算 TTL。候选集合及 priority/weight 变更、高 priority 渠道恢复最多等待剩余周期，不保证立即应用；禁用、映射、cooldown 和余额逐请求立即校验。fast path 仅在允许 retry 且总 deadline、尝试预算允许时 lazy 加载 fallback，去重并排除已尝试渠道，不重置预算。
 
 ### 请求中的状态所有权
 
