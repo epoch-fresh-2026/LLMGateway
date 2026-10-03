@@ -22,8 +22,10 @@ type upstreamAttemptInput struct {
 	req             ChatRequest
 	candidates      []catalog.RouteCandidate
 	estimatedTokens int64
+	rateLimits      *rateLimitSnapshot
 	start           time.Time
 	clientIP        string
+	timing          *requestTiming
 }
 
 // upstreamAttempt is the outcome of the candidate failover loop.
@@ -32,6 +34,7 @@ type upstreamAttempt struct {
 	body           []byte
 	candidate      catalog.RouteCandidate
 	healthRecorded bool
+	timing         *upstreamTiming
 }
 
 // attemptUpstreams tries candidates in order until one yields a usable
@@ -47,14 +50,21 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 		readErr        error
 		candidate      = in.candidates[0]
 		healthRecorded bool
+		timing         *upstreamTiming
 	)
+	if in.rateLimits == nil {
+		in.rateLimits = &rateLimitSnapshot{}
+	}
 	for attempt, next := range in.candidates {
 		if ctx.Err() != nil {
 			a.logAttemptContextError(ctx, in, candidate, false)
 			return upstreamAttempt{}, ctx.Err()
 		}
 		candidate = next
-		if err := a.checkChannelRateLimit(ctx, in.auth, in.req.Model, candidate.ChannelID, in.estimatedTokens); err != nil {
+		stageStart := in.timing.begin()
+		rateErr := a.checkChannelRateLimitWithSnapshot(ctx, in.auth, in.req.Model, candidate.ChannelID, in.estimatedTokens, in.rateLimits)
+		in.timing.finish("rate_limit", stageStart)
+		if err := rateErr; err != nil {
 			if errors.Is(err, ErrRateLimited) {
 				a.recordChannelHealth(ctx, candidate.ChannelID, false, catalog.FailureUpstreamUnreachable)
 				if attempt+1 < len(in.candidates) {
@@ -85,6 +95,11 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 		if secret.AuthType == "bearer" && secret.APIKey != "" {
 			httpReq.Header.Set("Authorization", "Bearer "+secret.APIKey)
 		}
+		traceCtx, attemptTiming := in.timing.trace(httpReq.Context(), candidate.ChannelID, attempt+1)
+		timing = attemptTiming
+		if timing != nil {
+			httpReq = httpReq.WithContext(traceCtx)
+		}
 		resp, err = a.client.Do(httpReq)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -99,6 +114,10 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 			}
 			a.logUsage(ctx, in.requestID, in.auth, &candidate.ChannelID, candidate.UpstreamModel, in.req.Model, nil, "0.000000", "", "", elapsedMs(in.start, a.now()), in.clientIP, "error", "upstream_unreachable")
 			return upstreamAttempt{}, ErrUpstream
+		}
+		timing.responseHeaders()
+		if !in.req.Stream || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			timing.emit(ctx, "response_headers")
 		}
 		if in.req.Stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			break
@@ -139,7 +158,7 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 		a.logUsage(ctx, in.requestID, in.auth, &candidate.ChannelID, candidate.UpstreamModel, in.req.Model, nil, "0.000000", "", "", elapsedMs(in.start, a.now()), in.clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
 		return upstreamAttempt{candidate: candidate}, ErrUpstream
 	}
-	return upstreamAttempt{resp: resp, body: responseBody, candidate: candidate, healthRecorded: healthRecorded}, nil
+	return upstreamAttempt{resp: resp, body: responseBody, candidate: candidate, healthRecorded: healthRecorded, timing: timing}, nil
 }
 
 func (a *Service) logAttemptContextError(ctx context.Context, in upstreamAttemptInput, candidate catalog.RouteCandidate, attempted bool) {

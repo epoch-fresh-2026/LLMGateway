@@ -10,14 +10,7 @@ import (
 	"LLMGateway/server/internal/quota"
 )
 
-func (a *Service) reserveQuota(ctx context.Context, requestID string, auth *accounts.AuthContext, req ChatRequest, channelID int, upstreamModel string) (quota.QuotaReservation, error) {
-	if a.adapter.EstimateUsage == nil {
-		return quota.QuotaReservation{}, ErrInvalidRequest
-	}
-	estimate, err := a.adapter.EstimateUsage(req.Body, a.defaultMaxTokens)
-	if err != nil {
-		return quota.QuotaReservation{}, ErrInvalidRequest
-	}
+func (a *Service) reserveQuota(ctx context.Context, requestID string, auth *accounts.AuthContext, req ChatRequest, channelID int, upstreamModel string, estimate EstimatedUsage) (quota.QuotaReservation, error) {
 	estimatedCost, err := a.estimatedCost(ctx, channelID, upstreamModel, estimate)
 	if err != nil {
 		return quota.QuotaReservation{}, err

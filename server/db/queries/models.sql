@@ -51,7 +51,13 @@ SELECT
     cm.upstream_model,
     c.priority,
     c.weight,
-    COALESCE(c.balance::text, '') AS balance
+    COALESCE(c.balance::text, '') AS balance,
+    CASE
+        WHEN h.state = 'open'
+            AND h.opened_at + (sqlc.arg(default_cooldown_seconds)::int * interval '1 second') <= now()
+        THEN 'half-open'
+        ELSE COALESCE(h.state, 'closed')
+    END::text AS health_state
 FROM channel_models cm
 JOIN channels c ON c.id = cm.channel_id
 LEFT JOIN channel_health h ON h.channel_id = c.id

@@ -254,27 +254,33 @@ SELECT
     cm.upstream_model,
     c.priority,
     c.weight,
-    COALESCE(c.balance::text, '') AS balance
+    COALESCE(c.balance::text, '') AS balance,
+    CASE
+        WHEN h.state = 'open'
+            AND h.opened_at + ($1::int * interval '1 second') <= now()
+        THEN 'half-open'
+        ELSE COALESCE(h.state, 'closed')
+    END::text AS health_state
 FROM channel_models cm
 JOIN channels c ON c.id = cm.channel_id
 LEFT JOIN channel_health h ON h.channel_id = c.id
-WHERE cm.model_name = $1 AND cm.enabled = true AND c.status = 1
-  AND c.owner_user_id = $2
+WHERE cm.model_name = $2 AND cm.enabled = true AND c.status = 1
+  AND c.owner_user_id = $3
 
   AND NOT (
       COALESCE(h.state, 'closed') = 'open'
       AND (
           h.opened_at IS NULL
-          OR h.opened_at + ($3::int * interval '1 second') > now()
+          OR h.opened_at + ($1::int * interval '1 second') > now()
       )
   )
 ORDER BY c.priority DESC, c.weight DESC, c.id
 `
 
 type ListRouteCandidatesParams struct {
+	DefaultCooldownSeconds int32  `json:"default_cooldown_seconds"`
 	ModelName              string `json:"model_name"`
 	OwnerUserID            int64  `json:"owner_user_id"`
-	DefaultCooldownSeconds int32  `json:"default_cooldown_seconds"`
 }
 
 type ListRouteCandidatesRow struct {
@@ -284,10 +290,11 @@ type ListRouteCandidatesRow struct {
 	Priority      int32       `json:"priority"`
 	Weight        int32       `json:"weight"`
 	Balance       interface{} `json:"balance"`
+	HealthState   string      `json:"health_state"`
 }
 
 func (q *Queries) ListRouteCandidates(ctx context.Context, arg ListRouteCandidatesParams) ([]ListRouteCandidatesRow, error) {
-	rows, err := q.db.Query(ctx, listRouteCandidates, arg.ModelName, arg.OwnerUserID, arg.DefaultCooldownSeconds)
+	rows, err := q.db.Query(ctx, listRouteCandidates, arg.DefaultCooldownSeconds, arg.ModelName, arg.OwnerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -302,6 +309,7 @@ func (q *Queries) ListRouteCandidates(ctx context.Context, arg ListRouteCandidat
 			&i.Priority,
 			&i.Weight,
 			&i.Balance,
+			&i.HealthState,
 		); err != nil {
 			return nil, err
 		}

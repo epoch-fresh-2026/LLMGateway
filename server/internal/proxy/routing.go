@@ -36,8 +36,17 @@ func (a *Service) orderedCandidates(ctx context.Context, ownerUserID int, model 
 		if seen[candidate.ChannelID] {
 			continue
 		}
-		health, healthErr := a.catalog.GetChannelHealth(ctx, candidate.ChannelID)
-		if healthErr == nil && health.State == catalog.HealthHalfOpen {
+		state := candidate.HealthState
+		if state == "" {
+			health, healthErr := a.catalog.GetChannelHealth(ctx, candidate.ChannelID)
+			if healthErr == nil {
+				state = health.State
+			}
+		}
+		if state == catalog.HealthOpen {
+			continue
+		}
+		if state == catalog.HealthHalfOpen {
 			leaseID, allowed, probeErr := a.catalog.AcquireChannelProbe(ctx, candidate.ChannelID, a.requestTimeout)
 			if probeErr != nil || !allowed {
 				continue

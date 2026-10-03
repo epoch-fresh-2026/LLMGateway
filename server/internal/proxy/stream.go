@@ -25,6 +25,7 @@ type completionStream struct {
 	publicModel           string
 	clientIP              string
 	start                 time.Time
+	timing                *upstreamTiming
 	reservationID         int64
 	rateReservationID     int64
 	estimatedPromptTokens int
@@ -88,6 +89,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 		if event.Data && ttft == nil {
 			value := elapsedMs(s.start, s.service.now())
 			ttft = &value
+			s.timing.emit(s.ctx, "first_data_frame")
 		}
 		if err := emit(event.Frame); err != nil {
 			return fmt.Errorf("%w: %v", errDownstreamWrite, err)

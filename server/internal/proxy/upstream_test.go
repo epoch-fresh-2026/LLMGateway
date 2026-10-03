@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"LLMGateway/server/internal/catalog"
+	"LLMGateway/server/internal/quota"
+	"LLMGateway/server/internal/ratelimit"
 	"io"
 	"net/http"
 	"strings"
@@ -15,6 +17,166 @@ import (
 	"LLMGateway/server/internal/testutil/storefake"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
+
+type countingRateLimit struct {
+	RateLimit
+	owners       []int
+	reservations []ratelimit.RateLimitReservationInput
+	reserveErr   error
+}
+
+func (r *countingRateLimit) ListRateLimits(ctx context.Context, owner int, enabled *bool, page, pageSize int) (ratelimit.ListResponse[ratelimit.RateLimitRuleDTO], error) {
+	r.owners = append(r.owners, owner)
+	return r.RateLimit.ListRateLimits(ctx, owner, enabled, page, pageSize)
+}
+
+func (r *countingRateLimit) ReserveRateLimit(ctx context.Context, in ratelimit.RateLimitReservationInput) (ratelimit.RateLimitReservation, error) {
+	r.reservations = append(r.reservations, in)
+	if r.reserveErr != nil {
+		return ratelimit.RateLimitReservation{}, r.reserveErr
+	}
+	return r.RateLimit.ReserveRateLimit(ctx, in)
+}
+
+type countingQuota struct {
+	Quota
+	reservations []quota.QuotaReserveInput
+}
+
+func (q *countingQuota) ReserveQuota(ctx context.Context, in quota.QuotaReserveInput) (quota.QuotaReservation, error) {
+	q.reservations = append(q.reservations, in)
+	return q.Quota.ReserveQuota(ctx, in)
+}
+
+func TestChatCompletionsReusesRequestEstimatesAndRateLimitSnapshot(t *testing.T) {
+	for _, mode := range []string{"success", "upstream_fallback", "channel_fallback", "reject", "override", "reservation_reject"} {
+		t.Run(mode, func(t *testing.T) {
+			estimateCalls, upstreamCalls := 0, 0
+			adapter := seamAdapter()
+			estimate := EstimatedUsage{PromptTokens: 3, InputTokens: 10, OutputTokens: 5, TotalTokens: 15}
+			adapter.EstimateUsage = func([]byte, int) (EstimatedUsage, error) {
+				estimateCalls++
+				return estimate, nil
+			}
+			service, st, auth := newProtocolSeamService(t, roundTripFunc(func(*http.Request) (*http.Response, error) {
+				upstreamCalls++
+				status := http.StatusOK
+				if mode == "upstream_fallback" && upstreamCalls == 1 {
+					status = http.StatusBadGateway
+				}
+				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header)}, nil
+			}), adapter)
+			rates := &countingRateLimit{RateLimit: service.ratelimit}
+			quotas := &countingQuota{Quota: service.quota}
+			service.ratelimit, service.quota = rates, quotas
+			if mode == "upstream_fallback" || mode == "channel_fallback" {
+				addSeamFallback(t, st, "fallback", "http://fallback.test")
+			}
+			if mode == "reject" || mode == "override" || mode == "channel_fallback" {
+				target, metric, limit := "api_key", "tpm", int64(15)
+				if mode == "channel_fallback" {
+					target = "channel"
+				}
+				if _, err := newTestRateLimit(st, nil).CreateRateLimit(context.Background(), auth.UserID, domain.RateLimitInput{RuleName: strPtr("boundary"), TargetType: &target, TargetValue: strPtr("1"), Metric: &metric, LimitValue: &limit, Action: strPtr("reject")}); err != nil {
+					t.Fatal(err)
+				}
+				if mode == "override" {
+					auth.RateLimitOverrides = []byte(`{"tpm":100}`)
+				}
+			}
+			if mode == "reservation_reject" {
+				rates.reserveErr = ratelimit.ErrInvalid
+			}
+			_, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{}`)}, "")
+			rejected := mode == "reject" || mode == "reservation_reject"
+			if rejected && !errors.Is(err, ErrRateLimited) || !rejected && err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if estimateCalls != 1 || len(rates.owners) != 1 || rates.owners[0] != auth.UserID {
+				t.Fatalf("estimate calls = %d, rate limit owners = %v", estimateCalls, rates.owners)
+			}
+			if rejected {
+				if upstreamCalls != 0 || len(quotas.reservations) != 0 {
+					t.Fatalf("rejected request reached upstream/quota: %d/%d", upstreamCalls, len(quotas.reservations))
+				}
+			} else {
+				wantCalls := 1
+				if mode == "upstream_fallback" {
+					wantCalls = 2
+				}
+				if upstreamCalls != wantCalls || len(rates.reservations) != 1 || rates.reservations[0].EstimatedTokens != 15 || len(quotas.reservations) != 1 {
+					t.Fatalf("calls = %d, rate reservations = %+v, quota reservations = %+v", upstreamCalls, rates.reservations, quotas.reservations)
+				}
+				reserved := quotas.reservations[0]
+				if reserved.EstimatedTokens != 15 || reserved.EstimatedCost != "0.000004" {
+					t.Fatalf("conservative quota reservation = %+v", reserved)
+				}
+			}
+			active, err := rates.CountActiveRateLimitReservations(context.Background(), auth.UserID, &auth.KeyID, "public-model", nil)
+			if err != nil || active != 0 {
+				t.Fatalf("active reservations = %d, err = %v", active, err)
+			}
+		})
+	}
+}
+
+func TestChatCompletionsPreservesQuotaAdmissionWithInFlightReservation(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	service, st, auth := newProtocolSeamService(t, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		close(started)
+		<-release
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header)}, nil
+	}), seamAdapter())
+	if _, err := newTestQuota(st, nil).CreateQuotaPolicy(context.Background(), auth.UserID, quota.QuotaPolicyInput{PolicyName: strPtr("one reservation"), ScopeType: strPtr("user"), ScopeID: &auth.UserID, PeriodType: strPtr("day"), TokenLimit: int64Ptr(15)}); err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	go func() {
+		_, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{}`)}, "")
+		result <- err
+	}()
+	select {
+	case <-started:
+	case err := <-result:
+		t.Fatalf("first request failed before upstream: %v", err)
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("first request did not reach upstream")
+	}
+	_, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{}`)}, "")
+	close(release)
+	if !errors.Is(err, ErrQuotaExceeded) {
+		t.Fatalf("second request err = %v, want ErrQuotaExceeded", err)
+	}
+	if err := <-result; err != nil {
+		t.Fatalf("first request err = %v", err)
+	}
+}
+
+func TestRateLimitSnapshotIsOwnerScopedAndRequestScoped(t *testing.T) {
+	service, st, auth := newProtocolSeamService(t, nil, seamAdapter())
+	rates := &countingRateLimit{RateLimit: service.ratelimit}
+	service.ratelimit = rates
+	snapshot := &rateLimitSnapshot{}
+	tokens := int64(15)
+	if err := service.checkRateLimitWithSnapshot(context.Background(), auth, "public-model", &tokens, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	other := *auth
+	other.UserID++
+	if err := service.checkChannelRateLimitWithSnapshot(context.Background(), &other, "public-model", 1, tokens, snapshot); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("cross-owner snapshot err = %v", err)
+	}
+	if _, err := newTestRateLimit(st, nil).CreateRateLimit(context.Background(), auth.UserID, domain.RateLimitInput{RuleName: strPtr("new rule"), TargetType: strPtr("api_key"), TargetValue: strPtr("1"), Metric: strPtr("tpm"), LimitValue: int64Ptr(15), Action: strPtr("reject")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.checkRateLimit(context.Background(), auth, "public-model", &tokens); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("new request did not load new rule: %v", err)
+	}
+	if len(rates.owners) != 2 {
+		t.Fatalf("rule loads = %v, want two request-scoped loads", rates.owners)
+	}
+}
 
 func strPtr(value string) *string { return &value }
 func intPtr(value int) *int       { return &value }

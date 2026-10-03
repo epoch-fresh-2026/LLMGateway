@@ -24,6 +24,7 @@ services:
         condition: service_healthy
     environment:
       ADDR: :8080
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: postgres://${POSTGRES_USER:-llmgateway}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-llmgateway}?sslmode=disable
       CHANNEL_KEY_ENCRYPTION_KEY: ${CHANNEL_KEY_ENCRYPTION_KEY:?set CHANNEL_KEY_ENCRYPTION_KEY in deployments/.env}
       UPSTREAM_REQUEST_TIMEOUT: ${UPSTREAM_REQUEST_TIMEOUT:-600}

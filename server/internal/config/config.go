@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 
@@ -10,6 +11,7 @@ import (
 )
 
 const EnvDatabaseURL = "DATABASE_URL"
+const EnvLogLevel = "LOG_LEVEL"
 
 // EnvChannelKey is the environment variable holding the channel api_key
 // encryption key (raw bytes; 16, 24 or 32 bytes for AES-128/192/256). The
@@ -40,6 +42,7 @@ const (
 )
 
 type Config struct {
+	LogLevel      slog.Level
 	Addr          string
 	DatabaseURL   string
 	MigrationsDir string
@@ -82,6 +85,11 @@ func Load() (Config, error) {
 		DatabaseURL:             os.Getenv(EnvDatabaseURL),
 		MigrationsDir:           os.Getenv("MIGRATIONS_DIR"),
 		ChannelKeyEncryptionKey: os.Getenv(EnvChannelKey),
+	}
+	if value := os.Getenv(EnvLogLevel); value != "" {
+		if err := cfg.LogLevel.UnmarshalText([]byte(value)); err != nil {
+			return Config{}, fmt.Errorf("LOG_LEVEL must be DEBUG, INFO, WARN or ERROR")
+		}
 	}
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"

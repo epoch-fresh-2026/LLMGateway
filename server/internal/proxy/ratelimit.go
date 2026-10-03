@@ -14,6 +14,34 @@ import (
 //
 // A key's rate_limit_overrides.rpm takes precedence over matching rules.
 func (a *Service) checkRateLimit(ctx context.Context, auth *accounts.AuthContext, model string, estimatedTokens *int64) error {
+	return a.checkRateLimitWithSnapshot(ctx, auth, model, estimatedTokens, &rateLimitSnapshot{})
+}
+
+type rateLimitSnapshot struct {
+	ownerUserID int
+	loaded      bool
+	rules       []ratelimit.RateLimitRuleDTO
+}
+
+func (a *Service) loadRateLimitSnapshot(ctx context.Context, ownerUserID int, snapshot *rateLimitSnapshot) error {
+	if snapshot.loaded {
+		if snapshot.ownerUserID != ownerUserID {
+			return ErrForbidden
+		}
+		return nil
+	}
+	enabled := true
+	result, err := a.ratelimit.ListRateLimits(ctx, ownerUserID, &enabled, 1, 1000)
+	if err != nil {
+		return err
+	}
+	snapshot.ownerUserID = ownerUserID
+	snapshot.rules = result.List
+	snapshot.loaded = true
+	return nil
+}
+
+func (a *Service) checkRateLimitWithSnapshot(ctx context.Context, auth *accounts.AuthContext, model string, estimatedTokens *int64, snapshot *rateLimitSnapshot) error {
 	apiKeyOverrides := ratelimit.ParseOverrides(auth.RateLimitOverrides)
 
 	if override := apiKeyOverrides.RPM; override > 0 {
@@ -28,12 +56,10 @@ func (a *Service) checkRateLimit(ctx context.Context, auth *accounts.AuthContext
 		}
 	}
 
-	enabled := true
-	result, err := a.ratelimit.ListRateLimits(ctx, auth.UserID, &enabled, 1, 1000)
-	if err != nil {
+	if err := a.loadRateLimitSnapshot(ctx, auth.UserID, snapshot); err != nil {
 		return err
 	}
-	for _, item := range result.List {
+	for _, item := range snapshot.rules {
 		if item.Action != "reject" {
 			continue
 		}
@@ -104,12 +130,14 @@ func (a *Service) checkRateLimit(ctx context.Context, auth *accounts.AuthContext
 }
 
 func (a *Service) checkChannelRateLimit(ctx context.Context, auth *accounts.AuthContext, model string, channelID int, estimatedTokens int64) error {
-	enabled := true
-	result, err := a.ratelimit.ListRateLimits(ctx, auth.UserID, &enabled, 1, 1000)
-	if err != nil {
+	return a.checkChannelRateLimitWithSnapshot(ctx, auth, model, channelID, estimatedTokens, &rateLimitSnapshot{})
+}
+
+func (a *Service) checkChannelRateLimitWithSnapshot(ctx context.Context, auth *accounts.AuthContext, model string, channelID int, estimatedTokens int64, snapshot *rateLimitSnapshot) error {
+	if err := a.loadRateLimitSnapshot(ctx, auth.UserID, snapshot); err != nil {
 		return err
 	}
-	for _, item := range result.List {
+	for _, item := range snapshot.rules {
 		if item.Action != "reject" || item.TargetType != "channel" {
 			continue
 		}

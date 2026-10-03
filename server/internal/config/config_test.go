@@ -1,6 +1,8 @@
 package config
 
 import (
+	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -12,6 +14,23 @@ func loadOrFatal(t *testing.T) Config {
 		t.Fatalf("Load: %v", err)
 	}
 	return cfg
+}
+
+func TestLogLevel(t *testing.T) {
+	for _, value := range []string{"", "DEBUG", "debug", "INFO", "WARN", "ERROR"} {
+		t.Setenv(EnvLogLevel, value)
+		cfg := loadOrFatal(t)
+		if (value == "DEBUG" || value == "debug") && cfg.LogLevel != slog.LevelDebug {
+			t.Fatal("debug not enabled")
+		}
+		if value == "" && cfg.LogLevel != slog.LevelInfo {
+			t.Fatal("default is not INFO")
+		}
+	}
+	t.Setenv(EnvLogLevel, "secret-invalid")
+	if _, err := Load(); err == nil || strings.Contains(err.Error(), "secret-invalid") {
+		t.Fatal("invalid level accepted or leaked")
+	}
 }
 
 func TestLoadDefaults(t *testing.T) {

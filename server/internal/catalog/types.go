@@ -80,6 +80,7 @@ type RouteCandidate struct {
 	Priority      int
 	Weight        int
 	Balance       *string
+	HealthState   HealthState
 }
 
 type ChannelTestItemDTO struct {

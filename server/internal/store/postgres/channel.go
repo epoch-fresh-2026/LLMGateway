@@ -288,7 +288,7 @@ func (s *Store) RouteCandidates(ctx context.Context, ownerUserID int, modelName 
 	}
 	list := []domain.RouteCandidate{}
 	for _, row := range rows {
-		list = append(list, domain.RouteCandidate{ChannelID: int(row.ChannelID), ChannelName: row.ChannelName, UpstreamModel: row.UpstreamModel, Priority: int(row.Priority), Weight: int(row.Weight), Balance: optionalString(textValue(row.Balance))})
+		list = append(list, domain.RouteCandidate{ChannelID: int(row.ChannelID), ChannelName: row.ChannelName, UpstreamModel: row.UpstreamModel, Priority: int(row.Priority), Weight: int(row.Weight), Balance: optionalString(textValue(row.Balance)), HealthState: domain.HealthState(textValue(row.HealthState))})
 	}
 	return domain.ListResponse[domain.RouteCandidate]{List: list, Total: len(list)}, nil
 }

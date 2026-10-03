@@ -314,14 +314,15 @@ func (s *Store) RouteCandidates(_ context.Context, ownerUserID int, modelName st
 		}
 		// Exclude open (tripped) channels; a missing health row means closed and
 		// a cooled-down open channel is treated as half-open.
-		if s.channelHealthLocked(channelID, base).State == domain.HealthOpen {
+		health := s.channelHealthLocked(channelID, base)
+		if health.State == domain.HealthOpen {
 			continue
 		}
 		for _, model := range models {
 			if model.ModelName != modelName || !model.Enabled {
 				continue
 			}
-			candidates = append(candidates, domain.RouteCandidate{ChannelID: channelID, ChannelName: channel.Name, UpstreamModel: model.UpstreamModel, Priority: channel.Priority, Weight: channel.Weight, Balance: channel.Balance})
+			candidates = append(candidates, domain.RouteCandidate{ChannelID: channelID, ChannelName: channel.Name, UpstreamModel: model.UpstreamModel, Priority: channel.Priority, Weight: channel.Weight, Balance: channel.Balance, HealthState: health.State})
 		}
 	}
 

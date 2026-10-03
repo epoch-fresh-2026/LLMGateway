@@ -41,6 +41,7 @@ func (a *Service) Models(ctx context.Context, auth *accounts.AuthContext) (Model
 // ChatCompletions prepares a buffered or streaming chat completion. A non-nil
 // error is a pre-flight/transport failure the handler maps to an OpenAI error.
 func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContext, req ChatRequest, clientIP string) (ChatResponse, error) {
+	timingStart := time.Now()
 	requestCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
 	streamOwnsCancel := false
 	defer func() {
@@ -58,13 +59,18 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 
 	requestID := newRequestID()
 	start := a.now()
+	timing := newRequestTiming(ctx, requestID, timingStart)
+	stageStart := timing.begin()
 	estimate, estimateErr := a.adapter.EstimateUsage(req.Body, a.defaultMaxTokens)
+	timing.finish("estimate", stageStart)
+	stageStart = timing.begin()
 	var estimatedTokens *int64
 	if estimateErr == nil {
 		value := int64(estimate.TotalTokens)
 		estimatedTokens = &value
 	}
-	if err := a.checkRateLimit(ctx, auth, req.Model, estimatedTokens); err != nil {
+	rateLimits := &rateLimitSnapshot{}
+	if err := a.checkRateLimitWithSnapshot(ctx, auth, req.Model, estimatedTokens, rateLimits); err != nil {
 		if errors.Is(err, ErrRateLimited) {
 			a.logUsage(ctx, requestID, auth, nil, "", req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "rate_limited")
 		}
@@ -86,7 +92,10 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		}
 	}()
 
+	timing.finish("rate_limit", stageStart)
+	stageStart = timing.begin()
 	candidates, probes, err := a.orderedCandidates(ctx, auth.UserID, req.Model, auth.KeyID)
+	timing.finish("route", stageStart)
 	defer a.releaseProbes(ctx, probes)
 	if err != nil {
 		if errors.Is(err, ErrNoHealthyChannel) {
@@ -103,7 +112,9 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	if a.maxAttempts < len(candidates) {
 		candidates = candidates[:a.maxAttempts]
 	}
-	reservation, err := a.reserveQuota(ctx, requestID, auth, req, candidate.ChannelID, candidate.UpstreamModel)
+	stageStart = timing.begin()
+	reservation, err := a.reserveQuota(ctx, requestID, auth, req, candidate.ChannelID, candidate.UpstreamModel, estimate)
+	timing.finish("quota", stageStart)
 	if err != nil {
 		if errors.Is(err, ErrQuotaExceeded) {
 			a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "quota_exceeded")
@@ -124,7 +135,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	}
 	attempt, err := a.attemptUpstreams(ctx, upstreamAttemptInput{
 		requestID: requestID, auth: auth, req: req, candidates: candidates,
-		estimatedTokens: *estimatedTokens, start: start, clientIP: clientIP,
+		estimatedTokens: *estimatedTokens, rateLimits: rateLimits, start: start, clientIP: clientIP, timing: timing,
 	})
 	if err != nil {
 		return ChatResponse{}, err
@@ -151,7 +162,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 			promptTokens = estimate.InputTokens
 		}
 		return ChatResponse{Status: resp.StatusCode, Stream: &completionStream{
-			service: a, body: resp.Body, ctx: ctx, requestID: requestID, auth: auth,
+			service: a, body: resp.Body, ctx: ctx, requestID: requestID, auth: auth, timing: attempt.timing,
 			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID, rateReservationID: rateReservation.ID, estimatedPromptTokens: promptTokens, cancel: cancel, probeLeaseID: probeLeaseID,
 		}}, nil
 	}

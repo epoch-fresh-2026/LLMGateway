@@ -2,11 +2,25 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 
 	"LLMGateway/server/internal/config"
 )
+
+func TestRunEnablesConfiguredDebugLogging(t *testing.T) {
+	old := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(old) })
+	t.Setenv(config.EnvLogLevel, "DEBUG")
+	t.Setenv(config.EnvDatabaseURL, "")
+	if err := run(); err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
+		t.Fatalf("run error = %v", err)
+	}
+	if !slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		t.Fatal("LOG_LEVEL=DEBUG did not enable runtime logger")
+	}
+}
 
 func TestBuildStoreRequiresDatabaseURL(t *testing.T) {
 	st, cipher, closeStore, err := buildStore(context.Background(), config.Config{})

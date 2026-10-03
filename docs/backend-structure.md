@@ -139,6 +139,15 @@ var _ catalog.Port = (*postgres.Store)(nil)
 - 已知限制（后续 issue 处理）：
   - 定价按上游真实模型绑定（`model_pricing` 唯一键 `(channel_id, upstream_model)`，同渠道多别名共享一条定价）；未配置定价的渠道×上游模型按 cost=0 放行（建议为所有可路由模型配置定价）。
 
+## 首帧分段观测
+
+- `LOG_LEVEL` 默认 `INFO`；设为 `DEBUG`（大小写均可）并重启后，cmd 将 slog 默认 logger 配置为 stderr JSON handler，输出 `msg=proxy_latency` 的 Debug 事件。PowerShell 在 `server/` 下使用 `$env:LOG_LEVEL="DEBUG"; go run ./cmd/llmgateway`，其余数据库与加密配置仍需设置。标准启动/reaper 日志保留，经默认 slog handler 输出；业务模块不读取环境变量。
+- 正常流式请求在首个合法 JSON data 帧进入 emit 时立即记录一次 `event=first_data_frame`，不等待流结束；非流式及非 2xx 流式响应在 `http.Client.Do` 返回完整响应头时记录 `event=response_headers`，不等待读 body。日志不替代 usage/statistics，也不增加 SQL、schema 或前端字段。
+- 固定安全字段包含 `request_id`、`channel_id`、`attempt` 和 `preflight_estimate_ms`、`preflight_rate_limit_ms`、`preflight_route_ms`、`preflight_quota_ms`；限流耗时累计包含预检、reservation 及已执行的渠道限流。每次上游尝试通过 httptrace 记录 `dns_ms`、`tcp_ms`、`tls_ms`、`connection_reused`，未执行/不可观测的阶段省略，复用连接不伪造 DNS/TCP/TLS 的零值。TCP 耗时为已完成拨号的累计值，并行拨号时不能直接与其他阶段相加。
+- `response_headers_ms` 从该尝试调用 client 前计到完整响应头返回；`first_data_frame_ms` 从同一尝试起计到首个有效数据帧；`chat_to_first_data_frame_ms` 从 ChatCompletions 入口起计到该帧。分段日志使用 `time.Now`/`time.Since` 的单调时钟，不使用可注入的业务时钟；首帧指标包含解析及 Forward 调用前的等待，不代表纯上游推理时间。禁止记录 body、模型、key、headers、URL、IP 或原始错误。
+- 既有 `ttft_ms` 统计口径不变：从 ChatCompletions 内预检开始（生成 request_id 后、estimate 前）到首个合法 JSON data 帧，不含 HTTP 认证与读请求 body，也不含首帧下游写出耗时；不能直接与上游服务自报 TTFT 比较。
+- 每请求只执行一次 `EstimateUsage` 并复用于限流、配额和流式审计；所属用户的限流规则只加载一次，所有候选共享请求级 snapshot。健康路由候选查询携带 `HealthState` snapshot，避免逐候选健康读取；仅缺失 snapshot 的兼容端口回退查询。half-open 仍须原子获取 probe lease，不能仅靠 snapshot 放行；租约释放及流生命周期规则不变。
+
 ## 本地 PostgreSQL
 
 ```powershell

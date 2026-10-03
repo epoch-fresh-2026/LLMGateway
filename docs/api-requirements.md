@@ -825,6 +825,8 @@ end_time=RFC3339
 
 按流式请求的首个有效 JSON `data:` 帧聚合首 Token 延迟。非流式请求的 `ttft_ms` 固定为 `null`，不伪造延迟且不参与本接口统计。即使流式请求最终取消、超时或上游中断，已经收到有效数据帧时仍会记录其 TTFT。
 
+计时从 `ChatCompletions` 内预检开始（request_id 生成后、Token 估算前）到首个合法 JSON data 帧，包含估算、限流、路由、配额和上游连接/等待，不包含 HTTP 认证、读取请求 body 和首帧下游写出。该本地口径不能直接与上游自身 TTFT 比较。`LOG_LEVEL=DEBUG` 并重启可启用 stderr JSON `proxy_latency` 分段日志：流式在首帧 emit 时立即记录，非流式在完整 response headers 返回时记录；安全字段、单调时钟及开启命令见 `docs/backend-structure.md`。日志不改变本接口或非流式 `ttft_ms=null` 的约定。
+
 可选查询参数：`user_id`、`api_key_id`、`channel_id`、`model`、`start_time`（RFC3339）和 `end_time`（RFC3339）。
 
 `sample_count` 是有 TTFT 的流式样本数；`average_ms` 为向下取整的算术平均值；`p50_ms`、`p95_ms`、`p99_ms` 采用 nearest-rank（`ceil(n * p / 100)`）口径。无样本时所有字段为 `0`。
@@ -869,6 +871,7 @@ Authorization: Bearer <gateway-key>
 - 上游可切换故障仅包括传输错误、429、401/402/403 和 5xx；400/404/409/422 等调用方错误保持透传。请求级配额预留只执行一次，只有最终候选按成功或部分结算口径记账；流式响应收到 2xx 后不再切换渠道。
 - RPM/TPM/concurrency 限流拒绝统一返回 OpenAI `rate_limit_exceeded` 错误；Token 预检采用保守 `InputTokens` 加最大输出预留的估算，无法解析请求 Token 时对 Token 规则稳定拒绝。只加载该 Key 所属用户的规则（`target_type` 为 `user`/`api_key`/`model`/`channel`，不含 `global`）；Key override 仅覆盖 `api_key` 级对应规则。
 - 请求总 timeout 默认 600 秒（`UPSTREAM_REQUEST_TIMEOUT`，兼容旧 `UPSTREAM_TIMEOUT_SECONDS`）；所有候选尝试和流式读取共享 deadline。quota TTL 至少为 timeout + 60 秒，默认 660 秒，低于下限会自动提升。普通与 TLS 示例 nginx 的 `/v1` 均关闭缓冲，读写等待时限（`proxy_read_timeout` / `proxy_send_timeout`）均为 600 秒，不是请求总时限。
+- 请求级预检只执行一次 Token estimate，限流和配额复用该结果；所属用户的规则列表每请求只加载一次，候选尝试共享 snapshot。路由使用候选携带的健康状态 snapshot，避免逐渠道健康查询；half-open 仍需原子获取单飞 probe lease，不能仅凭 snapshot 放行。
 - Token 估算区分准入预留与本地审计：`InputTokens` 是保守预留量，至少采用完整请求 JSON 字节数 + 16 的上界，再加媒体预算；`PromptTokens` 是完整请求 JSON 的 tokenizer estimate + 16 和媒体预算，不使用字节上界。未知模型回退到 `cl100k_base`；每个 `image_url` / `input_audio` 标记加 8192 Token。输出按 `max_completion_tokens > max_tokens > QUOTA_DEFAULT_MAX_TOKENS` 并乘 `n` 预留；准入使用 `InputTokens + OutputTokens`，不能把保守预留直接当作 prompt 消耗。
 - 流式正常成功必须同时收到 usage 与 `[DONE]`，随后按上游实际 usage 一次原子结算。中途断流、超时、缺 `[DONE]`、协议错误或客户端断开时，只要已经收到 usage，就优先按该实际用量部分结算，即使没有成功写出文本；日志以 `partial_actual_*` 标识，保持 `status=error`。
 - 只有异常结束且没有上游 usage 时，才对确认成功写入下游的文本 delta 本地 tokenizer 估算 completion Token，并与合理的 `PromptTokens` estimate 一起记录零费用审计；日志以 `partial_estimated_*` 标识，保持 `status=error`，不结算、不计消耗。没有上游 usage 时释放 quota 与限流 reservation，不将估算转为 used 或扣减渠道余额。没有确认写出的文本或本地估算失败时不扣费；收到 `[DONE]` 但缺 usage 的正常解析结束仍报 `upstream_usage_missing`，不使用估算补齐。客户端取消及时传播到上游，但定价与结算使用独立、有限时的 context，避免取消直接中止记账。

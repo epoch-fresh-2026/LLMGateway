@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -221,6 +222,21 @@ func TestHalfOpenProbeLeaseIsAcquiredOnlyOnceAndReleased(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	fallback, err := cat.CreateChannel(ctx, 1, domain.ChannelInput{Name: "fallback", BaseURL: "https://fallback.test", APIKey: "sk", Status: 1, Priority: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.CreateChannelModel(ctx, 1, fallback.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.UpdateUserBreakerConfig(ctx, 1, catalog.ChannelBreakerConfigInput{WindowSeconds: 60, MinimumSamples: 10, ErrorRatePercent: 50, TimeoutRatePercent: 50, CooldownSeconds: 60}); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(30 * time.Second)
+	routes, err := cat.RouteCandidates(ctx, 1, "gpt")
+	if err != nil || len(routes.List) != 1 || routes.List[0].ChannelID != fallback.ID {
+		t.Fatalf("routes before owner cooldown = %+v, err=%v", routes, err)
+	}
 	clock = clock.Add(30 * time.Second)
 
 	svc := &Service{
@@ -233,19 +249,97 @@ func TestHalfOpenProbeLeaseIsAcquiredOnlyOnceAndReleased(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(candidates) != 1 || probes[channel.ID] == "" {
+	if len(candidates) != 2 || candidates[0].HealthState != catalog.HealthHalfOpen || probes[channel.ID] == "" {
 		t.Fatalf("candidates=%d probes=%v, want one half-open probe lease", len(candidates), probes)
 	}
 
 	// A concurrent request must not get a second probe while the lease is held.
-	if _, second, err := svc.orderedCandidates(ctx, 1, "gpt"); err != nil || len(second) != 0 {
-		t.Fatalf("second orderedCandidates probes=%v err=%v, want denied", second, err)
+	if secondCandidates, second, err := svc.orderedCandidates(ctx, 1, "gpt"); err != nil || len(second) != 0 || len(secondCandidates) != 1 || secondCandidates[0].ChannelID != fallback.ID {
+		t.Fatalf("second orderedCandidates candidates=%v probes=%v err=%v, want fallback only", secondCandidates, second, err)
 	}
 
 	// Releasing by owner frees the gate immediately.
 	svc.releaseProbes(ctx, probes)
 	if _, ok, err := st.AcquireChannelProbe(ctx, channel.ID, time.Minute); err != nil || !ok {
 		t.Fatalf("probe lease not released: ok=%v err=%v", ok, err)
+	}
+}
+
+type routingCountCatalog struct {
+	Catalog
+	healthCalls int
+	probeCalls  int
+	probeErr    error
+	routeErr    error
+}
+
+func (c *routingCountCatalog) GetChannelHealth(ctx context.Context, channelID int) (catalog.ChannelHealth, error) {
+	c.healthCalls++
+	return c.Catalog.GetChannelHealth(ctx, channelID)
+}
+
+func (c *routingCountCatalog) AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (string, bool, error) {
+	c.probeCalls++
+	if c.probeErr != nil {
+		return "", false, c.probeErr
+	}
+	return c.Catalog.AcquireChannelProbe(ctx, channelID, lease)
+}
+
+func (c *routingCountCatalog) RouteCandidates(ctx context.Context, ownerUserID int, modelName string) (catalog.ListResponse[catalog.RouteCandidate], error) {
+	if c.routeErr != nil {
+		return catalog.ListResponse[catalog.RouteCandidate]{}, c.routeErr
+	}
+	return c.Catalog.RouteCandidates(ctx, ownerUserID, modelName)
+}
+
+func TestOrderedCandidatesClosedChannelsAvoidHealthQueries(t *testing.T) {
+	a := newRouteTestApp(seedRoutingStore(t), func(int) int { return 0 })
+	counted := &routingCountCatalog{Catalog: a.catalog}
+	a.catalog = counted
+	candidates, probes, err := a.orderedCandidates(context.Background(), 1, "gpt")
+	if err != nil || len(candidates) != 3 || len(probes) != 0 || counted.healthCalls != 0 || counted.probeCalls != 0 {
+		t.Fatalf("candidates=%v probes=%v err=%v healthCalls=%d probeCalls=%d", candidates, probes, err, counted.healthCalls, counted.probeCalls)
+	}
+	for _, candidate := range candidates {
+		if candidate.HealthState != catalog.HealthClosed {
+			t.Fatalf("candidate health=%q, want closed", candidate.HealthState)
+		}
+	}
+	counted.routeErr = errors.New("route health query failed")
+	if candidates, _, err := a.orderedCandidates(context.Background(), 1, "gpt"); !errors.Is(err, counted.routeErr) || len(candidates) != 0 {
+		t.Fatalf("candidates=%v err=%v, want route error", candidates, err)
+	}
+}
+
+func TestOrderedCandidatesHalfOpenProbeErrorFallsBack(t *testing.T) {
+	ctx := context.Background()
+	clock := time.Now()
+	st := storefake.NewWithClock(func() time.Time { return clock })
+	a := newRouteTestApp(st, func(int) int { return 0 })
+	for i, name := range []string{"probe", "fallback"} {
+		channel, err := a.catalog.(*catalog.Server).CreateChannel(ctx, 1, domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: 10 - i})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cat := a.catalog.(*catalog.Server)
+		if _, err := cat.CreateChannelModel(ctx, 1, channel.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			for j := 0; j < 5; j++ {
+				if _, err := cat.RecordChannelFailure(ctx, channel.ID, catalog.FailureUpstream5xx); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	clock = clock.Add(time.Minute)
+	counted := &routingCountCatalog{Catalog: a.catalog, probeErr: errors.New("probe unavailable")}
+	a.catalog = counted
+	candidates, probes, err := a.orderedCandidates(ctx, 1, "gpt")
+	if err != nil || len(candidates) != 1 || candidates[0].ChannelName != "fallback" || len(probes) != 0 || counted.healthCalls != 0 || counted.probeCalls != 1 {
+		t.Fatalf("candidates=%v probes=%v err=%v healthCalls=%d probeCalls=%d", candidates, probes, err, counted.healthCalls, counted.probeCalls)
 	}
 }
 
