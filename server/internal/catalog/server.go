@@ -73,7 +73,10 @@ func (a *Server) baseBreakerFor(ctx context.Context, ownerUserID int) ChannelBre
 	if ok && now.Before(entry.expires) {
 		return entry.config
 	}
+	return a.loadBaseBreaker(ctx, ownerUserID, now)
+}
 
+func (a *Server) loadBaseBreaker(ctx context.Context, ownerUserID int, now time.Time) ChannelBreakerConfig {
 	a.breakerMu.Lock()
 	defer a.breakerMu.Unlock()
 	if entry, ok := a.breakerCache[ownerUserID]; ok && now.Before(entry.expires) {

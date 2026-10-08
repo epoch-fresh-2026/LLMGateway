@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 
 export function Modal({ title, children, submitText, onClose, onSubmit, wide = false, showActions = true, submitting = false, className = '' }: { title: string; children: ReactNode; submitText?: string; onClose: () => void; onSubmit?: (event: FormEvent<HTMLFormElement>) => void | Promise<void>; wide?: boolean; showActions?: boolean; submitting?: boolean; className?: string }) {
   const titleId = useId()
+  const [submitError, setSubmitError] = useState('')
   const backdrop = useRef<HTMLDivElement>(null)
   const close = useRef(onClose)
   close.current = onClose
@@ -26,9 +27,14 @@ export function Modal({ title, children, submitText, onClose, onSubmit, wide = f
   }, [])
   const content = <><div className="modal-title"><h3 id={titleId}>{title}</h3><button type="button" className="close" onClick={onClose} aria-label="关闭" title="关闭" disabled={submitting}><X size={18} aria-hidden="true" /></button></div><div className="modal-body">{children}</div>{showActions && <div className="modal-actions"><button type="button" className="button ghost" onClick={onClose} disabled={submitting}>取消</button>{onSubmit && <button className="button primary" type="submit" disabled={submitting}>{submitting ? '创建中…' : submitText || '保存'}</button>}</div>}</>
   const modalClassName = `modal${wide ? ' modal-wide' : ''} ${className}`
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    return onSubmit?.(event)
+    setSubmitError('')
+    try {
+      await onSubmit?.(event)
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : '保存失败')
+    }
   }
-  return <div ref={backdrop} className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>{onSubmit ? <form className={modalClassName} role="dialog" aria-modal="true" aria-labelledby={titleId} onSubmit={handleSubmit}>{content}</form> : <div className={modalClassName} role="dialog" aria-modal="true" aria-labelledby={titleId}>{content}</div>}</div>
+  return <div ref={backdrop} className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>{onSubmit ? <form className={modalClassName} role="dialog" aria-modal="true" aria-labelledby={titleId} onSubmit={handleSubmit}>{submitError && <p className="error" role="alert">{submitError}</p>}{content}</form> : <div className={modalClassName} role="dialog" aria-modal="true" aria-labelledby={titleId}>{content}</div>}</div>
 }

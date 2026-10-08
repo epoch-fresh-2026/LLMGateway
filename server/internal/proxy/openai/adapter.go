@@ -76,9 +76,7 @@ func rewriteResponse(body []byte, publicModel string) []byte {
 		return body
 	}
 	payload["model"] = publicModel
-	rewritten, err := json.Marshal(payload)
-	if err != nil {
-		return body
-	}
+	// JSON-decoded values and the replacement model string are always encodable.
+	rewritten, _ := json.Marshal(payload)
 	return rewritten
 }

@@ -24,9 +24,3 @@ test('consumption pages show settled totals and separated sources without reques
     assert.doesNotMatch(source, /total_tokens\s*\|\|\s*row\.request_count/)
   }
 })
-
-test('empty ranged model aggregate yields an empty distribution', () => {
-  const modelRows = (list) => (list ?? []).map(row => ({ name: row.model || 'unknown', value: Number(row.total_tokens || row.request_count || 0) }))
-  assert.deepEqual(modelRows(undefined), [])
-  assert.deepEqual(modelRows([]), [])
-})

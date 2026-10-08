@@ -48,7 +48,7 @@ var (
 const RateLimitWindowSeconds = 60
 
 func NormalizeRateLimit(in RateLimitInput) (RateLimitRule, error) {
-	rule := RateLimitRule{TargetValue: "*", Priority: 100, Enabled: true, Extras: json.RawMessage(`{}`)}
+	rule := RateLimitRule{TargetValue: "*", Priority: 100, Enabled: true}
 
 	if in.RuleName != nil {
 		rule.RuleName = *in.RuleName

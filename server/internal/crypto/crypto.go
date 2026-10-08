@@ -42,16 +42,14 @@ type Cipher struct {
 
 // NewCipher builds a Cipher from a raw key of 16, 24 or 32 bytes.
 func NewCipher(key []byte) (*Cipher, error) {
-	switch len(key) {
-	case 16, 24, 32:
-	default:
-		return nil, fmt.Errorf("%w: length must be 16, 24 or 32 bytes", ErrInvalidKey)
-	}
-
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidKey, err)
+		return nil, fmt.Errorf("%w: length must be 16, 24 or 32 bytes", ErrInvalidKey)
 	}
+	return newCipher(block)
+}
+
+func newCipher(block cipher.Block) (*Cipher, error) {
 	aead, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidKey, err)
@@ -73,9 +71,8 @@ func NewCipherFromEnv(name string) (*Cipher, error) {
 // Encrypt returns a base64 string containing the random nonce and ciphertext.
 func (c *Cipher) Encrypt(plaintext string) (string, error) {
 	nonce := make([]byte, c.aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return "", err
-	}
+	// Go 1.24 and later terminate on entropy failure; Read always returns nil.
+	_, _ = rand.Read(nonce)
 	sealed := c.aead.Seal(nonce, nonce, []byte(plaintext), nil)
 	return base64.StdEncoding.EncodeToString(sealed), nil
 }
@@ -107,9 +104,7 @@ func GenerateGatewayKey(prefix string) (string, error) {
 	}
 
 	buf := make([]byte, 24)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
+	_, _ = rand.Read(buf)
 	return prefix + hex.EncodeToString(buf), nil
 }
 
@@ -163,9 +158,7 @@ func VerifyPassword(hash, password string) bool {
 // caller once and delivered to the browser as an HttpOnly cookie.
 func GenerateSessionToken() (string, error) {
 	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
+	_, _ = rand.Read(buf)
 	return hex.EncodeToString(buf), nil
 }
 

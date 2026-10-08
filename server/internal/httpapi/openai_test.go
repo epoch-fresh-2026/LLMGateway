@@ -452,7 +452,11 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 	if _, err := f.quota.CreateQuotaPolicy(context.Background(), 1, domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
 		t.Fatal(err)
 	}
-	gateway := httptest.NewServer(http.HandlerFunc(f.server.OpenAI))
+	handlerCompleted := make(chan struct{})
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(handlerCompleted)
+		f.server.OpenAI(w, r)
+	}))
 	t.Cleanup(gateway.Close)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -478,6 +482,11 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 	case <-upstreamCanceled:
 	case <-time.After(2 * time.Second):
 		t.Fatal("upstream request was not canceled")
+	}
+	select {
+	case <-handlerCompleted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("gateway handler did not finish reservation cleanup")
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {

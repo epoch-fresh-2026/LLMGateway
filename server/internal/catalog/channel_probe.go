@@ -59,15 +59,12 @@ func (a *Server) ConfigureTestTimeout(timeout time.Duration) {
 
 func (a *Server) testModel(parent context.Context, channel *Channel, model ChannelModel) ChannelTestItemDTO {
 	item := ChannelTestItemDTO{ModelAlias: model.ModelName, UpstreamModel: model.UpstreamModel}
-	body, err := json.Marshal(map[string]any{
+	// The probe payload contains only JSON-compatible strings and integers.
+	body, _ := json.Marshal(map[string]any{
 		"model":      model.UpstreamModel,
 		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
 		"max_tokens": 1,
 	})
-	if err != nil {
-		item.Error = "unable to create test request"
-		return item
-	}
 	ctx, cancel := context.WithTimeout(parent, a.testTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(channel.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(body))

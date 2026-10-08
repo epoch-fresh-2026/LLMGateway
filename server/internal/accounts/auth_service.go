@@ -57,10 +57,7 @@ func (a *Server) Register(ctx context.Context, username, password string) (Login
 	if err != nil {
 		return LoginResult{}, err
 	}
-	token, expiresAt, err := a.newSessionToken()
-	if err != nil {
-		return LoginResult{}, err
-	}
+	token, expiresAt := a.newSessionToken()
 
 	var account Account
 	err = a.tx.InTx(ctx, func(tx Tx) error {
@@ -109,10 +106,7 @@ func (a *Server) Login(ctx context.Context, username, password string) (LoginRes
 		return LoginResult{}, ErrInvalidCredentials
 	}
 
-	token, expiresAt, err := a.newSessionToken()
-	if err != nil {
-		return LoginResult{}, err
-	}
+	token, expiresAt := a.newSessionToken()
 	err = a.tx.InTx(ctx, func(tx Tx) error {
 		_, err := tx.InsertSession(SessionInput{
 			TokenHash: crypto.HashSessionToken(token),
@@ -163,12 +157,10 @@ func (a *Server) ReapExpiredSessions(ctx context.Context, limit int) (int, error
 	return a.store.DeleteExpiredSessions(ctx, limit)
 }
 
-func (a *Server) newSessionToken() (string, time.Time, error) {
-	token, err := crypto.GenerateSessionToken()
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	return token, a.now().Add(a.auth.SessionTTL), nil
+func (a *Server) newSessionToken() (string, time.Time) {
+	// GenerateSessionToken uses crypto/rand.Read, which is infallible on Go 1.24+.
+	token, _ := crypto.GenerateSessionToken()
+	return token, a.now().Add(a.auth.SessionTTL)
 }
 
 // validateCredentials enforces the username/password shape. Each failure wraps

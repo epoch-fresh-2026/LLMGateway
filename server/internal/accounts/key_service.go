@@ -49,13 +49,11 @@ func (a *Server) CreateKey(ctx context.Context, userID int, in KeyInput) (KeySec
 		isActive = *in.IsActive
 	}
 
-	fullKey, err := crypto.GenerateGatewayKey(prefix)
-	if err != nil {
-		return KeySecretDTO{}, err
-	}
+	// GenerateGatewayKey uses crypto/rand.Read, which is infallible on Go 1.24+.
+	fullKey, _ := crypto.GenerateGatewayKey(prefix)
 
 	var id int
-	err = a.tx.InTx(ctx, func(tx Tx) error {
+	err := a.tx.InTx(ctx, func(tx Tx) error {
 		if _, err := tx.GetUser(userID); err != nil {
 			return err
 		}
