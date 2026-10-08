@@ -1,6 +1,11 @@
 .git
 .idea
 communication
+.vercel
+.agents
+skills-lock.json
+.env*
+deployments/.env
 dashboard-react/node_modules
 dashboard-react/dist
 server/tmp

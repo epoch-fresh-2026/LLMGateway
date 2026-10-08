@@ -48,7 +48,7 @@ docker compose -f deployments/docker-compose.yml down
 
 ### 基线重建
 
-数据库基线仍在 `server/db/migrations/000001_init.sql` 内迭代（项目未上线，不提供升级迁移）。使用过旧版本的本地开发库必须重建后再启动：
+`server/db/migrations/000001_init.sql` 已用于公网部署；后续 schema 变更必须新增迁移，保留已发布基线的语义。仅使用过旧版基线的本地开发库需要重建；以下命令会删除本地数据卷，不可用于生产数据库：
 
 ```powershell
 docker compose -f deployments/docker-compose.yml down -v
@@ -56,6 +56,8 @@ docker compose -f deployments/docker-compose.yml up -d --build
 ```
 
 ## 公网部署
+
+Vercel 前端、Go 容器和 Neon PostgreSQL 的完整部署方式见 [deployments/vercel.md](deployments/vercel.md)。
 
 公网部署需要 HTTPS，否则会话 Cookie 无法在浏览器中安全保存。
 
