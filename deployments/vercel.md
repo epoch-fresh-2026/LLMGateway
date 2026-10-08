@@ -39,6 +39,22 @@ npx vercel@63.1.0 deploy --prod --yes
 
 部署完成后检查 `/healthz`、注册、登录、Dashboard 全部启动接口，以及真实上游的普通和 SSE 请求。没有配置自己的上游渠道和网关 Key 前，`/v1` 调用不能生成模型响应。
 
+## 持续部署（CD）
+
+Vercel 项目已通过 GitHub App 连接本仓库，生产分支为 `master`。推送或合并到 `master` 后，Vercel 自动构建前端和 Go 容器并更新生产域名；构建失败时不会切换到失败版本。部署所需环境变量由 Vercel 项目管理，GitHub Actions 不需要额外配置 `VERCEL_TOKEN`。
+
+`.github/workflows/ci.yml` 和 `dashboard.yml` 继续执行后端、真实 PostgreSQL、race、前后端精确覆盖率及构建检查。建议先在 PR 中确认 CI 通过再合并；当前没有设置分支保护，因此直接推送到 `master` 会立即触发部署，不会等待 GitHub CI。
+
+Vercel 发布成功后发送 GitHub `deployment_status` 事件，`.github/workflows/cd.yml` 仅对 `Production` 环境执行自动验证。验证生产域名上的 `/healthz`、登录页、SPA 刷新、JavaScript/CSS 静态资源，以及未登录管理端和无 Key 网关请求的 401 响应；包含有限重试以容忍冷启动。失败会让 CD 工作流报错并在 Actions 中保留检查结果，不会自动回滚数据库或应用。
+
+保留 Vercel 项目 Git Settings 中的 `deployment_status` Events 开关。也可在 GitHub Actions → CD → Run workflow 手动检查当前生产服务，或本地执行：
+
+```powershell
+node scripts/verify-deployment.mjs https://llmgateway-mauve.vercel.app
+```
+
+预览分支只生成 Vercel Preview，不触发上述生产检查；完整预览仍需独立数据库和预览环境变量。
+
 ## 平台限制
 
 - 使用 Container Images Beta，实际可用性以项目的部署结果为准。前后端与 PostgreSQL 均选择新加坡区域。
