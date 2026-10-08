@@ -179,9 +179,6 @@ func (a *Service) attemptUpstreams(ctx context.Context, in upstreamAttemptInput)
 		}
 		break
 	}
-	if resp == nil {
-		return upstreamAttempt{}, ErrUpstream
-	}
 	if catalog.ClassifyUpstreamResult(resp.StatusCode, nil).CountsAsChannelFailure() && len(in.candidates) > 1 {
 		a.logUsage(ctx, in.requestID, in.auth, &candidate.ChannelID, candidate.UpstreamModel, in.req.Model, nil, "0.000000", "", "", elapsedMs(in.start, a.now()), in.clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
 		return upstreamAttempt{candidate: candidate}, ErrUpstream

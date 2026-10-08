@@ -6,7 +6,7 @@ on:
 
 jobs:
   frontend:
-    name: dashboard typecheck / test / build
+    name: dashboard typecheck / exact coverage / build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -21,5 +21,12 @@ jobs:
       - run: npm ci
       - run: npm run api:check
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:coverage
       - run: npm run build
+      - name: upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-coverage
+          path: dashboard-react/coverage/
+          if-no-files-found: ignore

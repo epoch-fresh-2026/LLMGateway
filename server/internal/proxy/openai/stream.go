@@ -81,10 +81,8 @@ func parseEvent(frame []byte, publicModel string) (streamEvent, error) {
 		return streamEvent{}, fmt.Errorf("%w: invalid JSON data frame", proxy.ErrInvalidStream)
 	}
 	payload["model"] = publicModel
-	rewritten, err := json.Marshal(payload)
-	if err != nil {
-		return streamEvent{}, fmt.Errorf("%w: encode JSON data frame", proxy.ErrInvalidStream)
-	}
+	// The payload contains only decoded JSON values and the public model string.
+	rewritten, _ := json.Marshal(payload)
 	usage := parseUsage(rewritten)
 	return streamEvent{Frame: append(append([]byte("data: "), rewritten...), '\n', '\n'), Data: true, Usage: usage, Text: deltaText(payload)}, nil
 }

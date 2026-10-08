@@ -1,45 +1,6 @@
-import test from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
-
-// These mirror src/pages/dashboardMetrics.ts. The node test runner cannot import
-// TypeScript directly, so this documents the day-over-day contract the page relies on.
-const ratioChange = (current, previous) => {
-  if (!(previous > 0)) return null
-  const percent = (current - previous) / previous * 100
-  return `${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`
-}
-
-const pointChange = (currentRate, previousRate) => {
-  if (previousRate === null) return null
-  const points = currentRate - previousRate
-  return `${points >= 0 ? '+' : ''}${points.toFixed(1)}pp`
-}
-
-const trendDirection = (current, previous) => {
-  if (previous === null) return 'none'
-  if (current > previous) return 'up'
-  if (current < previous) return 'down'
-  return 'flat'
-}
-
-const MODEL_TOP_N = 6
-const modelDistribution = (rows) => {
-  const sorted = rows
-    .map(row => ({ name: row.model || 'unknown', requests: Number(row.request_count || 0), tokens: Number(row.total_tokens || 0), cost: row.total_cost || '0' }))
-    .sort((a, b) => b.tokens - a.tokens)
-  const total = sorted.reduce((sum, row) => sum + row.tokens, 0)
-  const top = sorted.slice(0, MODEL_TOP_N)
-  const rest = sorted.slice(MODEL_TOP_N)
-  if (rest.length > 0) {
-    top.push(rest.reduce((acc, row) => ({
-      name: '其他',
-      requests: acc.requests + row.requests,
-      tokens: acc.tokens + row.tokens,
-      cost: (Number(acc.cost || 0) + Number(row.cost || 0)).toFixed(6),
-    }), { name: '其他', requests: 0, tokens: 0, cost: '0' }))
-  }
-  return { slices: top, total }
-}
+import { ratioChange, pointChange, trendDirection, modelDistribution, MODEL_TOP_N, tokenTrend } from '../src/pages/dashboardMetrics'
 
 test('ratio change hides a zero baseline instead of fabricating a percent', () => {
   assert.equal(ratioChange(12, 0), null)
@@ -64,11 +25,6 @@ test('trend direction drives arrow and color independently of text', () => {
   assert.equal(trendDirection(10, null), 'none')
 })
 
-const tokenTrend = (rows) => rows.map(row => {
-  const input = Number(row.input_tokens || 0)
-  const cacheRead = Number(row.cached_input_tokens || 0)
-  return { date: row.stat_date, input, output: Number(row.output_tokens || 0), cacheRead, cacheHitRate: input > 0 ? cacheRead / input * 100 : 0 }
-})
 
 test('token trend computes cache hit rate over input and zero on empty input', () => {
   const [filled, empty] = tokenTrend([

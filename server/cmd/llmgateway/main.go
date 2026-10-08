@@ -25,9 +25,21 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var fatalProcess = log.Fatal
+var processSignalContext = signal.NotifyContext
+
+type httpLifecycle interface {
+	ListenAndServe() error
+	Shutdown(context.Context) error
+}
+
+var newHTTPServer = func(addr string, handler http.Handler) httpLifecycle {
+	return &http.Server{Addr: addr, Handler: handler}
+}
+
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		fatalProcess(err)
 	}
 }
 
@@ -39,7 +51,7 @@ func run() error {
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel})))
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := processSignalContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	st, cipher, closeStore, err := buildStore(ctx, cfg)
@@ -63,7 +75,7 @@ func run() error {
 		}),
 		httpapi.WithQuotaConfig(cfg.QuotaDefaultMaxTokens, time.Duration(cfg.QuotaReservationTTLSeconds)*time.Second),
 		httpapi.WithSessionConfig(time.Duration(cfg.SessionTTLSeconds)*time.Second, cfg.SessionCookieSecure, cfg.RegistrationEnabled, cfg.BcryptCost))
-	server := &http.Server{Addr: cfg.Addr, Handler: handler}
+	server := newHTTPServer(cfg.Addr, handler)
 	var workers sync.WaitGroup
 	workers.Add(1)
 	go func() {
@@ -95,7 +107,20 @@ func run() error {
 	return err
 }
 
-func runQuotaReaper(ctx context.Context, quotaServer *quota.Server, rateServer *ratelimit.Server, apiServer *httpapi.Server, interval time.Duration, batchSize int, bucketRetention time.Duration) {
+type quotaReservationReaper interface {
+	ReapExpiredQuotaReservations(context.Context, int) (int, error)
+}
+
+type rateReservationReaper interface {
+	ReapRateLimitReservations(context.Context, int) (int, error)
+}
+
+type accountHealthReaper interface {
+	ReapChannelHealthBuckets(context.Context, time.Duration) (int, error)
+	ReapExpiredSessions(context.Context, int) (int, error)
+}
+
+func runQuotaReaper(ctx context.Context, quotaServer quotaReservationReaper, rateServer rateReservationReaper, apiServer accountHealthReaper, interval time.Duration, batchSize int, bucketRetention time.Duration) {
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}

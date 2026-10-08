@@ -13,6 +13,10 @@ import (
 // estimateRequestUsage tokenizes the full OpenAI request payload so messages,
 // tool definitions and multimodal metadata all contribute to the reservation.
 func estimateRequestUsage(body []byte, defaultMaxTokens int) (proxy.EstimatedUsage, error) {
+	return estimateRequestUsageWithTokenizer(body, defaultMaxTokens, tokenizer.ForModel, tokenizer.Get)
+}
+
+func estimateRequestUsageWithTokenizer(body []byte, defaultMaxTokens int, forModel func(tokenizer.Model) (tokenizer.Codec, error), fallback func(tokenizer.Encoding) (tokenizer.Codec, error)) (proxy.EstimatedUsage, error) {
 	var request ChatCompletionRequest
 	if err := json.Unmarshal(body, &request); err != nil {
 		return proxy.EstimatedUsage{}, err
@@ -32,9 +36,9 @@ func estimateRequestUsage(body []byte, defaultMaxTokens int) (proxy.EstimatedUsa
 		choices = 1
 	}
 	output *= choices
-	encoding, err := tokenizer.ForModel(tokenizer.Model(request.Model))
+	encoding, err := forModel(tokenizer.Model(request.Model))
 	if err != nil {
-		encoding, err = tokenizer.Get(tokenizer.Cl100kBase)
+		encoding, err = fallback(tokenizer.Cl100kBase)
 		if err != nil {
 			return proxy.EstimatedUsage{}, fmt.Errorf("load tokenizer: %w", err)
 		}
@@ -56,12 +60,16 @@ func estimateRequestUsage(body []byte, defaultMaxTokens int) (proxy.EstimatedUsa
 }
 
 func countTextTokens(model, text string) (int, error) {
+	return countTextTokensWithTokenizer(model, text, tokenizer.ForModel, tokenizer.Get)
+}
+
+func countTextTokensWithTokenizer(model, text string, forModel func(tokenizer.Model) (tokenizer.Codec, error), fallback func(tokenizer.Encoding) (tokenizer.Codec, error)) (int, error) {
 	if text == "" {
 		return 0, nil
 	}
-	encoding, err := tokenizer.ForModel(tokenizer.Model(model))
+	encoding, err := forModel(tokenizer.Model(model))
 	if err != nil {
-		encoding, err = tokenizer.Get(tokenizer.Cl100kBase)
+		encoding, err = fallback(tokenizer.Cl100kBase)
 		if err != nil {
 			return 0, fmt.Errorf("load tokenizer: %w", err)
 		}

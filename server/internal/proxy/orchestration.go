@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -60,9 +59,11 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	requestID := newRequestID()
 	start := a.now()
 	timing := newRequestTiming(ctx, requestID, timingStart)
+
 	stageStart := timing.begin()
 	estimate, estimateErr := a.adapter.EstimateUsage(req.Body, a.defaultMaxTokens)
 	timing.finish("estimate", stageStart)
+
 	stageStart = timing.begin()
 	var estimatedTokens *int64
 	if estimateErr == nil {
@@ -91,8 +92,8 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 			_ = a.ratelimit.ReleaseRateLimit(relCtx, rateReservation.ID)
 		}
 	}()
-
 	timing.finish("rate_limit", stageStart)
+
 	stageStart = timing.begin()
 	stickyKey := stickyKey{owner: auth.UserID, key: auth.KeyID, model: req.Model}
 	candidates, probes, binding, lazyFallback, err := a.stickyCandidates(ctx, stickyKey)
@@ -103,6 +104,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		}
 	}()
 	timing.finish("route", stageStart)
+
 	defer a.releaseProbes(ctx, probes)
 	if err != nil {
 		if errors.Is(err, ErrNoHealthyChannel) {
@@ -119,9 +121,11 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	if a.maxAttempts < len(candidates) {
 		candidates = candidates[:a.maxAttempts]
 	}
+
 	stageStart = timing.begin()
 	reservation, err := a.reserveQuota(ctx, requestID, auth, req, candidate.ChannelID, candidate.UpstreamModel, estimate)
 	timing.finish("quota", stageStart)
+
 	if err != nil {
 		if errors.Is(err, ErrQuotaExceeded) {
 			a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "quota_exceeded")
@@ -150,7 +154,6 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	}
 	resp := attempt.resp
 	candidate = attempt.candidate
-	healthRecorded := attempt.healthRecorded
 	responseBody := attempt.body
 
 	if req.Stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -176,24 +179,9 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		}}, nil
 	}
 
-	var readErr error
-	if responseBody == nil {
-		defer resp.Body.Close()
-		responseBody, readErr = io.ReadAll(resp.Body)
-	}
 	durationMs := elapsedMs(start, a.now())
-	if readErr != nil {
-		if !errors.Is(readErr, context.Canceled) && !errors.Is(ctx.Err(), context.Canceled) {
-			a.recordChannelHealth(ctx, candidate.ChannelID, false, catalog.FailureUpstreamUnreachable)
-		}
-		a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", "upstream_stream_interrupted")
-		return ChatResponse{}, ErrUpstream
-	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if reason := catalog.ClassifyUpstreamResult(resp.StatusCode, nil); reason.CountsAsChannelFailure() && !healthRecorded {
-			a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
-		}
 		a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
 		return ChatResponse{Status: resp.StatusCode, Body: responseBody}, nil
 	}
@@ -207,6 +195,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", "upstream_usage_missing")
 		return ChatResponse{}, ErrUpstream
 	}
+
 	a.recordChannelHealth(ctx, candidate.ChannelID, true, "")
 	cost, inputPrice, outputPrice, err := a.priceFor(ctx, candidate.ChannelID, candidate.UpstreamModel, usage)
 	if err != nil {
@@ -225,11 +214,11 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	}
 	releaseReservation = false
 	rateReservationOpen = false
+
 	if ctx.Err() == nil {
 		a.sticky.put(stickyKey, candidate.ChannelID, a.now())
 		stickySuccess = true
 	}
-
 	return ChatResponse{Status: http.StatusOK, Body: a.adapter.RewriteResponse(responseBody, req.Model), Usage: usage}, nil
 }
 
@@ -317,8 +306,7 @@ func elapsedMs(start, end time.Time) int {
 
 func newRequestID() string {
 	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return "req_unknown"
-	}
+	// crypto/rand.Read guarantees a complete buffer and a nil error.
+	_, _ = rand.Read(buf)
 	return "req_" + hex.EncodeToString(buf)
 }

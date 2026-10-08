@@ -4,3 +4,4 @@ deployments/.env
 dashboard-react/node_modules/
 dashboard-react/dist/
 dashboard-react/tsconfig.app.tsbuildinfo
+server/coverage/
